@@ -14,6 +14,7 @@ import (
 	"shagan_pos/internal/healthcheck"
 	"shagan_pos/internal/middleware"
 	"shagan_pos/internal/migrate"
+	"shagan_pos/internal/storage"
 )
 
 func main() {
@@ -30,6 +31,11 @@ func main() {
 		log.Fatalf("failed to migrate database: %v", err)
 	}
 
+	store, err := connectStorage()
+	if err != nil {
+		log.Fatalf("failed to connect to object storage: %v", err)
+	}
+
 	r := gin.Default()
 	if err := r.SetTrustedProxies(nil); err != nil {
 		log.Fatalf("failed to configure trusted proxies: %v", err)
@@ -42,7 +48,7 @@ func main() {
 	v1 := r.Group("/api/v1")
 	v1.Use(middleware.Auth())
 
-	registerRoutes(v1, db)
+	registerRoutes(v1, db, store)
 
 	internalGroup := r.Group("/internal")
 	internalGroup.Use(middleware.InternalAuth(os.Getenv("INTERNAL_API_KEY")))
@@ -60,10 +66,10 @@ func main() {
 
 // registerRoutes wires each domain's repository -> service -> API handler and mounts its routes.
 // TODO: as each domain grows, this is the place new sub-groups (e.g. per-branch scoping) get added.
-func registerRoutes(v1 *gin.RouterGroup, db *gorm.DB) {
+func registerRoutes(v1 *gin.RouterGroup, db *gorm.DB, store storage.Storage) {
 	api.NewIdentityAPI(db).RegisterRoutes(v1)
 	api.NewCustomerAPI(db).RegisterRoutes(v1)
-	api.NewPlatformAPI(db).RegisterRoutes(v1)
+	api.NewPlatformAPI(db, store).RegisterRoutes(v1)
 	api.NewCatalogAPI(db).RegisterRoutes(v1)
 	api.NewProcurementAPI(db).RegisterRoutes(v1)
 	api.NewInventoryAPI(db).RegisterRoutes(v1)
@@ -84,4 +90,14 @@ func registerInternalRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 func connectDB() (*gorm.DB, error) {
 	dsn := os.Getenv("DATABASE_URL")
 	return gorm.Open(postgres.Open(dsn), &gorm.Config{})
+}
+
+func connectStorage() (storage.Storage, error) {
+	return storage.NewMinIOStorage(
+		os.Getenv("STORAGE_ENDPOINT"),
+		os.Getenv("STORAGE_ACCESS_KEY"),
+		os.Getenv("STORAGE_SECRET_KEY"),
+		os.Getenv("STORAGE_BUCKET"),
+		os.Getenv("STORAGE_USE_SSL") == "true",
+	)
 }

@@ -1,5 +1,7 @@
 package platform
 
+import "time"
+
 // TODO: relationships (belongs-to/has-many) are intentionally omitted here;
 // wire them up as needed in repository.go queries.
 // Translation maps to the "translations_locales" table in the ERD.
@@ -22,3 +24,20 @@ type ReceiptSetting struct {
 }
 
 func (Translation) TableName() string { return "translations_locales" }
+
+// PaymentQRCode is a static QR code image (e.g. a KBZPay/WavePay/bank QR
+// sticker) a branch displays for customers to scan and pay. Not part of the
+// original ERD - added to back QR-based payments. Provider is a free-form
+// label (e.g. "kbzpay", "wavepay") since the real set of providers isn't
+// fixed yet. The actual image bytes live in object storage (see
+// internal/storage); StorageKey just points at them.
+type PaymentQRCode struct {
+	ID         uint      `gorm:"primaryKey;autoIncrement" json:"id"`
+	BranchID   uint      `gorm:"index;not null" json:"branch_id"`
+	Provider   string    `gorm:"size:100;not null" json:"provider"`
+	StorageKey string    `gorm:"size:500;not null" json:"storage_key"`
+	IsActive   bool      `gorm:"not null" json:"is_active"`
+	CreatedAt  time.Time `gorm:"autoCreateTime;not null" json:"created_at"`
+}
+
+func (PaymentQRCode) TableName() string { return "payment_qr_codes" }
