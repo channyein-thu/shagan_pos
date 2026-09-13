@@ -22,6 +22,10 @@
     {
       "key": "token",
       "value": "dev-token"
+    },
+    {
+      "key": "internalKey",
+      "value": "changeme-internal-key"
     }
   ],
   "item": [
@@ -60,6 +64,52 @@
               ]
             },
             "description": "Liveness + DB ping (alias)"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Internal (Shagan Team)",
+      "item": [
+        {
+          "name": "CreateAccount - POST /internal/accounts",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Internal-Key",
+                "value": "{{internalKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/internal/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"organization_name\": \"Sample Org\",\n  \"owner_email\": \"owner@example.com\",\n  \"owner_password\": \"changeme\",\n  \"branch_name\": \"Main Branch\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Shagan-team-only. Protected by X-Internal-Key (INTERNAL_API_KEY), not the regular bearer token - creates Organization + owner User + a default Branch in one call."
           }
         }
       ]

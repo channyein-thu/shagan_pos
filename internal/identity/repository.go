@@ -125,3 +125,9 @@ func (r *Repository) ListPermissions(ctx context.Context) ([]Permission, error) 
 func (r *Repository) ListRolePermissions(ctx context.Context, id uint) ([]Permission, error) {
 	return nil, common.ErrNotImplemented
 }
+
+// CreateAccount backs `POST /internal/accounts`. Shagan-team-only: provisions
+// a new tenant (Organization + owner User + a default Branch) in one call.
+func (r *Repository) CreateAccount(ctx context.Context, in CreateAccountInput) (*CreateAccountResult, error) {
+	return nil, common.ErrNotImplemented
+}

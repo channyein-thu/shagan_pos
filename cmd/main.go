@@ -44,6 +44,10 @@ func main() {
 
 	registerRoutes(v1, db)
 
+	internalGroup := r.Group("/internal")
+	internalGroup.Use(middleware.InternalAuth(os.Getenv("INTERNAL_API_KEY")))
+	registerInternalRoutes(internalGroup, db)
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8000"
@@ -69,6 +73,12 @@ func registerRoutes(v1 *gin.RouterGroup, db *gorm.DB) {
 	api.NewSyncAPI(db).RegisterRoutes(v1)
 	api.NewAuditAPI(db).RegisterRoutes(v1)
 	api.NewReportsAPI(db).RegisterRoutes(v1)
+}
+
+// registerInternalRoutes mounts routes meant only for Shagan's own internal
+// tooling (e.g. provisioning a new customer's account) - see middleware.InternalAuth.
+func registerInternalRoutes(rg *gin.RouterGroup, db *gorm.DB) {
+	api.NewIdentityAPI(db).RegisterInternalRoutes(rg)
 }
 
 func connectDB() (*gorm.DB, error) {

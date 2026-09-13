@@ -26,6 +26,7 @@ services:
       DATABASE_URL: postgres://shagan:shagan@postgres:5432/shagan_pos?sslmode=disable
       PORT: "8000"
       JWT_SECRET: changeme
+      INTERNAL_API_KEY: changeme-internal-key
     ports:
       - "8000:8000"
 

@@ -26,6 +26,7 @@ type Interface interface {
 	ListRoles(ctx context.Context) ([]Role, error)
 	ListPermissions(ctx context.Context) ([]Permission, error)
 	ListRolePermissions(ctx context.Context, id uint) ([]Permission, error)
+	CreateAccount(ctx context.Context, in CreateAccountInput) (*CreateAccountResult, error)
 }
 
 type Service struct {
@@ -124,4 +125,8 @@ func (s *Service) ListPermissions(ctx context.Context) ([]Permission, error) {
 
 func (s *Service) ListRolePermissions(ctx context.Context, id uint) ([]Permission, error) {
 	return s.repo.ListRolePermissions(ctx, id)
+}
+
+func (s *Service) CreateAccount(ctx context.Context, in CreateAccountInput) (*CreateAccountResult, error) {
+	return s.repo.CreateAccount(ctx, in)
 }

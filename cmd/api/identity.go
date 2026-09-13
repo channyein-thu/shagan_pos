@@ -44,6 +44,13 @@ func (a *IdentityAPI) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.GET("/roles/:id/permissions", a.ListRolePermissions)
 }
 
+// RegisterInternalRoutes mounts routes meant only for Shagan's own internal
+// tooling, protected by middleware.InternalAuth (a shared secret) instead of
+// the normal staff-PIN/JWT auth - see cmd/main.go's "/internal" group.
+func (a *IdentityAPI) RegisterInternalRoutes(rg *gin.RouterGroup) {
+	rg.POST("/accounts", a.CreateAccount)
+}
+
 // Login handles `POST /auth/login`. Owner email+password login
 func (a *IdentityAPI) Login(c *gin.Context) {
 	result, err := a.service.Login(c.Request.Context())
@@ -336,4 +343,20 @@ func (a *IdentityAPI) ListRolePermissions(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, result)
+}
+
+// CreateAccount handles `POST /internal/accounts`. Shagan-team-only: provisions
+// a new tenant (Organization + owner User + a default Branch) in one call.
+func (a *IdentityAPI) CreateAccount(c *gin.Context) {
+	var in identity.CreateAccountInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		common.JSONError(c, http.StatusBadRequest, "invalid_body", err.Error())
+		return
+	}
+	result, err := a.service.CreateAccount(c.Request.Context(), in)
+	if err != nil {
+		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		return
+	}
+	c.JSON(http.StatusCreated, result)
 }
