@@ -35,12 +35,12 @@ func (a *SalesAPI) RegisterRoutes(rg *gin.RouterGroup) {
 func (a *SalesAPI) CreateSale(c *gin.Context) {
 	var in sales.Sale
 	if err := c.ShouldBindJSON(&in); err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_body", err.Error())
+		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
 	result, err := a.service.CreateSale(c.Request.Context(), in)
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, result)
@@ -50,7 +50,7 @@ func (a *SalesAPI) CreateSale(c *gin.Context) {
 func (a *SalesAPI) ListSales(c *gin.Context) {
 	result, err := a.service.ListSales(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -60,12 +60,12 @@ func (a *SalesAPI) ListSales(c *gin.Context) {
 func (a *SalesAPI) GetSale(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_id", "invalid id")
+		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
 	result, err := a.service.GetSale(c.Request.Context(), id)
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -75,12 +75,12 @@ func (a *SalesAPI) GetSale(c *gin.Context) {
 func (a *SalesAPI) GetSaleReceipt(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_id", "invalid id")
+		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
 	result, err := a.service.GetSaleReceipt(c.Request.Context(), id)
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -90,12 +90,12 @@ func (a *SalesAPI) GetSaleReceipt(c *gin.Context) {
 func (a *SalesAPI) ReprintSale(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_id", "invalid id")
+		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
 	result, err := a.service.ReprintSale(c.Request.Context(), id)
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -105,12 +105,12 @@ func (a *SalesAPI) ReprintSale(c *gin.Context) {
 func (a *SalesAPI) CreateHeldSale(c *gin.Context) {
 	var in sales.HeldSale
 	if err := c.ShouldBindJSON(&in); err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_body", err.Error())
+		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
 	result, err := a.service.CreateHeldSale(c.Request.Context(), in)
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, result)
@@ -120,7 +120,7 @@ func (a *SalesAPI) CreateHeldSale(c *gin.Context) {
 func (a *SalesAPI) ListHeldSales(c *gin.Context) {
 	result, err := a.service.ListHeldSales(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -130,12 +130,12 @@ func (a *SalesAPI) ListHeldSales(c *gin.Context) {
 func (a *SalesAPI) ResumeHeldSale(c *gin.Context) {
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_id", "invalid id")
+		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
 	result, err := a.service.ResumeHeldSale(c.Request.Context(), uint(idVal))
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)

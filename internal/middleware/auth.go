@@ -1,9 +1,9 @@
 package middleware
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
+
+	"shagan_pos/internal/common"
 )
 
 // Auth is a placeholder JWT auth middleware.
@@ -11,7 +11,8 @@ import (
 func Auth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if c.GetHeader("Authorization") == "" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing authorization header"})
+			common.HandleError(c, common.UnauthorizedError("missing authorization header"))
+			c.Abort()
 			return
 		}
 		c.Next()

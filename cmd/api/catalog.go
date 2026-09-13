@@ -41,7 +41,7 @@ func (a *CatalogAPI) RegisterRoutes(rg *gin.RouterGroup) {
 func (a *CatalogAPI) ListProducts(c *gin.Context) {
 	result, err := a.service.ListProducts(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -51,12 +51,12 @@ func (a *CatalogAPI) ListProducts(c *gin.Context) {
 func (a *CatalogAPI) GetProduct(c *gin.Context) {
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_id", "invalid id")
+		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
 	result, err := a.service.GetProduct(c.Request.Context(), uint(idVal))
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -67,7 +67,7 @@ func (a *CatalogAPI) GetProductByBarcode(c *gin.Context) {
 	code := c.Param("code")
 	result, err := a.service.GetProductByBarcode(c.Request.Context(), code)
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -77,12 +77,12 @@ func (a *CatalogAPI) GetProductByBarcode(c *gin.Context) {
 func (a *CatalogAPI) CreateProduct(c *gin.Context) {
 	var in catalog.Product
 	if err := c.ShouldBindJSON(&in); err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_body", err.Error())
+		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
 	result, err := a.service.CreateProduct(c.Request.Context(), in)
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, result)
@@ -92,17 +92,17 @@ func (a *CatalogAPI) CreateProduct(c *gin.Context) {
 func (a *CatalogAPI) UpdateProduct(c *gin.Context) {
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_id", "invalid id")
+		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
 	var in catalog.Product
 	if err := c.ShouldBindJSON(&in); err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_body", err.Error())
+		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
 	result, err := a.service.UpdateProduct(c.Request.Context(), uint(idVal), in)
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -112,11 +112,11 @@ func (a *CatalogAPI) UpdateProduct(c *gin.Context) {
 func (a *CatalogAPI) DeleteProduct(c *gin.Context) {
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_id", "invalid id")
+		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
 	if err := a.service.DeleteProduct(c.Request.Context(), uint(idVal)); err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)
@@ -126,7 +126,7 @@ func (a *CatalogAPI) DeleteProduct(c *gin.Context) {
 func (a *CatalogAPI) ListCategories(c *gin.Context) {
 	result, err := a.service.ListCategories(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -136,12 +136,12 @@ func (a *CatalogAPI) ListCategories(c *gin.Context) {
 func (a *CatalogAPI) CreateCategory(c *gin.Context) {
 	var in catalog.Category
 	if err := c.ShouldBindJSON(&in); err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_body", err.Error())
+		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
 	result, err := a.service.CreateCategory(c.Request.Context(), in)
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, result)
@@ -151,17 +151,17 @@ func (a *CatalogAPI) CreateCategory(c *gin.Context) {
 func (a *CatalogAPI) UpdateCategory(c *gin.Context) {
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_id", "invalid id")
+		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
 	var in catalog.Category
 	if err := c.ShouldBindJSON(&in); err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_body", err.Error())
+		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
 	result, err := a.service.UpdateCategory(c.Request.Context(), uint(idVal), in)
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -171,11 +171,11 @@ func (a *CatalogAPI) UpdateCategory(c *gin.Context) {
 func (a *CatalogAPI) DeleteCategory(c *gin.Context) {
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_id", "invalid id")
+		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
 	if err := a.service.DeleteCategory(c.Request.Context(), uint(idVal)); err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)
@@ -185,7 +185,7 @@ func (a *CatalogAPI) DeleteCategory(c *gin.Context) {
 func (a *CatalogAPI) UploadMedia(c *gin.Context) {
 	result, err := a.service.UploadMedia(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -195,7 +195,7 @@ func (a *CatalogAPI) UploadMedia(c *gin.Context) {
 func (a *CatalogAPI) ListCombos(c *gin.Context) {
 	result, err := a.service.ListCombos(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -205,12 +205,12 @@ func (a *CatalogAPI) ListCombos(c *gin.Context) {
 func (a *CatalogAPI) CreateCombo(c *gin.Context) {
 	var in catalog.Combo
 	if err := c.ShouldBindJSON(&in); err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_body", err.Error())
+		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
 	result, err := a.service.CreateCombo(c.Request.Context(), in)
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, result)
@@ -220,17 +220,17 @@ func (a *CatalogAPI) CreateCombo(c *gin.Context) {
 func (a *CatalogAPI) UpdateCombo(c *gin.Context) {
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_id", "invalid id")
+		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
 	var in catalog.Combo
 	if err := c.ShouldBindJSON(&in); err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_body", err.Error())
+		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
 	result, err := a.service.UpdateCombo(c.Request.Context(), uint(idVal), in)
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -240,11 +240,11 @@ func (a *CatalogAPI) UpdateCombo(c *gin.Context) {
 func (a *CatalogAPI) DeleteCombo(c *gin.Context) {
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_id", "invalid id")
+		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
 	if err := a.service.DeleteCombo(c.Request.Context(), uint(idVal)); err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)

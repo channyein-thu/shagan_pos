@@ -55,7 +55,7 @@ func (a *IdentityAPI) RegisterInternalRoutes(rg *gin.RouterGroup) {
 func (a *IdentityAPI) Login(c *gin.Context) {
 	result, err := a.service.Login(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -65,7 +65,7 @@ func (a *IdentityAPI) Login(c *gin.Context) {
 func (a *IdentityAPI) RefreshSession(c *gin.Context) {
 	result, err := a.service.RefreshSession(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -74,7 +74,7 @@ func (a *IdentityAPI) RefreshSession(c *gin.Context) {
 // Logout handles `POST /auth/logout`. Revokes refresh token
 func (a *IdentityAPI) Logout(c *gin.Context) {
 	if err := a.service.Logout(c.Request.Context()); err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)
@@ -84,7 +84,7 @@ func (a *IdentityAPI) Logout(c *gin.Context) {
 func (a *IdentityAPI) GetMe(c *gin.Context) {
 	result, err := a.service.GetMe(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -94,12 +94,12 @@ func (a *IdentityAPI) GetMe(c *gin.Context) {
 func (a *IdentityAPI) UpdateMe(c *gin.Context) {
 	var in identity.User
 	if err := c.ShouldBindJSON(&in); err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_body", err.Error())
+		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
 	result, err := a.service.UpdateMe(c.Request.Context(), in)
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -109,7 +109,7 @@ func (a *IdentityAPI) UpdateMe(c *gin.Context) {
 func (a *IdentityAPI) VerifyManagerPIN(c *gin.Context) {
 	result, err := a.service.VerifyManagerPIN(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -119,12 +119,12 @@ func (a *IdentityAPI) VerifyManagerPIN(c *gin.Context) {
 func (a *IdentityAPI) VerifyStaffPIN(c *gin.Context) {
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_id", "invalid id")
+		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
 	result, err := a.service.VerifyStaffPIN(c.Request.Context(), uint(idVal))
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -134,12 +134,12 @@ func (a *IdentityAPI) VerifyStaffPIN(c *gin.Context) {
 func (a *IdentityAPI) RegisterDevice(c *gin.Context) {
 	var in identity.Device
 	if err := c.ShouldBindJSON(&in); err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_body", err.Error())
+		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
 	result, err := a.service.RegisterDevice(c.Request.Context(), in)
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -149,7 +149,7 @@ func (a *IdentityAPI) RegisterDevice(c *gin.Context) {
 func (a *IdentityAPI) ListDevices(c *gin.Context) {
 	result, err := a.service.ListDevices(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -159,17 +159,17 @@ func (a *IdentityAPI) ListDevices(c *gin.Context) {
 func (a *IdentityAPI) UpdateDevice(c *gin.Context) {
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_id", "invalid id")
+		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
 	var in identity.Device
 	if err := c.ShouldBindJSON(&in); err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_body", err.Error())
+		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
 	result, err := a.service.UpdateDevice(c.Request.Context(), uint(idVal), in)
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -179,7 +179,7 @@ func (a *IdentityAPI) UpdateDevice(c *gin.Context) {
 func (a *IdentityAPI) ListBranches(c *gin.Context) {
 	result, err := a.service.ListBranches(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -189,12 +189,12 @@ func (a *IdentityAPI) ListBranches(c *gin.Context) {
 func (a *IdentityAPI) CreateBranch(c *gin.Context) {
 	var in identity.Branch
 	if err := c.ShouldBindJSON(&in); err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_body", err.Error())
+		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
 	result, err := a.service.CreateBranch(c.Request.Context(), in)
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, result)
@@ -204,12 +204,12 @@ func (a *IdentityAPI) CreateBranch(c *gin.Context) {
 func (a *IdentityAPI) GetBranch(c *gin.Context) {
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_id", "invalid id")
+		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
 	result, err := a.service.GetBranch(c.Request.Context(), uint(idVal))
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -219,17 +219,17 @@ func (a *IdentityAPI) GetBranch(c *gin.Context) {
 func (a *IdentityAPI) UpdateBranch(c *gin.Context) {
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_id", "invalid id")
+		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
 	var in identity.Branch
 	if err := c.ShouldBindJSON(&in); err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_body", err.Error())
+		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
 	result, err := a.service.UpdateBranch(c.Request.Context(), uint(idVal), in)
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -239,12 +239,12 @@ func (a *IdentityAPI) UpdateBranch(c *gin.Context) {
 func (a *IdentityAPI) ListBranchStaff(c *gin.Context) {
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_id", "invalid id")
+		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
 	result, err := a.service.ListBranchStaff(c.Request.Context(), uint(idVal))
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -254,7 +254,7 @@ func (a *IdentityAPI) ListBranchStaff(c *gin.Context) {
 func (a *IdentityAPI) ListStaff(c *gin.Context) {
 	result, err := a.service.ListStaff(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -264,12 +264,12 @@ func (a *IdentityAPI) ListStaff(c *gin.Context) {
 func (a *IdentityAPI) CreateStaff(c *gin.Context) {
 	var in identity.Staff
 	if err := c.ShouldBindJSON(&in); err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_body", err.Error())
+		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
 	result, err := a.service.CreateStaff(c.Request.Context(), in)
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, result)
@@ -279,12 +279,12 @@ func (a *IdentityAPI) CreateStaff(c *gin.Context) {
 func (a *IdentityAPI) GetStaff(c *gin.Context) {
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_id", "invalid id")
+		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
 	result, err := a.service.GetStaff(c.Request.Context(), uint(idVal))
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -294,17 +294,17 @@ func (a *IdentityAPI) GetStaff(c *gin.Context) {
 func (a *IdentityAPI) UpdateStaff(c *gin.Context) {
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_id", "invalid id")
+		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
 	var in identity.Staff
 	if err := c.ShouldBindJSON(&in); err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_body", err.Error())
+		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
 	result, err := a.service.UpdateStaff(c.Request.Context(), uint(idVal), in)
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -314,7 +314,7 @@ func (a *IdentityAPI) UpdateStaff(c *gin.Context) {
 func (a *IdentityAPI) ListRoles(c *gin.Context) {
 	result, err := a.service.ListRoles(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -324,7 +324,7 @@ func (a *IdentityAPI) ListRoles(c *gin.Context) {
 func (a *IdentityAPI) ListPermissions(c *gin.Context) {
 	result, err := a.service.ListPermissions(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -334,12 +334,12 @@ func (a *IdentityAPI) ListPermissions(c *gin.Context) {
 func (a *IdentityAPI) ListRolePermissions(c *gin.Context) {
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_id", "invalid id")
+		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
 	result, err := a.service.ListRolePermissions(c.Request.Context(), uint(idVal))
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -350,12 +350,12 @@ func (a *IdentityAPI) ListRolePermissions(c *gin.Context) {
 func (a *IdentityAPI) CreateAccount(c *gin.Context) {
 	var in identity.CreateAccountInput
 	if err := c.ShouldBindJSON(&in); err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_body", err.Error())
+		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
 	result, err := a.service.CreateAccount(c.Request.Context(), in)
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, result)

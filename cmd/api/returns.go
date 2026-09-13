@@ -35,17 +35,17 @@ func (a *ReturnsAPI) RegisterRoutes(rg *gin.RouterGroup) {
 func (a *ReturnsAPI) VoidSale(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_id", "invalid id")
+		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
 	var in returns.Void
 	if err := c.ShouldBindJSON(&in); err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_body", err.Error())
+		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
 	result, err := a.service.VoidSale(c.Request.Context(), id, in)
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -55,7 +55,7 @@ func (a *ReturnsAPI) VoidSale(c *gin.Context) {
 func (a *ReturnsAPI) ListVoids(c *gin.Context) {
 	result, err := a.service.ListVoids(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -65,12 +65,12 @@ func (a *ReturnsAPI) ListVoids(c *gin.Context) {
 func (a *ReturnsAPI) CreateReturn(c *gin.Context) {
 	var in returns.Return
 	if err := c.ShouldBindJSON(&in); err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_body", err.Error())
+		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
 	result, err := a.service.CreateReturn(c.Request.Context(), in)
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, result)
@@ -80,7 +80,7 @@ func (a *ReturnsAPI) CreateReturn(c *gin.Context) {
 func (a *ReturnsAPI) ListReturns(c *gin.Context) {
 	result, err := a.service.ListReturns(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -90,12 +90,12 @@ func (a *ReturnsAPI) ListReturns(c *gin.Context) {
 func (a *ReturnsAPI) GetReturn(c *gin.Context) {
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_id", "invalid id")
+		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
 	result, err := a.service.GetReturn(c.Request.Context(), uint(idVal))
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -105,12 +105,12 @@ func (a *ReturnsAPI) GetReturn(c *gin.Context) {
 func (a *ReturnsAPI) CreateExchange(c *gin.Context) {
 	var in returns.Exchange
 	if err := c.ShouldBindJSON(&in); err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_body", err.Error())
+		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
 	result, err := a.service.CreateExchange(c.Request.Context(), in)
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, result)
@@ -120,7 +120,7 @@ func (a *ReturnsAPI) CreateExchange(c *gin.Context) {
 func (a *ReturnsAPI) ListExchanges(c *gin.Context) {
 	result, err := a.service.ListExchanges(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -130,12 +130,12 @@ func (a *ReturnsAPI) ListExchanges(c *gin.Context) {
 func (a *ReturnsAPI) GetExchange(c *gin.Context) {
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_id", "invalid id")
+		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
 	result, err := a.service.GetExchange(c.Request.Context(), uint(idVal))
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)

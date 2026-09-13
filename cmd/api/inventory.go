@@ -33,7 +33,7 @@ func (a *InventoryAPI) RegisterRoutes(rg *gin.RouterGroup) {
 func (a *InventoryAPI) ListStockLevels(c *gin.Context) {
 	result, err := a.service.ListStockLevels(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -43,7 +43,7 @@ func (a *InventoryAPI) ListStockLevels(c *gin.Context) {
 func (a *InventoryAPI) ListLowStock(c *gin.Context) {
 	result, err := a.service.ListLowStock(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -53,7 +53,7 @@ func (a *InventoryAPI) ListLowStock(c *gin.Context) {
 func (a *InventoryAPI) ListInventoryLedger(c *gin.Context) {
 	result, err := a.service.ListInventoryLedger(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -63,12 +63,12 @@ func (a *InventoryAPI) ListInventoryLedger(c *gin.Context) {
 func (a *InventoryAPI) CreateStockAdjustment(c *gin.Context) {
 	var in inventory.StockAdjustment
 	if err := c.ShouldBindJSON(&in); err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_body", err.Error())
+		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
 	result, err := a.service.CreateStockAdjustment(c.Request.Context(), in)
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, result)
@@ -78,7 +78,7 @@ func (a *InventoryAPI) CreateStockAdjustment(c *gin.Context) {
 func (a *InventoryAPI) ListStockTransfers(c *gin.Context) {
 	result, err := a.service.ListStockTransfers(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -88,12 +88,12 @@ func (a *InventoryAPI) ListStockTransfers(c *gin.Context) {
 func (a *InventoryAPI) CreateStockTransfer(c *gin.Context) {
 	var in inventory.StockTransfer
 	if err := c.ShouldBindJSON(&in); err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_body", err.Error())
+		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
 	result, err := a.service.CreateStockTransfer(c.Request.Context(), in)
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, result)
@@ -103,17 +103,17 @@ func (a *InventoryAPI) CreateStockTransfer(c *gin.Context) {
 func (a *InventoryAPI) UpdateStockTransfer(c *gin.Context) {
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_id", "invalid id")
+		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
 	var in inventory.StockTransfer
 	if err := c.ShouldBindJSON(&in); err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_body", err.Error())
+		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
 	result, err := a.service.UpdateStockTransfer(c.Request.Context(), uint(idVal), in)
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)

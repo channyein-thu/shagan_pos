@@ -38,12 +38,12 @@ func (a *ShiftAPI) RegisterRoutes(rg *gin.RouterGroup) {
 func (a *ShiftAPI) OpenShift(c *gin.Context) {
 	var in shift.Shift
 	if err := c.ShouldBindJSON(&in); err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_body", err.Error())
+		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
 	result, err := a.service.OpenShift(c.Request.Context(), in)
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -53,7 +53,7 @@ func (a *ShiftAPI) OpenShift(c *gin.Context) {
 func (a *ShiftAPI) GetCurrentShift(c *gin.Context) {
 	result, err := a.service.GetCurrentShift(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -63,12 +63,12 @@ func (a *ShiftAPI) GetCurrentShift(c *gin.Context) {
 func (a *ShiftAPI) GetShift(c *gin.Context) {
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_id", "invalid id")
+		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
 	result, err := a.service.GetShift(c.Request.Context(), uint(idVal))
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -78,12 +78,12 @@ func (a *ShiftAPI) GetShift(c *gin.Context) {
 func (a *ShiftAPI) CloseShift(c *gin.Context) {
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_id", "invalid id")
+		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
 	result, err := a.service.CloseShift(c.Request.Context(), uint(idVal))
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -93,12 +93,12 @@ func (a *ShiftAPI) CloseShift(c *gin.Context) {
 func (a *ShiftAPI) GetShiftSummary(c *gin.Context) {
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_id", "invalid id")
+		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
 	result, err := a.service.GetShiftSummary(c.Request.Context(), uint(idVal))
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -108,12 +108,12 @@ func (a *ShiftAPI) GetShiftSummary(c *gin.Context) {
 func (a *ShiftAPI) ListShiftReconciliations(c *gin.Context) {
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_id", "invalid id")
+		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
 	result, err := a.service.ListShiftReconciliations(c.Request.Context(), uint(idVal))
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -123,12 +123,12 @@ func (a *ShiftAPI) ListShiftReconciliations(c *gin.Context) {
 func (a *ShiftAPI) CreateDrawerEvent(c *gin.Context) {
 	var in shift.DrawerEvent
 	if err := c.ShouldBindJSON(&in); err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_body", err.Error())
+		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
 	result, err := a.service.CreateDrawerEvent(c.Request.Context(), in)
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, result)
@@ -138,7 +138,7 @@ func (a *ShiftAPI) CreateDrawerEvent(c *gin.Context) {
 func (a *ShiftAPI) ListDrawerEvents(c *gin.Context) {
 	result, err := a.service.ListDrawerEvents(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -148,7 +148,7 @@ func (a *ShiftAPI) ListDrawerEvents(c *gin.Context) {
 func (a *ShiftAPI) ListExpenses(c *gin.Context) {
 	result, err := a.service.ListExpenses(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -158,12 +158,12 @@ func (a *ShiftAPI) ListExpenses(c *gin.Context) {
 func (a *ShiftAPI) CreateExpense(c *gin.Context) {
 	var in shift.Expense
 	if err := c.ShouldBindJSON(&in); err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_body", err.Error())
+		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
 	result, err := a.service.CreateExpense(c.Request.Context(), in)
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, result)
@@ -173,17 +173,17 @@ func (a *ShiftAPI) CreateExpense(c *gin.Context) {
 func (a *ShiftAPI) UpdateExpense(c *gin.Context) {
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_id", "invalid id")
+		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
 	var in shift.Expense
 	if err := c.ShouldBindJSON(&in); err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_body", err.Error())
+		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
 	result, err := a.service.UpdateExpense(c.Request.Context(), uint(idVal), in)
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -193,11 +193,11 @@ func (a *ShiftAPI) UpdateExpense(c *gin.Context) {
 func (a *ShiftAPI) DeleteExpense(c *gin.Context) {
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_id", "invalid id")
+		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
 	if err := a.service.DeleteExpense(c.Request.Context(), uint(idVal)); err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)

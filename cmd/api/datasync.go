@@ -32,7 +32,7 @@ func (a *SyncAPI) RegisterRoutes(rg *gin.RouterGroup) {
 func (a *SyncAPI) GetCatalogSnapshot(c *gin.Context) {
 	result, err := a.service.GetCatalogSnapshot(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -42,7 +42,7 @@ func (a *SyncAPI) GetCatalogSnapshot(c *gin.Context) {
 func (a *SyncAPI) IngestQueuedSales(c *gin.Context) {
 	result, err := a.service.IngestQueuedSales(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -52,7 +52,7 @@ func (a *SyncAPI) IngestQueuedSales(c *gin.Context) {
 func (a *SyncAPI) FlushSync(c *gin.Context) {
 	result, err := a.service.FlushSync(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -62,7 +62,7 @@ func (a *SyncAPI) FlushSync(c *gin.Context) {
 func (a *SyncAPI) GetSyncStatus(c *gin.Context) {
 	result, err := a.service.GetSyncStatus(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -72,7 +72,7 @@ func (a *SyncAPI) GetSyncStatus(c *gin.Context) {
 func (a *SyncAPI) ListSyncConflicts(c *gin.Context) {
 	result, err := a.service.ListSyncConflicts(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -82,12 +82,12 @@ func (a *SyncAPI) ListSyncConflicts(c *gin.Context) {
 func (a *SyncAPI) ResolveSyncConflict(c *gin.Context) {
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_id", "invalid id")
+		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
 	result, err := a.service.ResolveSyncConflict(c.Request.Context(), uint(idVal))
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)

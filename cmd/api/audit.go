@@ -26,7 +26,7 @@ func (a *AuditAPI) RegisterRoutes(rg *gin.RouterGroup) {
 func (a *AuditAPI) ListAuditLog(c *gin.Context) {
 	result, err := a.service.ListAuditLog(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)

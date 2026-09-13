@@ -36,7 +36,7 @@ func (a *ReportsAPI) RegisterRoutes(rg *gin.RouterGroup) {
 func (a *ReportsAPI) GetHomeSummary(c *gin.Context) {
 	result, err := a.service.GetHomeSummary(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -46,7 +46,7 @@ func (a *ReportsAPI) GetHomeSummary(c *gin.Context) {
 func (a *ReportsAPI) GetStockOverview(c *gin.Context) {
 	result, err := a.service.GetStockOverview(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -56,7 +56,7 @@ func (a *ReportsAPI) GetStockOverview(c *gin.Context) {
 func (a *ReportsAPI) GetTodayReport(c *gin.Context) {
 	result, err := a.service.GetTodayReport(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -66,7 +66,7 @@ func (a *ReportsAPI) GetTodayReport(c *gin.Context) {
 func (a *ReportsAPI) GetRevenueTrend(c *gin.Context) {
 	result, err := a.service.GetRevenueTrend(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -76,7 +76,7 @@ func (a *ReportsAPI) GetRevenueTrend(c *gin.Context) {
 func (a *ReportsAPI) GetSalesSummary(c *gin.Context) {
 	result, err := a.service.GetSalesSummary(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -86,7 +86,7 @@ func (a *ReportsAPI) GetSalesSummary(c *gin.Context) {
 func (a *ReportsAPI) GetSalesTrend(c *gin.Context) {
 	result, err := a.service.GetSalesTrend(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -96,7 +96,7 @@ func (a *ReportsAPI) GetSalesTrend(c *gin.Context) {
 func (a *ReportsAPI) GetPaymentMethodsReport(c *gin.Context) {
 	result, err := a.service.GetPaymentMethodsReport(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -106,7 +106,7 @@ func (a *ReportsAPI) GetPaymentMethodsReport(c *gin.Context) {
 func (a *ReportsAPI) GetTransactionsReport(c *gin.Context) {
 	result, err := a.service.GetTransactionsReport(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -116,7 +116,7 @@ func (a *ReportsAPI) GetTransactionsReport(c *gin.Context) {
 func (a *ReportsAPI) GetProductSalesReport(c *gin.Context) {
 	result, err := a.service.GetProductSalesReport(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -126,7 +126,7 @@ func (a *ReportsAPI) GetProductSalesReport(c *gin.Context) {
 func (a *ReportsAPI) GetTopProducts(c *gin.Context) {
 	result, err := a.service.GetTopProducts(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -136,7 +136,7 @@ func (a *ReportsAPI) GetTopProducts(c *gin.Context) {
 func (a *ReportsAPI) ExportReport(c *gin.Context) {
 	result, err := a.service.ExportReport(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)

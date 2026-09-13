@@ -35,7 +35,7 @@ func (a *ProcurementAPI) RegisterRoutes(rg *gin.RouterGroup) {
 func (a *ProcurementAPI) ListSuppliers(c *gin.Context) {
 	result, err := a.service.ListSuppliers(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -45,12 +45,12 @@ func (a *ProcurementAPI) ListSuppliers(c *gin.Context) {
 func (a *ProcurementAPI) CreateSupplier(c *gin.Context) {
 	var in procurement.Supplier
 	if err := c.ShouldBindJSON(&in); err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_body", err.Error())
+		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
 	result, err := a.service.CreateSupplier(c.Request.Context(), in)
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, result)
@@ -60,17 +60,17 @@ func (a *ProcurementAPI) CreateSupplier(c *gin.Context) {
 func (a *ProcurementAPI) UpdateSupplier(c *gin.Context) {
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_id", "invalid id")
+		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
 	var in procurement.Supplier
 	if err := c.ShouldBindJSON(&in); err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_body", err.Error())
+		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
 	result, err := a.service.UpdateSupplier(c.Request.Context(), uint(idVal), in)
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -80,11 +80,11 @@ func (a *ProcurementAPI) UpdateSupplier(c *gin.Context) {
 func (a *ProcurementAPI) DeleteSupplier(c *gin.Context) {
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_id", "invalid id")
+		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
 	if err := a.service.DeleteSupplier(c.Request.Context(), uint(idVal)); err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)
@@ -94,7 +94,7 @@ func (a *ProcurementAPI) DeleteSupplier(c *gin.Context) {
 func (a *ProcurementAPI) ListPurchaseOrders(c *gin.Context) {
 	result, err := a.service.ListPurchaseOrders(c.Request.Context())
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -104,12 +104,12 @@ func (a *ProcurementAPI) ListPurchaseOrders(c *gin.Context) {
 func (a *ProcurementAPI) CreatePurchaseOrder(c *gin.Context) {
 	var in procurement.PurchaseOrder
 	if err := c.ShouldBindJSON(&in); err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_body", err.Error())
+		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
 	result, err := a.service.CreatePurchaseOrder(c.Request.Context(), in)
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, result)
@@ -119,12 +119,12 @@ func (a *ProcurementAPI) CreatePurchaseOrder(c *gin.Context) {
 func (a *ProcurementAPI) GetPurchaseOrder(c *gin.Context) {
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_id", "invalid id")
+		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
 	result, err := a.service.GetPurchaseOrder(c.Request.Context(), uint(idVal))
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -134,17 +134,17 @@ func (a *ProcurementAPI) GetPurchaseOrder(c *gin.Context) {
 func (a *ProcurementAPI) UpdatePurchaseOrder(c *gin.Context) {
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_id", "invalid id")
+		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
 	var in procurement.PurchaseOrder
 	if err := c.ShouldBindJSON(&in); err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_body", err.Error())
+		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
 	result, err := a.service.UpdatePurchaseOrder(c.Request.Context(), uint(idVal), in)
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -154,17 +154,17 @@ func (a *ProcurementAPI) UpdatePurchaseOrder(c *gin.Context) {
 func (a *ProcurementAPI) CreateGoodsReceipt(c *gin.Context) {
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_id", "invalid id")
+		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
 	var in procurement.GoodsReceipt
 	if err := c.ShouldBindJSON(&in); err != nil {
-		common.JSONError(c, http.StatusBadRequest, "invalid_body", err.Error())
+		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
 	result, err := a.service.CreateGoodsReceipt(c.Request.Context(), uint(idVal), in)
 	if err != nil {
-		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, result)

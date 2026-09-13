@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"crypto/subtle"
-	"net/http"
 
 	"github.com/gin-gonic/gin"
 
@@ -16,14 +15,14 @@ import (
 func InternalAuth(expectedKey string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if expectedKey == "" {
-			common.JSONError(c, http.StatusUnauthorized, "internal_auth_not_configured", "INTERNAL_API_KEY is not set")
+			common.HandleError(c, common.UnauthorizedError("INTERNAL_API_KEY is not set"))
 			c.Abort()
 			return
 		}
 
 		got := c.GetHeader("X-Internal-Key")
 		if subtle.ConstantTimeCompare([]byte(got), []byte(expectedKey)) != 1 {
-			common.JSONError(c, http.StatusUnauthorized, "unauthorized", "invalid internal key")
+			common.HandleError(c, common.UnauthorizedError("invalid internal key"))
 			c.Abort()
 			return
 		}

@@ -1,14 +1,30 @@
 package common
 
-import "github.com/gin-gonic/gin"
+import (
+	"errors"
+	"net/http"
 
-// APIError is the standard JSON error envelope returned by the API.
-type APIError struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-}
+	"github.com/gin-gonic/gin"
+)
 
-// JSONError writes a standard error envelope to the response.
-func JSONError(c *gin.Context, status int, code, message string) {
-	c.JSON(status, gin.H{"error": APIError{Code: code, Message: message}})
+// HandleError writes err to the response. A RestError (or anything wrapping
+// one) is reported with its own status/message/field-errors; anything else
+// is treated as an unexpected failure and reported as a bare 500, so a raw
+// error from a DB driver or a third-party library never leaks its message
+// to the client.
+func HandleError(c *gin.Context, err error) {
+	var restErr RestError
+	if errors.As(err, &restErr) {
+		c.JSON(restErr.Status, gin.H{
+			"success": false,
+			"message": restErr.Message,
+			"errors":  restErr.Errors,
+		})
+		return
+	}
+
+	c.JSON(http.StatusInternalServerError, gin.H{
+		"success": false,
+		"message": "internal server error",
+	})
 }
