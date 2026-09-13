@@ -8,6 +8,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
+	"shagan_pos/internal/authtoken"
 	"shagan_pos/internal/common"
 )
 
@@ -44,7 +45,7 @@ var _ Interface = (*Service)(nil)
 // Login verifies email+password, then issues a new session: a short-lived
 // JWT access token plus a long-lived refresh token whose hash (never the
 // plaintext) is what gets persisted via Repository.CreateSession.
-func (s *Service) Login(ctx context.Context, in LoginRequest) (*LoginResult, error) {
+func (s *Service) Login(ctx context.Context, in LoginRequest) (*SessionResult, error) {
 	user, err := s.repo.GetUserByEmail(ctx, in.Email)
 	if err != nil {
 		var restErr common.RestError
@@ -58,7 +59,7 @@ func (s *Service) Login(ctx context.Context, in LoginRequest) (*LoginResult, err
 		return nil, common.UnauthorizedError(invalidCredentialsMessage)
 	}
 
-	accessToken, err := generateAccessToken(s.jwtSecret, *user, s.accessTokenTTL)
+	accessToken, err := authtoken.GenerateAccessToken(s.jwtSecret, user.ID, user.OrgID, s.accessTokenTTL)
 	if err != nil {
 		return nil, common.SystemError("failed to issue access token")
 	}
@@ -73,19 +74,89 @@ func (s *Service) Login(ctx context.Context, in LoginRequest) (*LoginResult, err
 		return nil, err
 	}
 
-	return &LoginResult{
+	return &SessionResult{
 		AccessToken:  accessToken,
 		RefreshToken: refreshPlaintext,
 		ExpiresAt:    expiresAt,
 	}, nil
 }
 
-func (s *Service) RefreshSession(ctx context.Context) (*Session, error) {
-	return s.repo.RefreshSession(ctx)
+// invalidRefreshTokenMessage is deliberately identical for "unknown token",
+// "revoked token", and "expired token" - same enumeration-prevention
+// reasoning as invalidCredentialsMessage.
+const invalidRefreshTokenMessage = "invalid or expired refresh token"
+
+// RefreshSession verifies a refresh token, then rotates it: a new session
+// (new refresh token) is created and the old one is revoked, so a stolen and
+// later-reused old token becomes detectable (it'll already be revoked)
+// instead of silently still working.
+func (s *Service) RefreshSession(ctx context.Context, in RefreshRequest) (*SessionResult, error) {
+	session, err := s.repo.GetSessionByRefreshHash(ctx, hashRefreshToken(in.RefreshToken))
+	if err != nil {
+		var restErr common.RestError
+		if errors.As(err, &restErr) && restErr.Status == http.StatusNotFound {
+			return nil, common.UnauthorizedError(invalidRefreshTokenMessage)
+		}
+		return nil, err
+	}
+
+	if session.RevokedAt != nil || time.Now().After(session.ExpiresAt) {
+		return nil, common.UnauthorizedError(invalidRefreshTokenMessage)
+	}
+
+	user, err := s.repo.GetUserByID(ctx, session.UserID)
+	if err != nil {
+		var restErr common.RestError
+		if errors.As(err, &restErr) && restErr.Status == http.StatusNotFound {
+			return nil, common.UnauthorizedError(invalidRefreshTokenMessage)
+		}
+		return nil, err
+	}
+
+	accessToken, err := authtoken.GenerateAccessToken(s.jwtSecret, user.ID, user.OrgID, s.accessTokenTTL)
+	if err != nil {
+		return nil, common.SystemError("failed to issue access token")
+	}
+
+	refreshPlaintext, refreshHash, err := generateRefreshToken()
+	if err != nil {
+		return nil, common.SystemError("failed to issue refresh token")
+	}
+	expiresAt := time.Now().Add(s.refreshTokenTTL)
+
+	if _, err := s.repo.CreateSession(ctx, user.ID, refreshHash, expiresAt); err != nil {
+		return nil, err
+	}
+	if err := s.repo.RevokeSession(ctx, session.ID); err != nil {
+		return nil, err
+	}
+
+	return &SessionResult{
+		AccessToken:  accessToken,
+		RefreshToken: refreshPlaintext,
+		ExpiresAt:    expiresAt,
+	}, nil
 }
 
-func (s *Service) Logout(ctx context.Context) error {
-	return s.repo.Logout(ctx)
+// Logout revokes the session identified by the given refresh token.
+// Idempotent: a token that's unknown or already revoked is treated as
+// "already logged out" rather than an error, since a client retrying a
+// logout call shouldn't get a scary failure for something already true.
+func (s *Service) Logout(ctx context.Context, in LogoutRequest) error {
+	session, err := s.repo.GetSessionByRefreshHash(ctx, hashRefreshToken(in.RefreshToken))
+	if err != nil {
+		var restErr common.RestError
+		if errors.As(err, &restErr) && restErr.Status == http.StatusNotFound {
+			return nil
+		}
+		return err
+	}
+
+	if session.RevokedAt != nil {
+		return nil
+	}
+
+	return s.repo.RevokeSession(ctx, session.ID)
 }
 
 func (s *Service) GetMe(ctx context.Context) (*User, error) {

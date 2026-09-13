@@ -81,3 +81,47 @@ type UpdateStaffRequest struct {
 	Phone    *string      `json:"phone" binding:"omitempty"`
 	Status   *StaffStatus `json:"status" binding:"omitempty"`
 }
+
+// --- Hand-written DTOs (not derived from the ERD/generator) ---
+
+// CreateAccountInput is the request body for `POST /internal/accounts`.
+// Not part of the ERD - this is an API-only shape for provisioning a brand
+// new tenant in one call (Organization + owner User + a default Branch).
+type CreateAccountInput struct {
+	OrganizationName string `json:"organization_name" binding:"required"`
+	OwnerEmail       string `json:"owner_email" binding:"required,email"`
+	OwnerPassword    string `json:"owner_password" binding:"required,min=8"`
+	BranchName       string `json:"branch_name" binding:"required"`
+}
+
+// CreateAccountResult is returned after provisioning a new tenant.
+type CreateAccountResult struct {
+	Organization Organization `json:"organization"`
+	Owner        User         `json:"owner"`
+	Branch       Branch       `json:"branch"`
+}
+
+// LoginRequest is the request body for `POST /auth/login`.
+type LoginRequest struct {
+	Email    string `json:"email" binding:"required,email"`
+	Password string `json:"password" binding:"required"`
+}
+
+// RefreshRequest is the request body for `POST /auth/refresh`.
+type RefreshRequest struct {
+	RefreshToken string `json:"refresh_token" binding:"required"`
+}
+
+// LogoutRequest is the request body for `POST /auth/logout`.
+type LogoutRequest struct {
+	RefreshToken string `json:"refresh_token" binding:"required"`
+}
+
+// SessionResult is returned on a successful login or refresh. RefreshToken is
+// the plaintext token - it is shown to the client this one time only; the
+// server stores just its hash (see Session.RefreshHash).
+type SessionResult struct {
+	AccessToken  string    `json:"access_token"`
+	RefreshToken string    `json:"refresh_token"`
+	ExpiresAt    time.Time `json:"expires_at"`
+}

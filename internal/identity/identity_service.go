@@ -4,9 +4,9 @@ import "context"
 
 // Interface defines the identity domain's use cases.
 type Interface interface {
-	Login(ctx context.Context, in LoginRequest) (*LoginResult, error)
-	RefreshSession(ctx context.Context) (*Session, error)
-	Logout(ctx context.Context) error
+	Login(ctx context.Context, in LoginRequest) (*SessionResult, error)
+	RefreshSession(ctx context.Context, in RefreshRequest) (*SessionResult, error)
+	Logout(ctx context.Context, in LogoutRequest) error
 	GetMe(ctx context.Context) (*User, error)
 	UpdateMe(ctx context.Context, in UpdateMeRequest) (*User, error)
 	VerifyManagerPIN(ctx context.Context) (*Staff, error)

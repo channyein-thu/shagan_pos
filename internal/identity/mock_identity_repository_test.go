@@ -377,6 +377,65 @@ func (_c *MockRepository_GetMe_Call) RunAndReturn(run func(context.Context) (*Us
 	return _c
 }
 
+// GetSessionByRefreshHash provides a mock function with given fields: ctx, refreshHash
+func (_m *MockRepository) GetSessionByRefreshHash(ctx context.Context, refreshHash string) (*Session, error) {
+	ret := _m.Called(ctx, refreshHash)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetSessionByRefreshHash")
+	}
+
+	var r0 *Session
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, string) (*Session, error)); ok {
+		return rf(ctx, refreshHash)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, string) *Session); ok {
+		r0 = rf(ctx, refreshHash)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*Session)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = rf(ctx, refreshHash)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// MockRepository_GetSessionByRefreshHash_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetSessionByRefreshHash'
+type MockRepository_GetSessionByRefreshHash_Call struct {
+	*mock.Call
+}
+
+// GetSessionByRefreshHash is a helper method to define mock.On call
+//   - ctx context.Context
+//   - refreshHash string
+func (_e *MockRepository_Expecter) GetSessionByRefreshHash(ctx interface{}, refreshHash interface{}) *MockRepository_GetSessionByRefreshHash_Call {
+	return &MockRepository_GetSessionByRefreshHash_Call{Call: _e.mock.On("GetSessionByRefreshHash", ctx, refreshHash)}
+}
+
+func (_c *MockRepository_GetSessionByRefreshHash_Call) Run(run func(ctx context.Context, refreshHash string)) *MockRepository_GetSessionByRefreshHash_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(string))
+	})
+	return _c
+}
+
+func (_c *MockRepository_GetSessionByRefreshHash_Call) Return(_a0 *Session, _a1 error) *MockRepository_GetSessionByRefreshHash_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *MockRepository_GetSessionByRefreshHash_Call) RunAndReturn(run func(context.Context, string) (*Session, error)) *MockRepository_GetSessionByRefreshHash_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetStaff provides a mock function with given fields: ctx, id
 func (_m *MockRepository) GetStaff(ctx context.Context, id uint) (*Staff, error) {
 	ret := _m.Called(ctx, id)
@@ -491,6 +550,65 @@ func (_c *MockRepository_GetUserByEmail_Call) Return(_a0 *User, _a1 error) *Mock
 }
 
 func (_c *MockRepository_GetUserByEmail_Call) RunAndReturn(run func(context.Context, string) (*User, error)) *MockRepository_GetUserByEmail_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetUserByID provides a mock function with given fields: ctx, id
+func (_m *MockRepository) GetUserByID(ctx context.Context, id uint) (*User, error) {
+	ret := _m.Called(ctx, id)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetUserByID")
+	}
+
+	var r0 *User
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, uint) (*User, error)); ok {
+		return rf(ctx, id)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, uint) *User); ok {
+		r0 = rf(ctx, id)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*User)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, uint) error); ok {
+		r1 = rf(ctx, id)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// MockRepository_GetUserByID_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetUserByID'
+type MockRepository_GetUserByID_Call struct {
+	*mock.Call
+}
+
+// GetUserByID is a helper method to define mock.On call
+//   - ctx context.Context
+//   - id uint
+func (_e *MockRepository_Expecter) GetUserByID(ctx interface{}, id interface{}) *MockRepository_GetUserByID_Call {
+	return &MockRepository_GetUserByID_Call{Call: _e.mock.On("GetUserByID", ctx, id)}
+}
+
+func (_c *MockRepository_GetUserByID_Call) Run(run func(ctx context.Context, id uint)) *MockRepository_GetUserByID_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(uint))
+	})
+	return _c
+}
+
+func (_c *MockRepository_GetUserByID_Call) Return(_a0 *User, _a1 error) *MockRepository_GetUserByID_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *MockRepository_GetUserByID_Call) RunAndReturn(run func(context.Context, uint) (*User, error)) *MockRepository_GetUserByID_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -903,110 +1021,6 @@ func (_c *MockRepository_ListStaff_Call) RunAndReturn(run func(context.Context) 
 	return _c
 }
 
-// Logout provides a mock function with given fields: ctx
-func (_m *MockRepository) Logout(ctx context.Context) error {
-	ret := _m.Called(ctx)
-
-	if len(ret) == 0 {
-		panic("no return value specified for Logout")
-	}
-
-	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context) error); ok {
-		r0 = rf(ctx)
-	} else {
-		r0 = ret.Error(0)
-	}
-
-	return r0
-}
-
-// MockRepository_Logout_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Logout'
-type MockRepository_Logout_Call struct {
-	*mock.Call
-}
-
-// Logout is a helper method to define mock.On call
-//   - ctx context.Context
-func (_e *MockRepository_Expecter) Logout(ctx interface{}) *MockRepository_Logout_Call {
-	return &MockRepository_Logout_Call{Call: _e.mock.On("Logout", ctx)}
-}
-
-func (_c *MockRepository_Logout_Call) Run(run func(ctx context.Context)) *MockRepository_Logout_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context))
-	})
-	return _c
-}
-
-func (_c *MockRepository_Logout_Call) Return(_a0 error) *MockRepository_Logout_Call {
-	_c.Call.Return(_a0)
-	return _c
-}
-
-func (_c *MockRepository_Logout_Call) RunAndReturn(run func(context.Context) error) *MockRepository_Logout_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
-// RefreshSession provides a mock function with given fields: ctx
-func (_m *MockRepository) RefreshSession(ctx context.Context) (*Session, error) {
-	ret := _m.Called(ctx)
-
-	if len(ret) == 0 {
-		panic("no return value specified for RefreshSession")
-	}
-
-	var r0 *Session
-	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context) (*Session, error)); ok {
-		return rf(ctx)
-	}
-	if rf, ok := ret.Get(0).(func(context.Context) *Session); ok {
-		r0 = rf(ctx)
-	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*Session)
-		}
-	}
-
-	if rf, ok := ret.Get(1).(func(context.Context) error); ok {
-		r1 = rf(ctx)
-	} else {
-		r1 = ret.Error(1)
-	}
-
-	return r0, r1
-}
-
-// MockRepository_RefreshSession_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'RefreshSession'
-type MockRepository_RefreshSession_Call struct {
-	*mock.Call
-}
-
-// RefreshSession is a helper method to define mock.On call
-//   - ctx context.Context
-func (_e *MockRepository_Expecter) RefreshSession(ctx interface{}) *MockRepository_RefreshSession_Call {
-	return &MockRepository_RefreshSession_Call{Call: _e.mock.On("RefreshSession", ctx)}
-}
-
-func (_c *MockRepository_RefreshSession_Call) Run(run func(ctx context.Context)) *MockRepository_RefreshSession_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context))
-	})
-	return _c
-}
-
-func (_c *MockRepository_RefreshSession_Call) Return(_a0 *Session, _a1 error) *MockRepository_RefreshSession_Call {
-	_c.Call.Return(_a0, _a1)
-	return _c
-}
-
-func (_c *MockRepository_RefreshSession_Call) RunAndReturn(run func(context.Context) (*Session, error)) *MockRepository_RefreshSession_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
 // RegisterDevice provides a mock function with given fields: ctx, in
 func (_m *MockRepository) RegisterDevice(ctx context.Context, in RegisterDeviceRequest) (*Device, error) {
 	ret := _m.Called(ctx, in)
@@ -1062,6 +1076,53 @@ func (_c *MockRepository_RegisterDevice_Call) Return(_a0 *Device, _a1 error) *Mo
 }
 
 func (_c *MockRepository_RegisterDevice_Call) RunAndReturn(run func(context.Context, RegisterDeviceRequest) (*Device, error)) *MockRepository_RegisterDevice_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// RevokeSession provides a mock function with given fields: ctx, sessionID
+func (_m *MockRepository) RevokeSession(ctx context.Context, sessionID uint) error {
+	ret := _m.Called(ctx, sessionID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for RevokeSession")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, uint) error); ok {
+		r0 = rf(ctx, sessionID)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// MockRepository_RevokeSession_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'RevokeSession'
+type MockRepository_RevokeSession_Call struct {
+	*mock.Call
+}
+
+// RevokeSession is a helper method to define mock.On call
+//   - ctx context.Context
+//   - sessionID uint
+func (_e *MockRepository_Expecter) RevokeSession(ctx interface{}, sessionID interface{}) *MockRepository_RevokeSession_Call {
+	return &MockRepository_RevokeSession_Call{Call: _e.mock.On("RevokeSession", ctx, sessionID)}
+}
+
+func (_c *MockRepository_RevokeSession_Call) Run(run func(ctx context.Context, sessionID uint)) *MockRepository_RevokeSession_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(uint))
+	})
+	return _c
+}
+
+func (_c *MockRepository_RevokeSession_Call) Return(_a0 error) *MockRepository_RevokeSession_Call {
+	_c.Call.Return(_a0)
+	return _c
+}
+
+func (_c *MockRepository_RevokeSession_Call) RunAndReturn(run func(context.Context, uint) error) *MockRepository_RevokeSession_Call {
 	_c.Call.Return(run)
 	return _c
 }

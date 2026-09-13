@@ -22,9 +22,16 @@ func NewIdentityAPI(db *gorm.DB, jwtSecret []byte, accessTokenTTL, refreshTokenT
 	}
 }
 
-func (a *IdentityAPI) RegisterRoutes(rg *gin.RouterGroup) {
+// RegisterPublicRoutes mounts the two routes that must work without an
+// access token - login (that's the whole point) and refresh (the whole
+// point of which is obtaining a new access token when you don't have a
+// valid one anymore). Neither can sit behind middleware.Auth.
+func (a *IdentityAPI) RegisterPublicRoutes(rg *gin.RouterGroup) {
 	rg.POST("/auth/login", a.Login)
 	rg.POST("/auth/refresh", a.RefreshSession)
+}
+
+func (a *IdentityAPI) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.POST("/auth/logout", a.Logout)
 	rg.GET("/me", a.GetMe)
 	rg.PATCH("/me", a.UpdateMe)
@@ -71,7 +78,12 @@ func (a *IdentityAPI) Login(c *gin.Context) {
 
 // RefreshSession handles `POST /auth/refresh`.
 func (a *IdentityAPI) RefreshSession(c *gin.Context) {
-	result, err := a.service.RefreshSession(c.Request.Context())
+	var in identity.RefreshRequest
+	if err := c.ShouldBindJSON(&in); err != nil {
+		common.HandleError(c, common.BadRequestError(err.Error()))
+		return
+	}
+	result, err := a.service.RefreshSession(c.Request.Context(), in)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -81,7 +93,12 @@ func (a *IdentityAPI) RefreshSession(c *gin.Context) {
 
 // Logout handles `POST /auth/logout`. Revokes refresh token
 func (a *IdentityAPI) Logout(c *gin.Context) {
-	if err := a.service.Logout(c.Request.Context()); err != nil {
+	var in identity.LogoutRequest
+	if err := c.ShouldBindJSON(&in); err != nil {
+		common.HandleError(c, common.BadRequestError(err.Error()))
+		return
+	}
+	if err := a.service.Logout(c.Request.Context(), in); err != nil {
 		common.HandleError(c, err)
 		return
 	}

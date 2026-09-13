@@ -14,8 +14,16 @@ type Repository interface {
 	// CreateSession persists a new session for userID. refreshHash is the
 	// refresh token's hash, never the plaintext - see Service.Login.
 	CreateSession(ctx context.Context, userID uint, refreshHash string, expiresAt time.Time) (*Session, error)
-	RefreshSession(ctx context.Context) (*Session, error)
-	Logout(ctx context.Context) error
+	// GetSessionByRefreshHash returns common.NotFoundError when no session has
+	// that hash - Service.RefreshSession relies on that specific status to
+	// fold "unknown token" into the same generic response as an expired one.
+	GetSessionByRefreshHash(ctx context.Context, refreshHash string) (*Session, error)
+	// GetUserByID backs RefreshSession's need for the user's OrgID (Session
+	// doesn't carry it) when minting a new access token.
+	GetUserByID(ctx context.Context, id uint) (*User, error)
+	// RevokeSession marks a session as revoked so its refresh token can never
+	// be used again - called on both logout and successful refresh rotation.
+	RevokeSession(ctx context.Context, sessionID uint) error
 	GetMe(ctx context.Context) (*User, error)
 	UpdateMe(ctx context.Context, in UpdateMeRequest) (*User, error)
 	VerifyManagerPIN(ctx context.Context) (*Staff, error)

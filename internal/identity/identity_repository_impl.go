@@ -29,13 +29,18 @@ func (r *RepositoryImpl) CreateSession(ctx context.Context, userID uint, refresh
 	return nil, common.ErrNotImplemented
 }
 
-// RefreshSession backs `POST /auth/refresh`.
-func (r *RepositoryImpl) RefreshSession(ctx context.Context) (*Session, error) {
+// GetSessionByRefreshHash backs Service.RefreshSession's token lookup.
+func (r *RepositoryImpl) GetSessionByRefreshHash(ctx context.Context, refreshHash string) (*Session, error) {
 	return nil, common.ErrNotImplemented
 }
 
-// Logout backs `POST /auth/logout`. Revokes refresh token
-func (r *RepositoryImpl) Logout(ctx context.Context) error {
+// GetUserByID backs Service.RefreshSession's need for the user's OrgID.
+func (r *RepositoryImpl) GetUserByID(ctx context.Context, id uint) (*User, error) {
+	return nil, common.ErrNotImplemented
+}
+
+// RevokeSession backs Service.RefreshSession (rotation) and Service.Logout.
+func (r *RepositoryImpl) RevokeSession(ctx context.Context, sessionID uint) error {
 	return common.ErrNotImplemented
 }
 

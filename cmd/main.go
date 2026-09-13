@@ -51,14 +51,21 @@ func main() {
 	r.GET("/healthz", healthcheck.Handler(db))
 	r.GET("/health", healthcheck.Handler(db))
 
-	v1 := r.Group("/api/v1")
-	v1.Use(middleware.Auth())
+	identityAPI := api.NewIdentityAPI(db, []byte(jwtSecret), identity.DefaultAccessTokenTTL, identity.DefaultRefreshTokenTTL)
 
-	registerRoutes(v1, db, store, jwtSecret)
+	// Login and refresh can't require a valid access token - that's exactly
+	// what they exist to hand out. Same "/api/v1" prefix, no Auth middleware.
+	v1Public := r.Group("/api/v1")
+	identityAPI.RegisterPublicRoutes(v1Public)
+
+	v1 := r.Group("/api/v1")
+	v1.Use(middleware.Auth([]byte(jwtSecret)))
+	identityAPI.RegisterRoutes(v1)
+	registerRoutes(v1, db, store)
 
 	internalGroup := r.Group("/internal")
 	internalGroup.Use(middleware.InternalAuth(os.Getenv("INTERNAL_API_KEY")))
-	registerInternalRoutes(internalGroup, db, jwtSecret)
+	identityAPI.RegisterInternalRoutes(internalGroup)
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -72,8 +79,7 @@ func main() {
 
 // registerRoutes wires each domain's repository -> service -> API handler and mounts its routes.
 // TODO: as each domain grows, this is the place new sub-groups (e.g. per-branch scoping) get added.
-func registerRoutes(v1 *gin.RouterGroup, db *gorm.DB, store storage.Storage, jwtSecret string) {
-	api.NewIdentityAPI(db, []byte(jwtSecret), identity.DefaultAccessTokenTTL, identity.DefaultRefreshTokenTTL).RegisterRoutes(v1)
+func registerRoutes(v1 *gin.RouterGroup, db *gorm.DB, store storage.Storage) {
 	api.NewCustomerAPI(db).RegisterRoutes(v1)
 	api.NewPlatformAPI(db, store).RegisterRoutes(v1)
 	api.NewCatalogAPI(db).RegisterRoutes(v1)
@@ -85,12 +91,6 @@ func registerRoutes(v1 *gin.RouterGroup, db *gorm.DB, store storage.Storage, jwt
 	api.NewSyncAPI(db).RegisterRoutes(v1)
 	api.NewAuditAPI(db).RegisterRoutes(v1)
 	api.NewReportsAPI(db).RegisterRoutes(v1)
-}
-
-// registerInternalRoutes mounts routes meant only for Shagan's own internal
-// tooling (e.g. provisioning a new customer's account) - see middleware.InternalAuth.
-func registerInternalRoutes(rg *gin.RouterGroup, db *gorm.DB, jwtSecret string) {
-	api.NewIdentityAPI(db, []byte(jwtSecret), identity.DefaultAccessTokenTTL, identity.DefaultRefreshTokenTTL).RegisterInternalRoutes(rg)
 }
 
 func connectDB() (*gorm.DB, error) {

@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/bcrypt"
 
+	"shagan_pos/internal/authtoken"
 	"shagan_pos/internal/common"
 )
 
@@ -121,13 +121,10 @@ func TestService_Login_HappyPath(t *testing.T) {
 	sum := sha256.Sum256([]byte(result.RefreshToken))
 	require.Equal(t, capturedHash, hex.EncodeToString(sum[:]))
 
-	// access token must be a valid JWT signed with our secret, carrying the right claims
-	token, err := jwt.ParseWithClaims(result.AccessToken, &accessTokenClaims{}, func(*jwt.Token) (interface{}, error) {
-		return testJWTSecret, nil
-	})
+	// access token must be a valid JWT signed with our secret, carrying the right claims -
+	// parsed via the exact same code middleware.Auth uses to verify it in production
+	claims, err := authtoken.ParseAccessToken(testJWTSecret, result.AccessToken)
 	require.NoError(t, err)
-	claims, ok := token.Claims.(*accessTokenClaims)
-	require.True(t, ok)
 	require.Equal(t, user.ID, claims.UserID)
 	require.Equal(t, user.OrgID, claims.OrgID)
 }
@@ -192,6 +189,176 @@ func TestService_Login_CreateSessionFails_PropagatesError(t *testing.T) {
 		Once()
 
 	_, err := svc.Login(context.Background(), LoginRequest{Email: "owner@acme.test", Password: plaintext})
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusInternalServerError)
+}
+
+const testRefreshPlaintext = "the-refresh-token-plaintext"
+
+func TestService_RefreshSession_HappyPath_RotatesToken(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo)
+
+	oldHash := hashRefreshToken(testRefreshPlaintext)
+	session := &Session{ID: 1, UserID: 42, RefreshHash: oldHash, ExpiresAt: time.Now().Add(time.Hour)}
+	user := &User{ID: 42, OrgID: 7}
+
+	repo.EXPECT().GetSessionByRefreshHash(mock.Anything, oldHash).Return(session, nil).Once()
+	repo.EXPECT().GetUserByID(mock.Anything, user.ID).Return(user, nil).Once()
+
+	var newHash string
+	repo.EXPECT().
+		CreateSession(mock.Anything, user.ID, mock.MatchedBy(func(h string) bool {
+			newHash = h
+			return h != oldHash // must be a genuinely new token, not the same one reused
+		}), mock.AnythingOfType("time.Time")).
+		Return(&Session{ID: 2}, nil).
+		Once()
+	repo.EXPECT().RevokeSession(mock.Anything, session.ID).Return(nil).Once()
+
+	result, err := svc.RefreshSession(context.Background(), RefreshRequest{RefreshToken: testRefreshPlaintext})
+	require.NoError(t, err)
+	require.NotEmpty(t, result.AccessToken)
+	require.NotEmpty(t, result.RefreshToken)
+	require.Equal(t, newHash, hashRefreshToken(result.RefreshToken))
+
+	claims, err := authtoken.ParseAccessToken(testJWTSecret, result.AccessToken)
+	require.NoError(t, err)
+	require.Equal(t, user.ID, claims.UserID)
+	require.Equal(t, user.OrgID, claims.OrgID)
+}
+
+func TestService_RefreshSession_UnknownToken_ReturnsGenericUnauthorized(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo)
+
+	repo.EXPECT().
+		GetSessionByRefreshHash(mock.Anything, mock.Anything).
+		Return(nil, common.NotFoundError("session not found")).
+		Once()
+
+	_, err := svc.RefreshSession(context.Background(), RefreshRequest{RefreshToken: "nonsense"})
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusUnauthorized)
+
+	var restErr common.RestError
+	errors.As(err, &restErr)
+	require.Equal(t, invalidRefreshTokenMessage, restErr.Message)
+}
+
+func TestService_RefreshSession_RevokedToken_ReturnsSameGenericUnauthorized(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo)
+
+	revokedAt := time.Now().Add(-time.Minute)
+	session := &Session{ID: 1, UserID: 42, ExpiresAt: time.Now().Add(time.Hour), RevokedAt: &revokedAt}
+	repo.EXPECT().GetSessionByRefreshHash(mock.Anything, mock.Anything).Return(session, nil).Once()
+
+	_, err := svc.RefreshSession(context.Background(), RefreshRequest{RefreshToken: testRefreshPlaintext})
+	require.Error(t, err)
+
+	var restErr common.RestError
+	errors.As(err, &restErr)
+	require.Equal(t, invalidRefreshTokenMessage, restErr.Message, "must match the unknown-token message exactly")
+}
+
+func TestService_RefreshSession_ExpiredToken_ReturnsSameGenericUnauthorized(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo)
+
+	session := &Session{ID: 1, UserID: 42, ExpiresAt: time.Now().Add(-time.Minute)}
+	repo.EXPECT().GetSessionByRefreshHash(mock.Anything, mock.Anything).Return(session, nil).Once()
+
+	_, err := svc.RefreshSession(context.Background(), RefreshRequest{RefreshToken: testRefreshPlaintext})
+	require.Error(t, err)
+
+	var restErr common.RestError
+	errors.As(err, &restErr)
+	require.Equal(t, invalidRefreshTokenMessage, restErr.Message, "must match the unknown-token message exactly")
+}
+
+func TestService_RefreshSession_UserGone_ReturnsGenericUnauthorized(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo)
+
+	session := &Session{ID: 1, UserID: 42, ExpiresAt: time.Now().Add(time.Hour)}
+	repo.EXPECT().GetSessionByRefreshHash(mock.Anything, mock.Anything).Return(session, nil).Once()
+	repo.EXPECT().GetUserByID(mock.Anything, session.UserID).Return(nil, common.NotFoundError("user not found")).Once()
+
+	_, err := svc.RefreshSession(context.Background(), RefreshRequest{RefreshToken: testRefreshPlaintext})
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusUnauthorized)
+}
+
+func TestService_RefreshSession_RotationFails_PropagatesError(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo)
+
+	session := &Session{ID: 1, UserID: 42, ExpiresAt: time.Now().Add(time.Hour)}
+	user := &User{ID: 42, OrgID: 7}
+	repo.EXPECT().GetSessionByRefreshHash(mock.Anything, mock.Anything).Return(session, nil).Once()
+	repo.EXPECT().GetUserByID(mock.Anything, session.UserID).Return(user, nil).Once()
+
+	dbErr := common.SystemError("db write failed")
+	repo.EXPECT().
+		CreateSession(mock.Anything, user.ID, mock.Anything, mock.AnythingOfType("time.Time")).
+		Return(nil, dbErr).
+		Once()
+
+	_, err := svc.RefreshSession(context.Background(), RefreshRequest{RefreshToken: testRefreshPlaintext})
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusInternalServerError)
+}
+
+func TestService_Logout_HappyPath_RevokesSession(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo)
+
+	session := &Session{ID: 1, UserID: 42}
+	repo.EXPECT().GetSessionByRefreshHash(mock.Anything, hashRefreshToken(testRefreshPlaintext)).Return(session, nil).Once()
+	repo.EXPECT().RevokeSession(mock.Anything, session.ID).Return(nil).Once()
+
+	err := svc.Logout(context.Background(), LogoutRequest{RefreshToken: testRefreshPlaintext})
+	require.NoError(t, err)
+}
+
+func TestService_Logout_UnknownToken_SucceedsIdempotently(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo)
+
+	repo.EXPECT().
+		GetSessionByRefreshHash(mock.Anything, mock.Anything).
+		Return(nil, common.NotFoundError("session not found")).
+		Once()
+	// RevokeSession must never be called - no .EXPECT() set up for it means
+	// the mock fails the test if it is.
+
+	err := svc.Logout(context.Background(), LogoutRequest{RefreshToken: "nonsense"})
+	require.NoError(t, err)
+}
+
+func TestService_Logout_AlreadyRevoked_SucceedsIdempotently(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo)
+
+	revokedAt := time.Now().Add(-time.Minute)
+	session := &Session{ID: 1, UserID: 42, RevokedAt: &revokedAt}
+	repo.EXPECT().GetSessionByRefreshHash(mock.Anything, mock.Anything).Return(session, nil).Once()
+
+	err := svc.Logout(context.Background(), LogoutRequest{RefreshToken: testRefreshPlaintext})
+	require.NoError(t, err)
+}
+
+func TestService_Logout_RepositoryFailure_Propagates(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo)
+
+	session := &Session{ID: 1, UserID: 42}
+	repo.EXPECT().GetSessionByRefreshHash(mock.Anything, mock.Anything).Return(session, nil).Once()
+	dbErr := common.SystemError("db write failed")
+	repo.EXPECT().RevokeSession(mock.Anything, session.ID).Return(dbErr).Once()
+
+	err := svc.Logout(context.Background(), LogoutRequest{RefreshToken: testRefreshPlaintext})
 	require.Error(t, err)
 	requireRestErrorStatus(t, err, http.StatusInternalServerError)
 }

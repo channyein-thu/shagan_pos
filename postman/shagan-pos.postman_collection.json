@@ -123,8 +123,8 @@
             "method": "POST",
             "header": [
               {
-                "key": "Authorization",
-                "value": "Bearer {{token}}",
+                "key": "Content-Type",
+                "value": "application/json",
                 "type": "text"
               }
             ],
@@ -140,7 +140,19 @@
                 "login"
               ]
             },
-            "description": "Owner email+password login"
+            "description": "Owner email+password login",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"owner@example.com\",\n  \"password\": \"changeme123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           }
         },
         {
@@ -149,8 +161,8 @@
             "method": "POST",
             "header": [
               {
-                "key": "Authorization",
-                "value": "Bearer {{token}}",
+                "key": "Content-Type",
+                "value": "application/json",
                 "type": "text"
               }
             ],
@@ -166,7 +178,19 @@
                 "refresh"
               ]
             },
-            "description": "RefreshSession"
+            "description": "RefreshSession",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"paste-refresh-token-from-login-here\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           }
         },
         {
@@ -177,6 +201,11 @@
               {
                 "key": "Authorization",
                 "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
                 "type": "text"
               }
             ],
@@ -192,7 +221,16 @@
                 "logout"
               ]
             },
-            "description": "Revokes refresh token"
+            "description": "Revokes refresh token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"paste-refresh-token-from-login-here\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           }
         },
         {
@@ -3133,6 +3171,123 @@
               ]
             },
             "description": "No table; renders a test payload"
+          }
+        },
+        {
+          "name": "UploadPaymentQRCode - POST /branches/:id/payment-qr-codes",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/branches/:id/payment-qr-codes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "branches",
+                ":id",
+                "payment-qr-codes"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1"
+                }
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "provider",
+                  "value": "kbzpay",
+                  "type": "text"
+                },
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            },
+            "description": "Multipart upload: \"file\" (the QR image) + \"provider\" (e.g. kbzpay, wavepay)."
+          }
+        },
+        {
+          "name": "ListPaymentQRCodes - GET /branches/:id/payment-qr-codes",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/branches/:id/payment-qr-codes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "branches",
+                ":id",
+                "payment-qr-codes"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "DeletePaymentQRCode - DELETE /branches/:id/payment-qr-codes/:qrId",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/branches/:id/payment-qr-codes/:qrId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "branches",
+                ":id",
+                "payment-qr-codes",
+                ":qrId"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1"
+                },
+                {
+                  "key": "qrId",
+                  "value": "1"
+                }
+              ]
+            }
           }
         }
       ]
