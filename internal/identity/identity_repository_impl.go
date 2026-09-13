@@ -2,6 +2,7 @@ package identity
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"gorm.io/gorm"
@@ -21,12 +22,27 @@ var _ Repository = (*RepositoryImpl)(nil)
 
 // GetUserByEmail backs Service.Login's credential lookup.
 func (r *RepositoryImpl) GetUserByEmail(ctx context.Context, email string) (*User, error) {
-	return nil, common.ErrNotImplemented
+	var user User
+	if err := r.db.WithContext(ctx).Where("email = ?", email).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, common.NotFoundError("user not found")
+		}
+		return nil, err
+	}
+	return &user, nil
 }
 
 // CreateSession backs Service.Login's session creation.
 func (r *RepositoryImpl) CreateSession(ctx context.Context, userID uint, refreshHash string, expiresAt time.Time) (*Session, error) {
-	return nil, common.ErrNotImplemented
+	session := Session{
+		UserID:      userID,
+		RefreshHash: refreshHash,
+		ExpiresAt:   expiresAt,
+	}
+	if err := r.db.WithContext(ctx).Create(&session).Error; err != nil {
+		return nil, err
+	}
+	return &session, nil
 }
 
 // GetSessionByRefreshHash backs Service.RefreshSession's token lookup.
