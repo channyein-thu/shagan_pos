@@ -1,10 +1,19 @@
 package identity
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Repository defines the identity domain's persistence operations.
 type Repository interface {
-	Login(ctx context.Context) (*Session, error)
+	// GetUserByEmail returns common.NotFoundError when no user has that email -
+	// Service.Login relies on that specific status to fold "unknown email" and
+	// "wrong password" into the same generic response.
+	GetUserByEmail(ctx context.Context, email string) (*User, error)
+	// CreateSession persists a new session for userID. refreshHash is the
+	// refresh token's hash, never the plaintext - see Service.Login.
+	CreateSession(ctx context.Context, userID uint, refreshHash string, expiresAt time.Time) (*Session, error)
 	RefreshSession(ctx context.Context) (*Session, error)
 	Logout(ctx context.Context) error
 	GetMe(ctx context.Context) (*User, error)

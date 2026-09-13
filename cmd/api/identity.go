@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -15,8 +16,10 @@ type IdentityAPI struct {
 	service identity.Interface
 }
 
-func NewIdentityAPI(db *gorm.DB) *IdentityAPI {
-	return &IdentityAPI{service: identity.NewService(identity.NewRepository(db))}
+func NewIdentityAPI(db *gorm.DB, jwtSecret []byte, accessTokenTTL, refreshTokenTTL time.Duration) *IdentityAPI {
+	return &IdentityAPI{
+		service: identity.NewService(identity.NewRepository(db), jwtSecret, accessTokenTTL, refreshTokenTTL),
+	}
 }
 
 func (a *IdentityAPI) RegisterRoutes(rg *gin.RouterGroup) {
@@ -53,7 +56,12 @@ func (a *IdentityAPI) RegisterInternalRoutes(rg *gin.RouterGroup) {
 
 // Login handles `POST /auth/login`. Owner email+password login
 func (a *IdentityAPI) Login(c *gin.Context) {
-	result, err := a.service.Login(c.Request.Context())
+	var in identity.LoginRequest
+	if err := c.ShouldBindJSON(&in); err != nil {
+		common.HandleError(c, common.BadRequestError(err.Error()))
+		return
+	}
+	result, err := a.service.Login(c.Request.Context(), in)
 	if err != nil {
 		common.HandleError(c, err)
 		return

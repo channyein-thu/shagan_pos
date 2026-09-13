@@ -1,0 +1,11 @@
+with-expecter: true
+packages:
+  shagan_pos/internal/identity:
+    config:
+      dir: "internal/identity"
+      outpkg: identity
+      inpackage: true
+    interfaces:
+      Repository:
+        config:
+          filename: "mock_identity_repository_test.go"

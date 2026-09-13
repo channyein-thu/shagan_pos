@@ -2,6 +2,7 @@ package identity
 
 import (
 	"context"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -18,8 +19,13 @@ func NewRepository(db *gorm.DB) Repository {
 
 var _ Repository = (*RepositoryImpl)(nil)
 
-// Login backs `POST /auth/login`. Owner email+password login
-func (r *RepositoryImpl) Login(ctx context.Context) (*Session, error) {
+// GetUserByEmail backs Service.Login's credential lookup.
+func (r *RepositoryImpl) GetUserByEmail(ctx context.Context, email string) (*User, error) {
+	return nil, common.ErrNotImplemented
+}
+
+// CreateSession backs Service.Login's session creation.
+func (r *RepositoryImpl) CreateSession(ctx context.Context, userID uint, refreshHash string, expiresAt time.Time) (*Session, error) {
 	return nil, common.ErrNotImplemented
 }
 
@@ -128,7 +134,49 @@ func (r *RepositoryImpl) ListRolePermissions(ctx context.Context, id uint) ([]Pe
 	return nil, common.ErrNotImplemented
 }
 
-// CreateAccount backs `POST /internal/accounts`. Shagan-team-only: provisions a new tenant in one call.
+// CreateAccount backs `POST /internal/accounts`. Shagan-team-only: provisions
+// a new tenant (Organization + owner User + a default Branch) in one
+// transaction, so a failure partway through never leaves an orphaned
+// Organization with no owner. By the time in.OwnerPassword reaches here it is
+// expected to already be a hash - see Service.CreateAccount.
 func (r *RepositoryImpl) CreateAccount(ctx context.Context, in CreateAccountInput) (*CreateAccountResult, error) {
-	return nil, common.ErrNotImplemented
+	var result CreateAccountResult
+
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		org := Organization{Name: in.OrganizationName}
+		if err := tx.Create(&org).Error; err != nil {
+			return err
+		}
+
+		email := in.OwnerEmail
+		owner := User{
+			OrgID:          org.ID,
+			AccountType:    AccountTypeOwner,
+			Email:          &email,
+			CredentialHash: in.OwnerPassword,
+		}
+		if err := tx.Create(&owner).Error; err != nil {
+			if common.IsDuplicateError(err) {
+				return common.ConflictError("an account with this email already exists")
+			}
+			return err
+		}
+
+		branch := Branch{
+			OrgID:  org.ID,
+			Name:   in.BranchName,
+			Status: BranchStatusActive,
+		}
+		if err := tx.Create(&branch).Error; err != nil {
+			return err
+		}
+
+		result = CreateAccountResult{Organization: org, Owner: owner, Branch: branch}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &result, nil
 }

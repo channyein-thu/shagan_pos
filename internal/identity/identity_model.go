@@ -79,7 +79,7 @@ type User struct {
 	Name           *string     `gorm:"size:255" json:"name"`
 	AccountType    AccountType `gorm:"type:varchar(30);not null" json:"account_type"` // one of AccountType* constants below (TODO: confirm real values)
 	DeviceID       *uint       `gorm:"index" json:"device_id"`
-	Email          *string     `gorm:"size:255" json:"email"`
+	Email          *string     `gorm:"size:255;uniqueIndex" json:"email"`
 	CredentialHash string      `gorm:"size:255;not null" json:"credential_hash"`
 	CreatedAt      time.Time   `gorm:"autoCreateTime;not null" json:"created_at"`
 	UpdatedAt      time.Time   `gorm:"autoUpdateTime;not null" json:"updated_at"`

@@ -1,19 +1,83 @@
 package identity
 
-import "context"
+import (
+	"context"
+	"errors"
+	"net/http"
+	"time"
+
+	"golang.org/x/crypto/bcrypt"
+
+	"shagan_pos/internal/common"
+)
+
+const (
+	// DefaultAccessTokenTTL is how long an issued access token stays valid.
+	DefaultAccessTokenTTL = 15 * time.Minute
+	// DefaultRefreshTokenTTL is how long a session's refresh token stays valid.
+	DefaultRefreshTokenTTL = 30 * 24 * time.Hour
+)
+
+// invalidCredentialsMessage is deliberately identical for "no such email" and
+// "wrong password" - telling those apart lets an attacker enumerate which
+// emails have accounts.
+const invalidCredentialsMessage = "invalid email or password"
 
 type Service struct {
-	repo Repository
+	repo            Repository
+	jwtSecret       []byte
+	accessTokenTTL  time.Duration
+	refreshTokenTTL time.Duration
 }
 
-func NewService(repo Repository) *Service {
-	return &Service{repo: repo}
+func NewService(repo Repository, jwtSecret []byte, accessTokenTTL, refreshTokenTTL time.Duration) *Service {
+	return &Service{
+		repo:            repo,
+		jwtSecret:       jwtSecret,
+		accessTokenTTL:  accessTokenTTL,
+		refreshTokenTTL: refreshTokenTTL,
+	}
 }
 
 var _ Interface = (*Service)(nil)
 
-func (s *Service) Login(ctx context.Context) (*Session, error) {
-	return s.repo.Login(ctx)
+// Login verifies email+password, then issues a new session: a short-lived
+// JWT access token plus a long-lived refresh token whose hash (never the
+// plaintext) is what gets persisted via Repository.CreateSession.
+func (s *Service) Login(ctx context.Context, in LoginRequest) (*LoginResult, error) {
+	user, err := s.repo.GetUserByEmail(ctx, in.Email)
+	if err != nil {
+		var restErr common.RestError
+		if errors.As(err, &restErr) && restErr.Status == http.StatusNotFound {
+			return nil, common.UnauthorizedError(invalidCredentialsMessage)
+		}
+		return nil, err
+	}
+
+	if bcrypt.CompareHashAndPassword([]byte(user.CredentialHash), []byte(in.Password)) != nil {
+		return nil, common.UnauthorizedError(invalidCredentialsMessage)
+	}
+
+	accessToken, err := generateAccessToken(s.jwtSecret, *user, s.accessTokenTTL)
+	if err != nil {
+		return nil, common.SystemError("failed to issue access token")
+	}
+
+	refreshPlaintext, refreshHash, err := generateRefreshToken()
+	if err != nil {
+		return nil, common.SystemError("failed to issue refresh token")
+	}
+	expiresAt := time.Now().Add(s.refreshTokenTTL)
+
+	if _, err := s.repo.CreateSession(ctx, user.ID, refreshHash, expiresAt); err != nil {
+		return nil, err
+	}
+
+	return &LoginResult{
+		AccessToken:  accessToken,
+		RefreshToken: refreshPlaintext,
+		ExpiresAt:    expiresAt,
+	}, nil
 }
 
 func (s *Service) RefreshSession(ctx context.Context) (*Session, error) {
@@ -100,6 +164,15 @@ func (s *Service) ListRolePermissions(ctx context.Context, id uint) ([]Permissio
 	return s.repo.ListRolePermissions(ctx, id)
 }
 
+// CreateAccount hashes the owner's plaintext password before it ever reaches
+// the repository - the repository just persists whatever CredentialHash it's
+// given, it doesn't know or care whether it's already hashed.
 func (s *Service) CreateAccount(ctx context.Context, in CreateAccountInput) (*CreateAccountResult, error) {
+	hash, err := bcrypt.GenerateFromPassword([]byte(in.OwnerPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, common.SystemError("failed to hash password")
+	}
+	in.OwnerPassword = string(hash)
+
 	return s.repo.CreateAccount(ctx, in)
 }

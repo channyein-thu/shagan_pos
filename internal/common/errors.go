@@ -37,6 +37,10 @@ func NotFoundError(message string) RestError {
 	return RestError{Status: http.StatusNotFound, Message: message}
 }
 
+func ConflictError(message string) RestError {
+	return RestError{Status: http.StatusConflict, Message: message}
+}
+
 func SystemError(message string) RestError {
 	return RestError{Status: http.StatusInternalServerError, Message: message}
 }

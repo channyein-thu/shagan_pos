@@ -12,6 +12,7 @@ import (
 
 	"shagan_pos/cmd/api"
 	"shagan_pos/internal/healthcheck"
+	"shagan_pos/internal/identity"
 	"shagan_pos/internal/middleware"
 	"shagan_pos/internal/migrate"
 	"shagan_pos/internal/storage"
@@ -36,6 +37,11 @@ func main() {
 		log.Fatalf("failed to connect to object storage: %v", err)
 	}
 
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		log.Fatal("JWT_SECRET is required")
+	}
+
 	r := gin.Default()
 	if err := r.SetTrustedProxies(nil); err != nil {
 		log.Fatalf("failed to configure trusted proxies: %v", err)
@@ -48,11 +54,11 @@ func main() {
 	v1 := r.Group("/api/v1")
 	v1.Use(middleware.Auth())
 
-	registerRoutes(v1, db, store)
+	registerRoutes(v1, db, store, jwtSecret)
 
 	internalGroup := r.Group("/internal")
 	internalGroup.Use(middleware.InternalAuth(os.Getenv("INTERNAL_API_KEY")))
-	registerInternalRoutes(internalGroup, db)
+	registerInternalRoutes(internalGroup, db, jwtSecret)
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -66,8 +72,8 @@ func main() {
 
 // registerRoutes wires each domain's repository -> service -> API handler and mounts its routes.
 // TODO: as each domain grows, this is the place new sub-groups (e.g. per-branch scoping) get added.
-func registerRoutes(v1 *gin.RouterGroup, db *gorm.DB, store storage.Storage) {
-	api.NewIdentityAPI(db).RegisterRoutes(v1)
+func registerRoutes(v1 *gin.RouterGroup, db *gorm.DB, store storage.Storage, jwtSecret string) {
+	api.NewIdentityAPI(db, []byte(jwtSecret), identity.DefaultAccessTokenTTL, identity.DefaultRefreshTokenTTL).RegisterRoutes(v1)
 	api.NewCustomerAPI(db).RegisterRoutes(v1)
 	api.NewPlatformAPI(db, store).RegisterRoutes(v1)
 	api.NewCatalogAPI(db).RegisterRoutes(v1)
@@ -83,8 +89,8 @@ func registerRoutes(v1 *gin.RouterGroup, db *gorm.DB, store storage.Storage) {
 
 // registerInternalRoutes mounts routes meant only for Shagan's own internal
 // tooling (e.g. provisioning a new customer's account) - see middleware.InternalAuth.
-func registerInternalRoutes(rg *gin.RouterGroup, db *gorm.DB) {
-	api.NewIdentityAPI(db).RegisterInternalRoutes(rg)
+func registerInternalRoutes(rg *gin.RouterGroup, db *gorm.DB, jwtSecret string) {
+	api.NewIdentityAPI(db, []byte(jwtSecret), identity.DefaultAccessTokenTTL, identity.DefaultRefreshTokenTTL).RegisterInternalRoutes(rg)
 }
 
 func connectDB() (*gorm.DB, error) {
