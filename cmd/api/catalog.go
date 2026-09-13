@@ -75,7 +75,7 @@ func (a *CatalogAPI) GetProductByBarcode(c *gin.Context) {
 
 // CreateProduct handles `POST /products`.
 func (a *CatalogAPI) CreateProduct(c *gin.Context) {
-	var in catalog.Product
+	var in catalog.CreateProductRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
@@ -95,7 +95,7 @@ func (a *CatalogAPI) UpdateProduct(c *gin.Context) {
 		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
-	var in catalog.Product
+	var in catalog.UpdateProductRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
@@ -134,7 +134,7 @@ func (a *CatalogAPI) ListCategories(c *gin.Context) {
 
 // CreateCategory handles `POST /categories`.
 func (a *CatalogAPI) CreateCategory(c *gin.Context) {
-	var in catalog.Category
+	var in catalog.CreateCategoryRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
@@ -154,7 +154,7 @@ func (a *CatalogAPI) UpdateCategory(c *gin.Context) {
 		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
-	var in catalog.Category
+	var in catalog.UpdateCategoryRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
@@ -203,7 +203,7 @@ func (a *CatalogAPI) ListCombos(c *gin.Context) {
 
 // CreateCombo handles `POST /combos`.
 func (a *CatalogAPI) CreateCombo(c *gin.Context) {
-	var in catalog.Combo
+	var in catalog.CreateComboRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
@@ -223,7 +223,7 @@ func (a *CatalogAPI) UpdateCombo(c *gin.Context) {
 		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
-	var in catalog.Combo
+	var in catalog.UpdateComboRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return

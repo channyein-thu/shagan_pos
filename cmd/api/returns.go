@@ -38,7 +38,7 @@ func (a *ReturnsAPI) VoidSale(c *gin.Context) {
 		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
-	var in returns.Void
+	var in returns.VoidSaleRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
@@ -63,7 +63,7 @@ func (a *ReturnsAPI) ListVoids(c *gin.Context) {
 
 // CreateReturn handles `POST /returns`. Also writes return_items
 func (a *ReturnsAPI) CreateReturn(c *gin.Context) {
-	var in returns.Return
+	var in returns.CreateReturnRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
@@ -103,7 +103,7 @@ func (a *ReturnsAPI) GetReturn(c *gin.Context) {
 
 // CreateExchange handles `POST /exchanges`. Also writes exchange_items
 func (a *ReturnsAPI) CreateExchange(c *gin.Context) {
-	var in returns.Exchange
+	var in returns.CreateExchangeRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return

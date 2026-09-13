@@ -43,7 +43,7 @@ func (a *ProcurementAPI) ListSuppliers(c *gin.Context) {
 
 // CreateSupplier handles `POST /suppliers`.
 func (a *ProcurementAPI) CreateSupplier(c *gin.Context) {
-	var in procurement.Supplier
+	var in procurement.CreateSupplierRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
@@ -63,7 +63,7 @@ func (a *ProcurementAPI) UpdateSupplier(c *gin.Context) {
 		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
-	var in procurement.Supplier
+	var in procurement.UpdateSupplierRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
@@ -102,7 +102,7 @@ func (a *ProcurementAPI) ListPurchaseOrders(c *gin.Context) {
 
 // CreatePurchaseOrder handles `POST /purchase-orders`. Also writes purchase_order_items
 func (a *ProcurementAPI) CreatePurchaseOrder(c *gin.Context) {
-	var in procurement.PurchaseOrder
+	var in procurement.CreatePurchaseOrderRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
@@ -137,7 +137,7 @@ func (a *ProcurementAPI) UpdatePurchaseOrder(c *gin.Context) {
 		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
-	var in procurement.PurchaseOrder
+	var in procurement.UpdatePurchaseOrderRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
@@ -157,7 +157,7 @@ func (a *ProcurementAPI) CreateGoodsReceipt(c *gin.Context) {
 		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
-	var in procurement.GoodsReceipt
+	var in procurement.CreateGoodsReceiptRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return

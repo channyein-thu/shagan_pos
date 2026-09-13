@@ -39,7 +39,7 @@ func (a *CustomerAPI) ListCustomers(c *gin.Context) {
 
 // CreateCustomer handles `POST /customers`. Inline creation from the POS cart
 func (a *CustomerAPI) CreateCustomer(c *gin.Context) {
-	var in customer.Customer
+	var in customer.CreateCustomerRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
@@ -89,7 +89,7 @@ func (a *CustomerAPI) CreateCustomerConsent(c *gin.Context) {
 		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
-	var in customer.CustomerConsent
+	var in customer.CreateCustomerConsentRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return

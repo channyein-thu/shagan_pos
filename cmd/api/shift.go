@@ -36,7 +36,7 @@ func (a *ShiftAPI) RegisterRoutes(rg *gin.RouterGroup) {
 
 // OpenShift handles `POST /shifts`. Open shift with opening float
 func (a *ShiftAPI) OpenShift(c *gin.Context) {
-	var in shift.Shift
+	var in shift.OpenShiftRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
@@ -121,7 +121,7 @@ func (a *ShiftAPI) ListShiftReconciliations(c *gin.Context) {
 
 // CreateDrawerEvent handles `POST /drawer-events`. Cash drawer opened without a sale
 func (a *ShiftAPI) CreateDrawerEvent(c *gin.Context) {
-	var in shift.DrawerEvent
+	var in shift.CreateDrawerEventRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
@@ -156,7 +156,7 @@ func (a *ShiftAPI) ListExpenses(c *gin.Context) {
 
 // CreateExpense handles `POST /expenses`.
 func (a *ShiftAPI) CreateExpense(c *gin.Context) {
-	var in shift.Expense
+	var in shift.CreateExpenseRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
@@ -176,7 +176,7 @@ func (a *ShiftAPI) UpdateExpense(c *gin.Context) {
 		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
-	var in shift.Expense
+	var in shift.UpdateExpenseRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return

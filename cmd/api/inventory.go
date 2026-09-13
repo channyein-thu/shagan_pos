@@ -61,7 +61,7 @@ func (a *InventoryAPI) ListInventoryLedger(c *gin.Context) {
 
 // CreateStockAdjustment handles `POST /inventory/adjustments`. Writes a ledger row as a side effect
 func (a *InventoryAPI) CreateStockAdjustment(c *gin.Context) {
-	var in inventory.StockAdjustment
+	var in inventory.CreateStockAdjustmentRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
@@ -86,7 +86,7 @@ func (a *InventoryAPI) ListStockTransfers(c *gin.Context) {
 
 // CreateStockTransfer handles `POST /stock-transfers`. Also writes stock_transfers_items
 func (a *InventoryAPI) CreateStockTransfer(c *gin.Context) {
-	var in inventory.StockTransfer
+	var in inventory.CreateStockTransferRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
@@ -106,7 +106,7 @@ func (a *InventoryAPI) UpdateStockTransfer(c *gin.Context) {
 		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
-	var in inventory.StockTransfer
+	var in inventory.UpdateStockTransferRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return

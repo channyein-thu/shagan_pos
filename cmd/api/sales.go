@@ -33,7 +33,7 @@ func (a *SalesAPI) RegisterRoutes(rg *gin.RouterGroup) {
 
 // CreateSale handles `POST /sales`. Idempotent, transactional; also decrements stock + writes ledger
 func (a *SalesAPI) CreateSale(c *gin.Context) {
-	var in sales.Sale
+	var in sales.CreateSaleRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
@@ -103,7 +103,7 @@ func (a *SalesAPI) ReprintSale(c *gin.Context) {
 
 // CreateHeldSale handles `POST /held-sales`.
 func (a *SalesAPI) CreateHeldSale(c *gin.Context) {
-	var in sales.HeldSale
+	var in sales.CreateHeldSaleRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return

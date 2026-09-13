@@ -92,7 +92,7 @@ func (a *IdentityAPI) GetMe(c *gin.Context) {
 
 // UpdateMe handles `PATCH /me`. Locale preference, etc.
 func (a *IdentityAPI) UpdateMe(c *gin.Context) {
-	var in identity.User
+	var in identity.UpdateMeRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
@@ -132,7 +132,7 @@ func (a *IdentityAPI) VerifyStaffPIN(c *gin.Context) {
 
 // RegisterDevice handles `POST /devices/register`. Provisions a pos-type login seat
 func (a *IdentityAPI) RegisterDevice(c *gin.Context) {
-	var in identity.Device
+	var in identity.RegisterDeviceRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
@@ -162,7 +162,7 @@ func (a *IdentityAPI) UpdateDevice(c *gin.Context) {
 		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
-	var in identity.Device
+	var in identity.UpdateDeviceRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
@@ -187,7 +187,7 @@ func (a *IdentityAPI) ListBranches(c *gin.Context) {
 
 // CreateBranch handles `POST /branches`.
 func (a *IdentityAPI) CreateBranch(c *gin.Context) {
-	var in identity.Branch
+	var in identity.CreateBranchRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
@@ -222,7 +222,7 @@ func (a *IdentityAPI) UpdateBranch(c *gin.Context) {
 		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
-	var in identity.Branch
+	var in identity.UpdateBranchRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
@@ -262,7 +262,7 @@ func (a *IdentityAPI) ListStaff(c *gin.Context) {
 
 // CreateStaff handles `POST /staff`. Ends in PIN set step
 func (a *IdentityAPI) CreateStaff(c *gin.Context) {
-	var in identity.Staff
+	var in identity.CreateStaffRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
@@ -297,7 +297,7 @@ func (a *IdentityAPI) UpdateStaff(c *gin.Context) {
 		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
-	var in identity.Staff
+	var in identity.UpdateStaffRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return

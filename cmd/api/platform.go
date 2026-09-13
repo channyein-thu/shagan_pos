@@ -36,7 +36,7 @@ func (a *PlatformAPI) GetReceiptSettings(c *gin.Context) {
 
 // UpdateReceiptSettings handles `PUT /receipt-settings`.
 func (a *PlatformAPI) UpdateReceiptSettings(c *gin.Context) {
-	var in platform.ReceiptSetting
+	var in platform.UpdateReceiptSettingsRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
