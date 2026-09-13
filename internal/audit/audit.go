@@ -1,7 +1,10 @@
 package audit
 
-// Interface defines the audit domain's use cases. TODO: define methods as endpoints are implemented.
+import "context"
+
+// Interface defines the audit domain's use cases.
 type Interface interface {
+	ListAuditLog(ctx context.Context) ([]AuditLog, error)
 }
 
 type Service struct {
@@ -13,3 +16,7 @@ func NewService(repo *Repository) *Service {
 }
 
 var _ Interface = (*Service)(nil)
+
+func (s *Service) ListAuditLog(ctx context.Context) ([]AuditLog, error) {
+	return s.repo.ListAuditLog(ctx)
+}

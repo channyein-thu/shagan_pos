@@ -7,6 +7,7 @@ import (
 	"gorm.io/gorm"
 
 	"shagan_pos/internal/audit"
+	"shagan_pos/internal/common"
 )
 
 type AuditAPI struct {
@@ -18,11 +19,15 @@ func NewAuditAPI(db *gorm.DB) *AuditAPI {
 }
 
 func (a *AuditAPI) RegisterRoutes(rg *gin.RouterGroup) {
-	g := rg.Group("/audit")
-	g.GET("", a.ListHandler)
+	rg.GET("/audit-log", a.ListAuditLog)
 }
 
-// ListHandler is a placeholder. TODO: replace with the real audit listing endpoint.
-func (a *AuditAPI) ListHandler(c *gin.Context) {
-	c.JSON(http.StatusNotImplemented, gin.H{"error": "not implemented"})
+// ListAuditLog handles `GET /audit-log`. Read-only; written via mutation hooks, not a public POST
+func (a *AuditAPI) ListAuditLog(c *gin.Context) {
+	result, err := a.service.ListAuditLog(c.Request.Context())
+	if err != nil {
+		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, result)
 }

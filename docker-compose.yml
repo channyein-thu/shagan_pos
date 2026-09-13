@@ -1,0 +1,33 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: shagan
+      POSTGRES_PASSWORD: shagan
+      POSTGRES_DB: shagan_pos
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shagan -d shagan_pos"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://shagan:shagan@postgres:5432/shagan_pos?sslmode=disable
+      PORT: "8000"
+      JWT_SECRET: changeme
+    ports:
+      - "8000:8000"
+
+volumes:
+  postgres_data:

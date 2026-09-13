@@ -6,6 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"shagan_pos/internal/common"
 	"shagan_pos/internal/platform"
 )
 
@@ -18,11 +19,42 @@ func NewPlatformAPI(db *gorm.DB) *PlatformAPI {
 }
 
 func (a *PlatformAPI) RegisterRoutes(rg *gin.RouterGroup) {
-	g := rg.Group("/settings")
-	g.GET("", a.ListHandler)
+	rg.GET("/receipt-settings", a.GetReceiptSettings)
+	rg.PUT("/receipt-settings", a.UpdateReceiptSettings)
+	rg.POST("/printers/test", a.TestPrinter)
 }
 
-// ListHandler is a placeholder. TODO: replace with the real platform listing endpoint.
-func (a *PlatformAPI) ListHandler(c *gin.Context) {
-	c.JSON(http.StatusNotImplemented, gin.H{"error": "not implemented"})
+// GetReceiptSettings handles `GET /receipt-settings`. Needed for the edit form's pre-fill / live preview
+func (a *PlatformAPI) GetReceiptSettings(c *gin.Context) {
+	result, err := a.service.GetReceiptSettings(c.Request.Context())
+	if err != nil {
+		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// UpdateReceiptSettings handles `PUT /receipt-settings`.
+func (a *PlatformAPI) UpdateReceiptSettings(c *gin.Context) {
+	var in platform.ReceiptSetting
+	if err := c.ShouldBindJSON(&in); err != nil {
+		common.JSONError(c, http.StatusBadRequest, "invalid_body", err.Error())
+		return
+	}
+	result, err := a.service.UpdateReceiptSettings(c.Request.Context(), in)
+	if err != nil {
+		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// TestPrinter handles `POST /printers/test`. No table; renders a test payload
+func (a *PlatformAPI) TestPrinter(c *gin.Context) {
+	result, err := a.service.TestPrinter(c.Request.Context())
+	if err != nil {
+		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, result)
 }

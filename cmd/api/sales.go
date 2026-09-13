@@ -2,10 +2,13 @@ package api
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"shagan_pos/internal/common"
 	"shagan_pos/internal/sales"
 )
 
@@ -18,11 +21,122 @@ func NewSalesAPI(db *gorm.DB) *SalesAPI {
 }
 
 func (a *SalesAPI) RegisterRoutes(rg *gin.RouterGroup) {
-	g := rg.Group("/sales")
-	g.GET("", a.ListHandler)
+	rg.POST("/sales", a.CreateSale)
+	rg.GET("/sales", a.ListSales)
+	rg.GET("/sales/:id", a.GetSale)
+	rg.GET("/sales/:id/receipt", a.GetSaleReceipt)
+	rg.POST("/sales/:id/reprint", a.ReprintSale)
+	rg.POST("/held-sales", a.CreateHeldSale)
+	rg.GET("/held-sales", a.ListHeldSales)
+	rg.DELETE("/held-sales/:id", a.ResumeHeldSale)
 }
 
-// ListHandler is a placeholder. TODO: replace with the real sales listing endpoint.
-func (a *SalesAPI) ListHandler(c *gin.Context) {
-	c.JSON(http.StatusNotImplemented, gin.H{"error": "not implemented"})
+// CreateSale handles `POST /sales`. Idempotent, transactional; also decrements stock + writes ledger
+func (a *SalesAPI) CreateSale(c *gin.Context) {
+	var in sales.Sale
+	if err := c.ShouldBindJSON(&in); err != nil {
+		common.JSONError(c, http.StatusBadRequest, "invalid_body", err.Error())
+		return
+	}
+	result, err := a.service.CreateSale(c.Request.Context(), in)
+	if err != nil {
+		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		return
+	}
+	c.JSON(http.StatusCreated, result)
+}
+
+// ListSales handles `GET /sales`.
+func (a *SalesAPI) ListSales(c *gin.Context) {
+	result, err := a.service.ListSales(c.Request.Context())
+	if err != nil {
+		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// GetSale handles `GET /sales/:id`.
+func (a *SalesAPI) GetSale(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		common.JSONError(c, http.StatusBadRequest, "invalid_id", "invalid id")
+		return
+	}
+	result, err := a.service.GetSale(c.Request.Context(), id)
+	if err != nil {
+		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// GetSaleReceipt handles `GET /sales/:id/receipt`. ESC/POS payload
+func (a *SalesAPI) GetSaleReceipt(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		common.JSONError(c, http.StatusBadRequest, "invalid_id", "invalid id")
+		return
+	}
+	result, err := a.service.GetSaleReceipt(c.Request.Context(), id)
+	if err != nil {
+		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// ReprintSale handles `POST /sales/:id/reprint`.
+func (a *SalesAPI) ReprintSale(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		common.JSONError(c, http.StatusBadRequest, "invalid_id", "invalid id")
+		return
+	}
+	result, err := a.service.ReprintSale(c.Request.Context(), id)
+	if err != nil {
+		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// CreateHeldSale handles `POST /held-sales`.
+func (a *SalesAPI) CreateHeldSale(c *gin.Context) {
+	var in sales.HeldSale
+	if err := c.ShouldBindJSON(&in); err != nil {
+		common.JSONError(c, http.StatusBadRequest, "invalid_body", err.Error())
+		return
+	}
+	result, err := a.service.CreateHeldSale(c.Request.Context(), in)
+	if err != nil {
+		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		return
+	}
+	c.JSON(http.StatusCreated, result)
+}
+
+// ListHeldSales handles `GET /held-sales`.
+func (a *SalesAPI) ListHeldSales(c *gin.Context) {
+	result, err := a.service.ListHeldSales(c.Request.Context())
+	if err != nil {
+		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// ResumeHeldSale handles `DELETE /held-sales/:id`. Resume - atomic delete-and-restore
+func (a *SalesAPI) ResumeHeldSale(c *gin.Context) {
+	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		common.JSONError(c, http.StatusBadRequest, "invalid_id", "invalid id")
+		return
+	}
+	result, err := a.service.ResumeHeldSale(c.Request.Context(), uint(idVal))
+	if err != nil {
+		common.JSONError(c, http.StatusNotImplemented, "not_implemented", err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, result)
 }

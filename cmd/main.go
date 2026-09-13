@@ -13,6 +13,7 @@ import (
 	"shagan_pos/cmd/api"
 	"shagan_pos/internal/healthcheck"
 	"shagan_pos/internal/middleware"
+	"shagan_pos/internal/migrate"
 )
 
 func main() {
@@ -25,10 +26,18 @@ func main() {
 		log.Fatalf("failed to connect to database: %v", err)
 	}
 
+	if err := migrate.Run(db); err != nil {
+		log.Fatalf("failed to migrate database: %v", err)
+	}
+
 	r := gin.Default()
+	if err := r.SetTrustedProxies(nil); err != nil {
+		log.Fatalf("failed to configure trusted proxies: %v", err)
+	}
 	r.Use(middleware.CORS())
 
 	r.GET("/healthz", healthcheck.Handler(db))
+	r.GET("/health", healthcheck.Handler(db))
 
 	v1 := r.Group("/api/v1")
 	v1.Use(middleware.Auth())
@@ -59,6 +68,7 @@ func registerRoutes(v1 *gin.RouterGroup, db *gorm.DB) {
 	api.NewShiftAPI(db).RegisterRoutes(v1)
 	api.NewSyncAPI(db).RegisterRoutes(v1)
 	api.NewAuditAPI(db).RegisterRoutes(v1)
+	api.NewReportsAPI(db).RegisterRoutes(v1)
 }
 
 func connectDB() (*gorm.DB, error) {

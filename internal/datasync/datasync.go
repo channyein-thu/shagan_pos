@@ -1,7 +1,15 @@
 package datasync
 
-// Interface defines the datasync domain's use cases. TODO: define methods as endpoints are implemented.
+import "context"
+
+// Interface defines the datasync domain's use cases.
 type Interface interface {
+	GetCatalogSnapshot(ctx context.Context) (map[string]any, error)
+	IngestQueuedSales(ctx context.Context) (map[string]any, error)
+	FlushSync(ctx context.Context) (map[string]any, error)
+	GetSyncStatus(ctx context.Context) (map[string]any, error)
+	ListSyncConflicts(ctx context.Context) ([]SyncConflict, error)
+	ResolveSyncConflict(ctx context.Context, id uint) (*SyncConflict, error)
 }
 
 type Service struct {
@@ -13,3 +21,27 @@ func NewService(repo *Repository) *Service {
 }
 
 var _ Interface = (*Service)(nil)
+
+func (s *Service) GetCatalogSnapshot(ctx context.Context) (map[string]any, error) {
+	return s.repo.GetCatalogSnapshot(ctx)
+}
+
+func (s *Service) IngestQueuedSales(ctx context.Context) (map[string]any, error) {
+	return s.repo.IngestQueuedSales(ctx)
+}
+
+func (s *Service) FlushSync(ctx context.Context) (map[string]any, error) {
+	return s.repo.FlushSync(ctx)
+}
+
+func (s *Service) GetSyncStatus(ctx context.Context) (map[string]any, error) {
+	return s.repo.GetSyncStatus(ctx)
+}
+
+func (s *Service) ListSyncConflicts(ctx context.Context) ([]SyncConflict, error) {
+	return s.repo.ListSyncConflicts(ctx)
+}
+
+func (s *Service) ResolveSyncConflict(ctx context.Context, id uint) (*SyncConflict, error) {
+	return s.repo.ResolveSyncConflict(ctx, id)
+}
