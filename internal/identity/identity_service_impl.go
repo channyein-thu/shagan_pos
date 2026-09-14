@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 
 	"shagan_pos/internal/authtoken"
 	"shagan_pos/internal/common"
@@ -36,15 +37,17 @@ const invalidStaffPINMessage = "invalid staff or pin"
 
 type Service struct {
 	repo             Repository
+	db               common.Transactioner
 	jwtSecret        []byte
 	accessTokenTTL   time.Duration
 	refreshTokenTTL  time.Duration
 	staffPINTokenTTL time.Duration
 }
 
-func NewService(repo Repository, jwtSecret []byte, accessTokenTTL, refreshTokenTTL, staffPINTokenTTL time.Duration) *Service {
+func NewService(repo Repository, db common.Transactioner, jwtSecret []byte, accessTokenTTL, refreshTokenTTL, staffPINTokenTTL time.Duration) *Service {
 	return &Service{
 		repo:             repo,
+		db:               db,
 		jwtSecret:        jwtSecret,
 		accessTokenTTL:   accessTokenTTL,
 		refreshTokenTTL:  refreshTokenTTL,
@@ -298,7 +301,10 @@ func (s *Service) ListRolePermissions(ctx context.Context, id uint) ([]Permissio
 // CreateAccount hashes both the owner's and service_center's plaintext
 // passwords before they ever reach the repository - the repository just
 // persists whatever CredentialHash it's given, it doesn't know or care
-// whether it's already hashed.
+// whether it's already hashed. It then creates the Organization and both
+// Users as one atomic unit of work: if either User insert fails (e.g. a
+// duplicate email), s.db.Transaction rolls back the Organization insert too,
+// so a failure partway through never leaves an orphaned org with no owner.
 func (s *Service) CreateAccount(ctx context.Context, in CreateAccountInput) (*CreateAccountResult, error) {
 	ownerHash, err := bcrypt.GenerateFromPassword([]byte(in.OwnerPassword), bcrypt.DefaultCost)
 	if err != nil {
@@ -312,7 +318,43 @@ func (s *Service) CreateAccount(ctx context.Context, in CreateAccountInput) (*Cr
 	}
 	in.ServiceCenterPassword = string(serviceCenterHash)
 
-	return s.repo.CreateAccount(ctx, in)
+	var result CreateAccountResult
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		org := Organization{Name: in.OrganizationName}
+		if err := s.repo.CreateOrganization(tx, &org); err != nil {
+			return err
+		}
+
+		ownerEmail := in.OwnerEmail
+		owner := User{
+			OrgID:          org.ID,
+			AccountType:    AccountTypeOwner,
+			Email:          &ownerEmail,
+			CredentialHash: in.OwnerPassword,
+		}
+		if err := s.repo.CreateUser(tx, &owner); err != nil {
+			return err
+		}
+
+		serviceCenterEmail := in.ServiceCenterEmail
+		serviceCenter := User{
+			OrgID:          org.ID,
+			AccountType:    AccountTypeServiceCenter,
+			Email:          &serviceCenterEmail,
+			CredentialHash: in.ServiceCenterPassword,
+		}
+		if err := s.repo.CreateUser(tx, &serviceCenter); err != nil {
+			return err
+		}
+
+		result = CreateAccountResult{Organization: org, Owner: owner, ServiceCenter: serviceCenter}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &result, nil
 }
 
 // CreatePosAccount hashes the plaintext password before it ever reaches the

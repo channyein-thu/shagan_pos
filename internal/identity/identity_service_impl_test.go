@@ -3,6 +3,7 @@ package identity
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 
 	"shagan_pos/internal/authtoken"
 	"shagan_pos/internal/common"
@@ -20,8 +22,19 @@ import (
 // testJWTSecret is a fixed secret for tests only - never read from the environment.
 var testJWTSecret = []byte("test-secret-do-not-use-in-production")
 
+// fakeTransactioner runs fc directly against a nil *gorm.DB, with no real
+// database transaction - sufficient for unit tests that only exercise
+// service-level orchestration against a mocked Repository, which never
+// dereferences the *gorm.DB it's handed (it just records the call). The
+// real common.Transactioner is satisfied natively by *gorm.DB in production.
+type fakeTransactioner struct{}
+
+func (fakeTransactioner) Transaction(fc func(tx *gorm.DB) error, _ ...*sql.TxOptions) error {
+	return fc(nil)
+}
+
 func newTestService(repo Repository) *Service {
-	return NewService(repo, testJWTSecret, DefaultAccessTokenTTL, DefaultRefreshTokenTTL, DefaultStaffPINTokenTTL)
+	return NewService(repo, fakeTransactioner{}, testJWTSecret, DefaultAccessTokenTTL, DefaultRefreshTokenTTL, DefaultStaffPINTokenTTL)
 }
 
 func TestService_CreateAccount_HashesPasswordBeforePersisting(t *testing.T) {
@@ -38,35 +51,60 @@ func TestService_CreateAccount_HashesPasswordBeforePersisting(t *testing.T) {
 		ServiceCenterPassword: serviceCenterPlaintext,
 	}
 
-	expected := &CreateAccountResult{Organization: Organization{ID: 1}}
+	repo.EXPECT().
+		CreateOrganization(mock.Anything, mock.MatchedBy(func(org *Organization) bool {
+			return org.Name == in.OrganizationName
+		})).
+		Run(func(_ *gorm.DB, org *Organization) { org.ID = 1 }).
+		Return(nil).
+		Once()
 
 	repo.EXPECT().
-		CreateAccount(mock.Anything, mock.MatchedBy(func(got CreateAccountInput) bool {
-			if got.OwnerPassword == ownerPlaintext || got.ServiceCenterPassword == serviceCenterPlaintext {
-				return false // must not be the plaintext
-			}
-			if got.OrganizationName != in.OrganizationName || got.OwnerEmail != in.OwnerEmail || got.ServiceCenterEmail != in.ServiceCenterEmail {
-				return false // everything else must pass through unchanged
-			}
-			if bcrypt.CompareHashAndPassword([]byte(got.OwnerPassword), []byte(ownerPlaintext)) != nil {
-				return false
-			}
-			return bcrypt.CompareHashAndPassword([]byte(got.ServiceCenterPassword), []byte(serviceCenterPlaintext)) == nil
+		CreateUser(mock.Anything, mock.MatchedBy(func(u *User) bool {
+			return u.AccountType == AccountTypeOwner &&
+				u.OrgID == 1 &&
+				u.Email != nil && *u.Email == in.OwnerEmail &&
+				u.CredentialHash != ownerPlaintext && // must not be the plaintext
+				bcrypt.CompareHashAndPassword([]byte(u.CredentialHash), []byte(ownerPlaintext)) == nil
 		})).
-		Return(expected, nil).
+		Run(func(_ *gorm.DB, u *User) { u.ID = 10 }).
+		Return(nil).
+		Once()
+
+	repo.EXPECT().
+		CreateUser(mock.Anything, mock.MatchedBy(func(u *User) bool {
+			return u.AccountType == AccountTypeServiceCenter &&
+				u.OrgID == 1 &&
+				u.Email != nil && *u.Email == in.ServiceCenterEmail &&
+				u.CredentialHash != serviceCenterPlaintext && // must not be the plaintext
+				bcrypt.CompareHashAndPassword([]byte(u.CredentialHash), []byte(serviceCenterPlaintext)) == nil
+		})).
+		Run(func(_ *gorm.DB, u *User) { u.ID = 11 }).
+		Return(nil).
 		Once()
 
 	result, err := svc.CreateAccount(context.Background(), in)
 	require.NoError(t, err)
-	require.Same(t, expected, result)
+	require.Equal(t, uint(1), result.Organization.ID)
+	require.Equal(t, uint(10), result.Owner.ID)
+	require.Equal(t, uint(11), result.ServiceCenter.ID)
 }
 
-func TestService_CreateAccount_PropagatesRepositoryError(t *testing.T) {
+func TestService_CreateAccount_OwnerCreationFails_RollsBackAndNeverCreatesServiceCenter(t *testing.T) {
 	repo := NewMockRepository(t)
 	svc := newTestService(repo)
 
+	repo.EXPECT().
+		CreateOrganization(mock.Anything, mock.Anything).
+		Run(func(_ *gorm.DB, org *Organization) { org.ID = 1 }).
+		Return(nil).
+		Once()
+
 	wantErr := common.ConflictError("an account with this email already exists")
-	repo.EXPECT().CreateAccount(mock.Anything, mock.Anything).Return(nil, wantErr).Once()
+	repo.EXPECT().CreateUser(mock.Anything, mock.Anything).Return(wantErr).Once()
+	// the service_center User must never be created if the owner insert fails
+	// mid-transaction - no second .EXPECT() set up for CreateUser means the
+	// mock fails the test if it's called again.
 
 	_, err := svc.CreateAccount(context.Background(), CreateAccountInput{
 		OrganizationName:      "Acme Retail",

@@ -403,58 +403,25 @@ func (r *RepositoryImpl) ListRolePermissions(ctx context.Context, id uint) ([]Pe
 	return permissions, nil
 }
 
-// CreateAccount backs `POST /internal/accounts`. Shagan-team-only: provisions
-// a new tenant (Organization + owner User + service_center User) in one
-// transaction, so a failure partway through never leaves an orphaned
-// Organization with no owner. No Branch is created here - that happens
-// afterward through the normal, already-authenticated POST /branches
-// endpoint. By the time in.OwnerPassword/in.ServiceCenterPassword reach here
-// they are expected to already be hashes - see Service.CreateAccount.
-func (r *RepositoryImpl) CreateAccount(ctx context.Context, in CreateAccountInput) (*CreateAccountResult, error) {
-	var result CreateAccountResult
+// CreateOrganization backs Service.CreateAccount's first step. Plain insert -
+// GORM sets org.ID on the pointer it's given, for the caller to use in the
+// rows it creates next. db is either r.db or an in-flight transaction handed
+// down by the caller - see the Repository interface doc.
+func (r *RepositoryImpl) CreateOrganization(db *gorm.DB, org *Organization) error {
+	return db.Create(org).Error
+}
 
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		org := Organization{Name: in.OrganizationName}
-		if err := tx.Create(&org).Error; err != nil {
-			return err
+// CreateUser backs both Service.CreateAccount (owner + service_center users)
+// and CreatePosAccount below. Plain insert - GORM sets user.ID on the pointer
+// it's given.
+func (r *RepositoryImpl) CreateUser(db *gorm.DB, user *User) error {
+	if err := db.Create(user).Error; err != nil {
+		if common.IsDuplicateError(err) {
+			return common.ConflictError("an account with this email already exists")
 		}
-
-		ownerEmail := in.OwnerEmail
-		owner := User{
-			OrgID:          org.ID,
-			AccountType:    AccountTypeOwner,
-			Email:          &ownerEmail,
-			CredentialHash: in.OwnerPassword,
-		}
-		if err := tx.Create(&owner).Error; err != nil {
-			if common.IsDuplicateError(err) {
-				return common.ConflictError("an account with this email already exists")
-			}
-			return err
-		}
-
-		serviceCenterEmail := in.ServiceCenterEmail
-		serviceCenter := User{
-			OrgID:          org.ID,
-			AccountType:    AccountTypeServiceCenter,
-			Email:          &serviceCenterEmail,
-			CredentialHash: in.ServiceCenterPassword,
-		}
-		if err := tx.Create(&serviceCenter).Error; err != nil {
-			if common.IsDuplicateError(err) {
-				return common.ConflictError("an account with this email already exists")
-			}
-			return err
-		}
-
-		result = CreateAccountResult{Organization: org, Owner: owner, ServiceCenter: serviceCenter}
-		return nil
-	})
-	if err != nil {
-		return nil, err
+		return err
 	}
-
-	return &result, nil
+	return nil
 }
 
 // CreatePosAccount backs `POST /internal/accounts/pos`. Shagan-team-only:
@@ -462,7 +429,8 @@ func (r *RepositoryImpl) CreateAccount(ctx context.Context, in CreateAccountInpu
 // CreateAccount, it never creates an Organization - in.DeviceID must already
 // belong to in.OrgID, verified the same not-found-not-forbidden way as
 // CreateDevice/UpdateDevice. By the time in.Password reaches here it is
-// expected to already be a hash - see Service.CreatePosAccount.
+// expected to already be a hash - see Service.CreatePosAccount. This is a
+// single insert, so it just uses r.db directly - no transaction needed.
 func (r *RepositoryImpl) CreatePosAccount(ctx context.Context, in CreatePosAccountInput) (*User, error) {
 	device, err := r.getDeviceInOrg(ctx, in.OrgID, in.DeviceID)
 	if err != nil {
@@ -478,10 +446,7 @@ func (r *RepositoryImpl) CreatePosAccount(ctx context.Context, in CreatePosAccou
 		Email:          &email,
 		CredentialHash: in.Password,
 	}
-	if err := r.db.WithContext(ctx).Create(&user).Error; err != nil {
-		if common.IsDuplicateError(err) {
-			return nil, common.ConflictError("an account with this email already exists")
-		}
+	if err := r.CreateUser(r.db.WithContext(ctx), &user); err != nil {
 		return nil, err
 	}
 

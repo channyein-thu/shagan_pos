@@ -3,6 +3,8 @@ package identity
 import (
 	"context"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 // Repository defines the identity domain's persistence operations.
@@ -53,7 +55,16 @@ type Repository interface {
 	ListRoles(ctx context.Context) ([]Role, error)
 	ListPermissions(ctx context.Context) ([]Permission, error)
 	ListRolePermissions(ctx context.Context, id uint) ([]Permission, error)
-	CreateAccount(ctx context.Context, in CreateAccountInput) (*CreateAccountResult, error)
+	// CreateOrganization and CreateUser are the two plain inserts
+	// Service.CreateAccount composes inside one db.Transaction call to
+	// provision a new tenant. Each just persists what it's given via db and
+	// sets the row's ID on the passed pointer - db is either the repository's
+	// normal connection or an in-flight transaction, so the same method works
+	// standalone or composed. The transaction boundary and the decision of
+	// what to create belong to the service, not here.
+	CreateOrganization(db *gorm.DB, org *Organization) error
+	// CreateUser returns common.ConflictError if user.Email is already taken.
+	CreateUser(db *gorm.DB, user *User) error
 	// CreatePosAccount returns common.NotFoundError if in.DeviceID doesn't
 	// belong to in.OrgID - same not-found-not-forbidden reasoning as branches.
 	CreatePosAccount(ctx context.Context, in CreatePosAccountInput) (*User, error)
