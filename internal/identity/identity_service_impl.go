@@ -17,6 +17,10 @@ const (
 	DefaultAccessTokenTTL = 15 * time.Minute
 	// DefaultRefreshTokenTTL is how long a session's refresh token stays valid.
 	DefaultRefreshTokenTTL = 30 * 24 * time.Hour
+	// DefaultStaffPINTokenTTL is how long a staff-PIN session token stays
+	// valid - shift-length, not request-length, since re-entering a PIN
+	// before every single sale would be unusable at a terminal.
+	DefaultStaffPINTokenTTL = 12 * time.Hour
 )
 
 // invalidCredentialsMessage is deliberately identical for "no such email" and
@@ -24,19 +28,27 @@ const (
 // emails have accounts.
 const invalidCredentialsMessage = "invalid email or password"
 
+// invalidStaffPINMessage is deliberately identical for "no such staff",
+// "wrong branch", and "wrong PIN" - same enumeration-prevention reasoning as
+// invalidCredentialsMessage, since a terminal is a credential-check surface
+// like login, not a plain CRUD lookup like GetStaff.
+const invalidStaffPINMessage = "invalid staff or pin"
+
 type Service struct {
-	repo            Repository
-	jwtSecret       []byte
-	accessTokenTTL  time.Duration
-	refreshTokenTTL time.Duration
+	repo             Repository
+	jwtSecret        []byte
+	accessTokenTTL   time.Duration
+	refreshTokenTTL  time.Duration
+	staffPINTokenTTL time.Duration
 }
 
-func NewService(repo Repository, jwtSecret []byte, accessTokenTTL, refreshTokenTTL time.Duration) *Service {
+func NewService(repo Repository, jwtSecret []byte, accessTokenTTL, refreshTokenTTL, staffPINTokenTTL time.Duration) *Service {
 	return &Service{
-		repo:            repo,
-		jwtSecret:       jwtSecret,
-		accessTokenTTL:  accessTokenTTL,
-		refreshTokenTTL: refreshTokenTTL,
+		repo:             repo,
+		jwtSecret:        jwtSecret,
+		accessTokenTTL:   accessTokenTTL,
+		refreshTokenTTL:  refreshTokenTTL,
+		staffPINTokenTTL: staffPINTokenTTL,
 	}
 }
 
@@ -59,7 +71,7 @@ func (s *Service) Login(ctx context.Context, in LoginRequest) (*SessionResult, e
 		return nil, common.UnauthorizedError(invalidCredentialsMessage)
 	}
 
-	accessToken, err := authtoken.GenerateAccessToken(s.jwtSecret, user.ID, user.OrgID, s.accessTokenTTL)
+	accessToken, err := authtoken.GenerateAccessToken(s.jwtSecret, user.ID, user.OrgID, user.BranchID, s.accessTokenTTL)
 	if err != nil {
 		return nil, common.SystemError("failed to issue access token")
 	}
@@ -113,7 +125,7 @@ func (s *Service) RefreshSession(ctx context.Context, in RefreshRequest) (*Sessi
 		return nil, err
 	}
 
-	accessToken, err := authtoken.GenerateAccessToken(s.jwtSecret, user.ID, user.OrgID, s.accessTokenTTL)
+	accessToken, err := authtoken.GenerateAccessToken(s.jwtSecret, user.ID, user.OrgID, user.BranchID, s.accessTokenTTL)
 	if err != nil {
 		return nil, common.SystemError("failed to issue access token")
 	}
@@ -159,68 +171,116 @@ func (s *Service) Logout(ctx context.Context, in LogoutRequest) error {
 	return s.repo.RevokeSession(ctx, session.ID)
 }
 
-func (s *Service) GetMe(ctx context.Context) (*User, error) {
-	return s.repo.GetMe(ctx)
+func (s *Service) GetMe(ctx context.Context, userID uint) (*User, error) {
+	return s.repo.GetUserByID(ctx, userID)
 }
 
-func (s *Service) UpdateMe(ctx context.Context, in UpdateMeRequest) (*User, error) {
-	return s.repo.UpdateMe(ctx, in)
+func (s *Service) UpdateMe(ctx context.Context, userID uint, in UpdateMeRequest) (*User, error) {
+	return s.repo.UpdateMe(ctx, userID, in)
 }
 
 func (s *Service) VerifyManagerPIN(ctx context.Context) (*Staff, error) {
 	return s.repo.VerifyManagerPIN(ctx)
 }
 
-func (s *Service) VerifyStaffPIN(ctx context.Context, id uint) (*Staff, error) {
-	return s.repo.VerifyStaffPIN(ctx, id)
+// VerifyStaffPIN looks up the staff via the same org-scoped query GetStaff
+// uses (no dedicated repository method needed), then checks branch and PIN
+// itself - same layering as Login, which fetches the user then does its own
+// bcrypt compare rather than pushing that into the repository.
+func (s *Service) VerifyStaffPIN(ctx context.Context, orgID uint, branchID *uint, id uint, in VerifyStaffPINRequest) (*VerifyStaffPINResult, error) {
+	staff, err := s.repo.GetStaff(ctx, orgID, id)
+	if err != nil {
+		var restErr common.RestError
+		if errors.As(err, &restErr) && restErr.Status == http.StatusNotFound {
+			return nil, common.UnauthorizedError(invalidStaffPINMessage)
+		}
+		return nil, err
+	}
+
+	if branchID != nil && staff.BranchID != *branchID {
+		return nil, common.UnauthorizedError(invalidStaffPINMessage)
+	}
+
+	if bcrypt.CompareHashAndPassword([]byte(staff.PinHash), []byte(in.Pin)) != nil {
+		return nil, common.UnauthorizedError(invalidStaffPINMessage)
+	}
+
+	token, err := authtoken.GenerateStaffToken(s.jwtSecret, staff.ID, staff.BranchID, staff.RoleID, s.staffPINTokenTTL)
+	if err != nil {
+		return nil, common.SystemError("failed to issue staff token")
+	}
+
+	return &VerifyStaffPINResult{
+		Staff:     *staff,
+		Token:     token,
+		ExpiresAt: time.Now().Add(s.staffPINTokenTTL),
+	}, nil
 }
 
-func (s *Service) RegisterDevice(ctx context.Context, in RegisterDeviceRequest) (*Device, error) {
-	return s.repo.RegisterDevice(ctx, in)
+func (s *Service) CreateDevice(ctx context.Context, orgID uint, in CreateDeviceRequest) (*Device, error) {
+	return s.repo.CreateDevice(ctx, orgID, in)
 }
 
-func (s *Service) ListDevices(ctx context.Context) ([]Device, error) {
-	return s.repo.ListDevices(ctx)
+func (s *Service) ListDevices(ctx context.Context, orgID uint) ([]Device, error) {
+	return s.repo.ListDevices(ctx, orgID)
 }
 
-func (s *Service) UpdateDevice(ctx context.Context, id uint, in UpdateDeviceRequest) (*Device, error) {
-	return s.repo.UpdateDevice(ctx, id, in)
+func (s *Service) UpdateDevice(ctx context.Context, orgID uint, id uint, in UpdateDeviceRequest) (*Device, error) {
+	return s.repo.UpdateDevice(ctx, orgID, id, in)
 }
 
-func (s *Service) ListBranches(ctx context.Context) ([]Branch, error) {
-	return s.repo.ListBranches(ctx)
+func (s *Service) ListBranches(ctx context.Context, orgID uint) ([]Branch, error) {
+	return s.repo.ListBranches(ctx, orgID)
 }
 
-func (s *Service) CreateBranch(ctx context.Context, in CreateBranchRequest) (*Branch, error) {
-	return s.repo.CreateBranch(ctx, in)
+func (s *Service) CreateBranch(ctx context.Context, orgID uint, in CreateBranchRequest) (*Branch, error) {
+	return s.repo.CreateBranch(ctx, orgID, in)
 }
 
-func (s *Service) GetBranch(ctx context.Context, id uint) (*Branch, error) {
-	return s.repo.GetBranch(ctx, id)
+func (s *Service) GetBranch(ctx context.Context, orgID uint, id uint) (*Branch, error) {
+	return s.repo.GetBranch(ctx, orgID, id)
 }
 
-func (s *Service) UpdateBranch(ctx context.Context, id uint, in UpdateBranchRequest) (*Branch, error) {
-	return s.repo.UpdateBranch(ctx, id, in)
+func (s *Service) UpdateBranch(ctx context.Context, orgID uint, id uint, in UpdateBranchRequest) (*Branch, error) {
+	return s.repo.UpdateBranch(ctx, orgID, id, in)
 }
 
-func (s *Service) ListBranchStaff(ctx context.Context, id uint) ([]Staff, error) {
-	return s.repo.ListBranchStaff(ctx, id)
+func (s *Service) ListBranchStaff(ctx context.Context, orgID uint, id uint) ([]Staff, error) {
+	return s.repo.ListBranchStaff(ctx, orgID, id)
 }
 
-func (s *Service) ListStaff(ctx context.Context) ([]Staff, error) {
-	return s.repo.ListStaff(ctx)
+func (s *Service) ListStaff(ctx context.Context, orgID uint) ([]Staff, error) {
+	return s.repo.ListStaff(ctx, orgID)
 }
 
-func (s *Service) CreateStaff(ctx context.Context, in CreateStaffRequest) (*Staff, error) {
-	return s.repo.CreateStaff(ctx, in)
+// CreateStaff hashes the plaintext PIN before it ever reaches the repository
+// - same reasoning as CreateAccount's password hashing.
+func (s *Service) CreateStaff(ctx context.Context, orgID uint, in CreateStaffRequest) (*Staff, error) {
+	hash, err := bcrypt.GenerateFromPassword([]byte(in.Pin), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, common.SystemError("failed to hash PIN")
+	}
+	in.Pin = string(hash)
+
+	return s.repo.CreateStaff(ctx, orgID, in)
 }
 
-func (s *Service) GetStaff(ctx context.Context, id uint) (*Staff, error) {
-	return s.repo.GetStaff(ctx, id)
+func (s *Service) GetStaff(ctx context.Context, orgID uint, id uint) (*Staff, error) {
+	return s.repo.GetStaff(ctx, orgID, id)
 }
 
-func (s *Service) UpdateStaff(ctx context.Context, id uint, in UpdateStaffRequest) (*Staff, error) {
-	return s.repo.UpdateStaff(ctx, id, in)
+// UpdateStaff hashes the new PIN, if one was provided, before it reaches the repository.
+func (s *Service) UpdateStaff(ctx context.Context, orgID uint, id uint, in UpdateStaffRequest) (*Staff, error) {
+	if in.Pin != nil {
+		hash, err := bcrypt.GenerateFromPassword([]byte(*in.Pin), bcrypt.DefaultCost)
+		if err != nil {
+			return nil, common.SystemError("failed to hash PIN")
+		}
+		hashed := string(hash)
+		in.Pin = &hashed
+	}
+
+	return s.repo.UpdateStaff(ctx, orgID, id, in)
 }
 
 func (s *Service) ListRoles(ctx context.Context) ([]Role, error) {
@@ -235,15 +295,34 @@ func (s *Service) ListRolePermissions(ctx context.Context, id uint) ([]Permissio
 	return s.repo.ListRolePermissions(ctx, id)
 }
 
-// CreateAccount hashes the owner's plaintext password before it ever reaches
-// the repository - the repository just persists whatever CredentialHash it's
-// given, it doesn't know or care whether it's already hashed.
+// CreateAccount hashes both the owner's and service_center's plaintext
+// passwords before they ever reach the repository - the repository just
+// persists whatever CredentialHash it's given, it doesn't know or care
+// whether it's already hashed.
 func (s *Service) CreateAccount(ctx context.Context, in CreateAccountInput) (*CreateAccountResult, error) {
-	hash, err := bcrypt.GenerateFromPassword([]byte(in.OwnerPassword), bcrypt.DefaultCost)
+	ownerHash, err := bcrypt.GenerateFromPassword([]byte(in.OwnerPassword), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, common.SystemError("failed to hash password")
 	}
-	in.OwnerPassword = string(hash)
+	in.OwnerPassword = string(ownerHash)
+
+	serviceCenterHash, err := bcrypt.GenerateFromPassword([]byte(in.ServiceCenterPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, common.SystemError("failed to hash password")
+	}
+	in.ServiceCenterPassword = string(serviceCenterHash)
 
 	return s.repo.CreateAccount(ctx, in)
+}
+
+// CreatePosAccount hashes the plaintext password before it ever reaches the
+// repository - same reasoning as CreateAccount.
+func (s *Service) CreatePosAccount(ctx context.Context, in CreatePosAccountInput) (*User, error) {
+	hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, common.SystemError("failed to hash password")
+	}
+	in.Password = string(hash)
+
+	return s.repo.CreatePosAccount(ctx, in)
 }

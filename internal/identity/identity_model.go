@@ -74,15 +74,22 @@ type Device struct {
 
 // User maps to the "Users" table in the ERD.
 type User struct {
-	ID             uint        `gorm:"primaryKey;autoIncrement" json:"id"`
-	OrgID          uint        `gorm:"index;not null" json:"org_id"`
-	Name           *string     `gorm:"size:255" json:"name"`
-	AccountType    AccountType `gorm:"type:varchar(30);not null" json:"account_type"` // one of AccountType* constants below (TODO: confirm real values)
-	DeviceID       *uint       `gorm:"index" json:"device_id"`
-	Email          *string     `gorm:"size:255;uniqueIndex" json:"email"`
-	CredentialHash string      `gorm:"size:255;not null" json:"credential_hash"`
-	CreatedAt      time.Time   `gorm:"autoCreateTime;not null" json:"created_at"`
-	UpdatedAt      time.Time   `gorm:"autoUpdateTime;not null" json:"updated_at"`
+	ID          uint        `gorm:"primaryKey;autoIncrement" json:"id"`
+	OrgID       uint        `gorm:"index;not null" json:"org_id"`
+	Name        *string     `gorm:"size:255" json:"name"`
+	AccountType AccountType `gorm:"type:varchar(30);not null" json:"account_type"` // one of AccountType* constants below (TODO: confirm real values)
+	DeviceID    *uint       `gorm:"index" json:"device_id"`
+	// BranchID is only ever set for AccountTypePos - owner/service_center are
+	// org-wide, not tied to one branch. It's derived server-side from the
+	// device's own branch at CreatePosAccount time (see RepositoryImpl.CreatePosAccount),
+	// never accepted as client input, and gets carried into the access token's
+	// claims on Login/RefreshSession so a pos terminal's requests can be
+	// branch-scoped without an extra Device lookup.
+	BranchID       *uint     `gorm:"index" json:"branch_id"`
+	Email          *string   `gorm:"size:255;uniqueIndex" json:"email"`
+	CredentialHash string    `gorm:"size:255;not null" json:"credential_hash"`
+	CreatedAt      time.Time `gorm:"autoCreateTime;not null" json:"created_at"`
+	UpdatedAt      time.Time `gorm:"autoUpdateTime;not null" json:"updated_at"`
 }
 
 // Session maps to the "Sessions" table in the ERD.

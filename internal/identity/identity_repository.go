@@ -24,24 +24,37 @@ type Repository interface {
 	// RevokeSession marks a session as revoked so its refresh token can never
 	// be used again - called on both logout and successful refresh rotation.
 	RevokeSession(ctx context.Context, sessionID uint) error
-	GetMe(ctx context.Context) (*User, error)
-	UpdateMe(ctx context.Context, in UpdateMeRequest) (*User, error)
+	// UpdateMe applies the caller's own self-service profile changes and
+	// returns the updated User. There's no separate "GetMe" method here -
+	// Service.GetMe just calls GetUserByID, since fetching your own profile
+	// by ID is the exact same query as fetching anyone else's.
+	UpdateMe(ctx context.Context, userID uint, in UpdateMeRequest) (*User, error)
 	VerifyManagerPIN(ctx context.Context) (*Staff, error)
-	VerifyStaffPIN(ctx context.Context, id uint) (*Staff, error)
-	RegisterDevice(ctx context.Context, in RegisterDeviceRequest) (*Device, error)
-	ListDevices(ctx context.Context) ([]Device, error)
-	UpdateDevice(ctx context.Context, id uint, in UpdateDeviceRequest) (*Device, error)
-	ListBranches(ctx context.Context) ([]Branch, error)
-	CreateBranch(ctx context.Context, in CreateBranchRequest) (*Branch, error)
-	GetBranch(ctx context.Context, id uint) (*Branch, error)
-	UpdateBranch(ctx context.Context, id uint, in UpdateBranchRequest) (*Branch, error)
-	ListBranchStaff(ctx context.Context, id uint) ([]Staff, error)
-	ListStaff(ctx context.Context) ([]Staff, error)
-	CreateStaff(ctx context.Context, in CreateStaffRequest) (*Staff, error)
-	GetStaff(ctx context.Context, id uint) (*Staff, error)
-	UpdateStaff(ctx context.Context, id uint, in UpdateStaffRequest) (*Staff, error)
+	// Devices are scoped to orgID via their branch, same as Staff.
+	CreateDevice(ctx context.Context, orgID uint, in CreateDeviceRequest) (*Device, error)
+	ListDevices(ctx context.Context, orgID uint) ([]Device, error)
+	UpdateDevice(ctx context.Context, orgID uint, id uint, in UpdateDeviceRequest) (*Device, error)
+	// Branches are always scoped to orgID (the authenticated caller's own
+	// organization) - GetBranch/UpdateBranch/ListBranchStaff return
+	// common.NotFoundError for a branch that exists but belongs to a
+	// different org, same as one that doesn't exist at all, so a caller can
+	// never distinguish "not mine" from "doesn't exist" by probing IDs.
+	ListBranches(ctx context.Context, orgID uint) ([]Branch, error)
+	CreateBranch(ctx context.Context, orgID uint, in CreateBranchRequest) (*Branch, error)
+	GetBranch(ctx context.Context, orgID uint, id uint) (*Branch, error)
+	UpdateBranch(ctx context.Context, orgID uint, id uint, in UpdateBranchRequest) (*Branch, error)
+	ListBranchStaff(ctx context.Context, orgID uint, id uint) ([]Staff, error)
+	// Staff are scoped to orgID via their branch (Staff has no org_id column
+	// of its own) - same not-found-not-forbidden reasoning as branches.
+	ListStaff(ctx context.Context, orgID uint) ([]Staff, error)
+	CreateStaff(ctx context.Context, orgID uint, in CreateStaffRequest) (*Staff, error)
+	GetStaff(ctx context.Context, orgID uint, id uint) (*Staff, error)
+	UpdateStaff(ctx context.Context, orgID uint, id uint, in UpdateStaffRequest) (*Staff, error)
 	ListRoles(ctx context.Context) ([]Role, error)
 	ListPermissions(ctx context.Context) ([]Permission, error)
 	ListRolePermissions(ctx context.Context, id uint) ([]Permission, error)
 	CreateAccount(ctx context.Context, in CreateAccountInput) (*CreateAccountResult, error)
+	// CreatePosAccount returns common.NotFoundError if in.DeviceID doesn't
+	// belong to in.OrgID - same not-found-not-forbidden reasoning as branches.
+	CreatePosAccount(ctx context.Context, in CreatePosAccountInput) (*User, error)
 }

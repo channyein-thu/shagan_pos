@@ -10,15 +10,16 @@ import (
 
 	"shagan_pos/internal/common"
 	"shagan_pos/internal/identity"
+	"shagan_pos/internal/middleware"
 )
 
 type IdentityAPI struct {
 	service identity.Interface
 }
 
-func NewIdentityAPI(db *gorm.DB, jwtSecret []byte, accessTokenTTL, refreshTokenTTL time.Duration) *IdentityAPI {
+func NewIdentityAPI(db *gorm.DB, jwtSecret []byte, accessTokenTTL, refreshTokenTTL, staffPINTokenTTL time.Duration) *IdentityAPI {
 	return &IdentityAPI{
-		service: identity.NewService(identity.NewRepository(db), jwtSecret, accessTokenTTL, refreshTokenTTL),
+		service: identity.NewService(identity.NewRepository(db), jwtSecret, accessTokenTTL, refreshTokenTTL, staffPINTokenTTL),
 	}
 }
 
@@ -37,7 +38,7 @@ func (a *IdentityAPI) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.PATCH("/me", a.UpdateMe)
 	rg.POST("/auth/manager-pin/verify", a.VerifyManagerPIN)
 	rg.POST("/staff/:id/pin/verify", a.VerifyStaffPIN)
-	rg.POST("/devices/register", a.RegisterDevice)
+	rg.POST("/devices", a.CreateDevice)
 	rg.GET("/devices", a.ListDevices)
 	rg.PATCH("/devices/:id", a.UpdateDevice)
 	rg.GET("/branches", a.ListBranches)
@@ -59,6 +60,9 @@ func (a *IdentityAPI) RegisterRoutes(rg *gin.RouterGroup) {
 // the normal staff-PIN/JWT auth - see cmd/main.go's "/internal" group.
 func (a *IdentityAPI) RegisterInternalRoutes(rg *gin.RouterGroup) {
 	rg.POST("/accounts", a.CreateAccount)
+	rg.POST("/accounts/pos", a.CreatePosAccount)
+	rg.POST("/branches", a.CreateBranchInternal)
+	rg.POST("/devices", a.CreateDeviceInternal)
 }
 
 // Login handles `POST /auth/login`. Owner email+password login
@@ -107,7 +111,12 @@ func (a *IdentityAPI) Logout(c *gin.Context) {
 
 // GetMe handles `GET /me`. Caller's identity + roles/permissions
 func (a *IdentityAPI) GetMe(c *gin.Context) {
-	result, err := a.service.GetMe(c.Request.Context())
+	userID, ok := middleware.UserIDFromContext(c)
+	if !ok {
+		common.HandleError(c, common.UnauthorizedError("missing or malformed authorization header"))
+		return
+	}
+	result, err := a.service.GetMe(c.Request.Context(), userID)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -117,12 +126,17 @@ func (a *IdentityAPI) GetMe(c *gin.Context) {
 
 // UpdateMe handles `PATCH /me`. Locale preference, etc.
 func (a *IdentityAPI) UpdateMe(c *gin.Context) {
+	userID, ok := middleware.UserIDFromContext(c)
+	if !ok {
+		common.HandleError(c, common.UnauthorizedError("missing or malformed authorization header"))
+		return
+	}
 	var in identity.UpdateMeRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
-	result, err := a.service.UpdateMe(c.Request.Context(), in)
+	result, err := a.service.UpdateMe(c.Request.Context(), userID, in)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -142,27 +156,25 @@ func (a *IdentityAPI) VerifyManagerPIN(c *gin.Context) {
 
 // VerifyStaffPIN handles `POST /staff/:id/pin/verify`. Cashier PIN sign-on at a terminal
 func (a *IdentityAPI) VerifyStaffPIN(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
-	result, err := a.service.VerifyStaffPIN(c.Request.Context(), uint(idVal))
-	if err != nil {
-		common.HandleError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, result)
-}
-
-// RegisterDevice handles `POST /devices/register`. Provisions a pos-type login seat
-func (a *IdentityAPI) RegisterDevice(c *gin.Context) {
-	var in identity.RegisterDeviceRequest
+	var in identity.VerifyStaffPINRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
-	result, err := a.service.RegisterDevice(c.Request.Context(), in)
+	var branchID *uint
+	if bID, ok := middleware.BranchIDFromContext(c); ok {
+		branchID = &bID
+	}
+	result, err := a.service.VerifyStaffPIN(c.Request.Context(), orgID, branchID, uint(idVal), in)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -170,9 +182,32 @@ func (a *IdentityAPI) RegisterDevice(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
+// CreateDevice handles `POST /devices`. Provisions a pos-type login seat
+func (a *IdentityAPI) CreateDevice(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	var in identity.CreateDeviceRequest
+	if err := c.ShouldBindJSON(&in); err != nil {
+		common.HandleError(c, common.BadRequestError(err.Error()))
+		return
+	}
+	result, err := a.service.CreateDevice(c.Request.Context(), orgID, in)
+	if err != nil {
+		common.HandleError(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, result)
+}
+
 // ListDevices handles `GET /devices`.
 func (a *IdentityAPI) ListDevices(c *gin.Context) {
-	result, err := a.service.ListDevices(c.Request.Context())
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	result, err := a.service.ListDevices(c.Request.Context(), orgID)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -182,6 +217,10 @@ func (a *IdentityAPI) ListDevices(c *gin.Context) {
 
 // UpdateDevice handles `PATCH /devices/:id`.
 func (a *IdentityAPI) UpdateDevice(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		common.HandleError(c, common.BadRequestError("invalid id"))
@@ -192,7 +231,7 @@ func (a *IdentityAPI) UpdateDevice(c *gin.Context) {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
-	result, err := a.service.UpdateDevice(c.Request.Context(), uint(idVal), in)
+	result, err := a.service.UpdateDevice(c.Request.Context(), orgID, uint(idVal), in)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -200,9 +239,24 @@ func (a *IdentityAPI) UpdateDevice(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
+// requireOrgID reads the authenticated caller's org from context, writing a
+// 401 itself if it's somehow missing (shouldn't happen behind middleware.Auth,
+// but a handler must never silently fall back to an unscoped query).
+func requireOrgID(c *gin.Context) (uint, bool) {
+	orgID, ok := middleware.OrgIDFromContext(c)
+	if !ok {
+		common.HandleError(c, common.UnauthorizedError("missing or malformed authorization header"))
+	}
+	return orgID, ok
+}
+
 // ListBranches handles `GET /branches`.
 func (a *IdentityAPI) ListBranches(c *gin.Context) {
-	result, err := a.service.ListBranches(c.Request.Context())
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	result, err := a.service.ListBranches(c.Request.Context(), orgID)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -212,12 +266,16 @@ func (a *IdentityAPI) ListBranches(c *gin.Context) {
 
 // CreateBranch handles `POST /branches`.
 func (a *IdentityAPI) CreateBranch(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
 	var in identity.CreateBranchRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
-	result, err := a.service.CreateBranch(c.Request.Context(), in)
+	result, err := a.service.CreateBranch(c.Request.Context(), orgID, in)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -227,12 +285,16 @@ func (a *IdentityAPI) CreateBranch(c *gin.Context) {
 
 // GetBranch handles `GET /branches/:id`.
 func (a *IdentityAPI) GetBranch(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
-	result, err := a.service.GetBranch(c.Request.Context(), uint(idVal))
+	result, err := a.service.GetBranch(c.Request.Context(), orgID, uint(idVal))
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -242,6 +304,10 @@ func (a *IdentityAPI) GetBranch(c *gin.Context) {
 
 // UpdateBranch handles `PATCH /branches/:id`.
 func (a *IdentityAPI) UpdateBranch(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		common.HandleError(c, common.BadRequestError("invalid id"))
@@ -252,7 +318,7 @@ func (a *IdentityAPI) UpdateBranch(c *gin.Context) {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
-	result, err := a.service.UpdateBranch(c.Request.Context(), uint(idVal), in)
+	result, err := a.service.UpdateBranch(c.Request.Context(), orgID, uint(idVal), in)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -262,12 +328,16 @@ func (a *IdentityAPI) UpdateBranch(c *gin.Context) {
 
 // ListBranchStaff handles `GET /branches/:id/staff`.
 func (a *IdentityAPI) ListBranchStaff(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
-	result, err := a.service.ListBranchStaff(c.Request.Context(), uint(idVal))
+	result, err := a.service.ListBranchStaff(c.Request.Context(), orgID, uint(idVal))
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -277,7 +347,11 @@ func (a *IdentityAPI) ListBranchStaff(c *gin.Context) {
 
 // ListStaff handles `GET /staff`.
 func (a *IdentityAPI) ListStaff(c *gin.Context) {
-	result, err := a.service.ListStaff(c.Request.Context())
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	result, err := a.service.ListStaff(c.Request.Context(), orgID)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -287,12 +361,16 @@ func (a *IdentityAPI) ListStaff(c *gin.Context) {
 
 // CreateStaff handles `POST /staff`. Ends in PIN set step
 func (a *IdentityAPI) CreateStaff(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
 	var in identity.CreateStaffRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
-	result, err := a.service.CreateStaff(c.Request.Context(), in)
+	result, err := a.service.CreateStaff(c.Request.Context(), orgID, in)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -302,12 +380,16 @@ func (a *IdentityAPI) CreateStaff(c *gin.Context) {
 
 // GetStaff handles `GET /staff/:id`.
 func (a *IdentityAPI) GetStaff(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
-	result, err := a.service.GetStaff(c.Request.Context(), uint(idVal))
+	result, err := a.service.GetStaff(c.Request.Context(), orgID, uint(idVal))
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -317,6 +399,10 @@ func (a *IdentityAPI) GetStaff(c *gin.Context) {
 
 // UpdateStaff handles `PATCH /staff/:id`. Never a hard delete - deactivate only
 func (a *IdentityAPI) UpdateStaff(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		common.HandleError(c, common.BadRequestError("invalid id"))
@@ -327,7 +413,7 @@ func (a *IdentityAPI) UpdateStaff(c *gin.Context) {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
-	result, err := a.service.UpdateStaff(c.Request.Context(), uint(idVal), in)
+	result, err := a.service.UpdateStaff(c.Request.Context(), orgID, uint(idVal), in)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -371,7 +457,7 @@ func (a *IdentityAPI) ListRolePermissions(c *gin.Context) {
 }
 
 // CreateAccount handles `POST /internal/accounts`. Shagan-team-only: provisions
-// a new tenant (Organization + owner User + a default Branch) in one call.
+// a new tenant (Organization + owner User + service_center User) in one call.
 func (a *IdentityAPI) CreateAccount(c *gin.Context) {
 	var in identity.CreateAccountInput
 	if err := c.ShouldBindJSON(&in); err != nil {
@@ -379,6 +465,67 @@ func (a *IdentityAPI) CreateAccount(c *gin.Context) {
 		return
 	}
 	result, err := a.service.CreateAccount(c.Request.Context(), in)
+	if err != nil {
+		common.HandleError(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, result)
+}
+
+// CreatePosAccount handles `POST /internal/accounts/pos`. Shagan-team-only:
+// attaches a new pos-type User to an existing Organization + Device.
+func (a *IdentityAPI) CreatePosAccount(c *gin.Context) {
+	var in identity.CreatePosAccountInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		common.HandleError(c, common.BadRequestError(err.Error()))
+		return
+	}
+	result, err := a.service.CreatePosAccount(c.Request.Context(), in)
+	if err != nil {
+		common.HandleError(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, result)
+}
+
+// CreateBranchInternal handles `POST /internal/branches`. Shagan-team-only:
+// lets internal tooling create a Branch for an org right after CreateAccount,
+// before that org's owner has ever logged in - reuses the same
+// Service.CreateBranch as the authenticated POST /branches, just reading
+// OrgID from the request body instead of the JWT.
+func (a *IdentityAPI) CreateBranchInternal(c *gin.Context) {
+	var in identity.CreateBranchInternalRequest
+	if err := c.ShouldBindJSON(&in); err != nil {
+		common.HandleError(c, common.BadRequestError(err.Error()))
+		return
+	}
+	result, err := a.service.CreateBranch(c.Request.Context(), in.OrgID, identity.CreateBranchRequest{
+		Name:    in.Name,
+		Status:  in.Status,
+		Address: in.Address,
+		Phone:   in.Phone,
+	})
+	if err != nil {
+		common.HandleError(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, result)
+}
+
+// CreateDeviceInternal handles `POST /internal/devices`. Shagan-team-only:
+// same reasoning as CreateBranchInternal, for devices - reuses
+// Service.CreateDevice, which already verifies BranchID belongs to OrgID.
+func (a *IdentityAPI) CreateDeviceInternal(c *gin.Context) {
+	var in identity.CreateDeviceInternalRequest
+	if err := c.ShouldBindJSON(&in); err != nil {
+		common.HandleError(c, common.BadRequestError(err.Error()))
+		return
+	}
+	result, err := a.service.CreateDevice(c.Request.Context(), in.OrgID, identity.CreateDeviceRequest{
+		BranchID: in.BranchID,
+		Name:     in.Name,
+		Status:   in.Status,
+	})
 	if err != nil {
 		common.HandleError(c, err)
 		return

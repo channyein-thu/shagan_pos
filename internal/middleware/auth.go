@@ -11,8 +11,9 @@ import (
 
 // Context keys Auth sets on a successfully authenticated request.
 const (
-	ContextUserID = "user_id"
-	ContextOrgID  = "org_id"
+	ContextUserID   = "user_id"
+	ContextOrgID    = "org_id"
+	ContextBranchID = "branch_id"
 )
 
 const bearerPrefix = "Bearer "
@@ -44,6 +45,9 @@ func Auth(jwtSecret []byte) gin.HandlerFunc {
 
 		c.Set(ContextUserID, claims.UserID)
 		c.Set(ContextOrgID, claims.OrgID)
+		if claims.BranchID != nil {
+			c.Set(ContextBranchID, *claims.BranchID)
+		}
 		c.Next()
 	}
 }
@@ -61,6 +65,18 @@ func UserIDFromContext(c *gin.Context) (uint, bool) {
 // OrgIDFromContext returns the authenticated caller's organization ID, as set by Auth.
 func OrgIDFromContext(c *gin.Context) (uint, bool) {
 	v, ok := c.Get(ContextOrgID)
+	if !ok {
+		return 0, false
+	}
+	id, ok := v.(uint)
+	return id, ok
+}
+
+// BranchIDFromContext returns the authenticated caller's branch ID, as set by
+// Auth. Only present for a pos-account token - false for owner/service_center
+// callers, which are org-wide (see identity.User.BranchID).
+func BranchIDFromContext(c *gin.Context) (uint, bool) {
+	v, ok := c.Get(ContextBranchID)
 	if !ok {
 		return 0, false
 	}

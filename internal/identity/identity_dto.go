@@ -4,58 +4,59 @@ import (
 	"time"
 )
 
-// CreateBranchRequest is the request body for the endpoint that creates or updates a Branch.
-// TODO: fields mirroring org/branch/staff/device ownership (e.g. OrgID, BranchID, StaffID)
-// likely belong to the authenticated session/context, not client input - review before use.
+// CreateBranchRequest is the request body for the endpoint that creates a
+// Branch. OrgID is deliberately not here - the branch always belongs to the
+// authenticated caller's own organization (see middleware.OrgIDFromContext),
+// never a client-supplied org.
 type CreateBranchRequest struct {
-	OrgID   uint         `json:"org_id" binding:"required"`
 	Name    string       `json:"name" binding:"required"`
 	Status  BranchStatus `json:"status" binding:"required"`
 	Address string       `json:"address" binding:"required"`
 	Phone   string       `json:"phone" binding:"required"`
 }
 
-// CreateStaffRequest is the request body for the endpoint that creates or updates a Staff.
-// TODO: fields mirroring org/branch/staff/device ownership (e.g. OrgID, BranchID, StaffID)
-// likely belong to the authenticated session/context, not client input - review before use.
+// CreateStaffRequest is the request body for the endpoint that creates a
+// Staff. BranchID is a legitimate client choice (an org can have several
+// branches, so the caller picks which one) - the repository verifies it
+// actually belongs to the caller's own org before using it. Pin is the
+// plaintext 6-digit PIN; Service.CreateStaff hashes it before it ever
+// reaches the repository - never accept a pre-hashed PIN from a client.
 type CreateStaffRequest struct {
 	BranchID uint        `json:"branch_id" binding:"required"`
 	Name     string      `json:"name" binding:"required"`
 	Role     uint        `json:"role" binding:"required"`
-	PinHash  string      `json:"pin_hash" binding:"required"` // TODO: accept a plaintext secret here and hash it server-side - never a client-supplied hash
+	Pin      string      `json:"pin" binding:"required,len=6,number"`
 	Phone    string      `json:"phone" binding:"required"`
 	Status   StaffStatus `json:"status" binding:"required"`
 }
 
-// RegisterDeviceRequest is the request body for the endpoint that creates or updates a Device.
-// TODO: fields mirroring org/branch/staff/device ownership (e.g. OrgID, BranchID, StaffID)
-// likely belong to the authenticated session/context, not client input - review before use.
-type RegisterDeviceRequest struct {
-	BranchID   uint         `json:"branch_id" binding:"required"`
-	Name       string       `json:"name" binding:"required"`
-	Status     DeviceStatus `json:"status" binding:"required"`
-	LastSeenAt time.Time    `json:"last_seen_at" binding:"required"`
+// CreateDeviceRequest is the request body for the endpoint that creates
+// a Device. BranchID is a legitimate client choice (verified server-side
+// against the caller's org). LastSeenAt is not here - it's a server-tracked
+// heartbeat timestamp, set to now() on creation, never client input.
+type CreateDeviceRequest struct {
+	BranchID uint         `json:"branch_id" binding:"required"`
+	Name     string       `json:"name" binding:"required"`
+	Status   DeviceStatus `json:"status" binding:"required"`
 }
 
-// UpdateBranchRequest is the request body for the endpoint that creates or updates a Branch.
-// TODO: fields mirroring org/branch/staff/device ownership (e.g. OrgID, BranchID, StaffID)
-// likely belong to the authenticated session/context, not client input - review before use.
+// UpdateBranchRequest is the request body for the endpoint that updates a
+// Branch. OrgID is deliberately not here - a branch can never be reassigned
+// to a different organization via a client update.
 type UpdateBranchRequest struct {
-	OrgID   *uint         `json:"org_id" binding:"omitempty"`
 	Name    *string       `json:"name" binding:"omitempty"`
 	Status  *BranchStatus `json:"status" binding:"omitempty"`
 	Address *string       `json:"address" binding:"omitempty"`
 	Phone   *string       `json:"phone" binding:"omitempty"`
 }
 
-// UpdateDeviceRequest is the request body for the endpoint that creates or updates a Device.
-// TODO: fields mirroring org/branch/staff/device ownership (e.g. OrgID, BranchID, StaffID)
-// likely belong to the authenticated session/context, not client input - review before use.
+// UpdateDeviceRequest is the request body for the endpoint that updates a
+// Device (moving it to a different branch, renaming it, changing status).
+// LastSeenAt still isn't client-writable - see CreateDeviceRequest.
 type UpdateDeviceRequest struct {
-	BranchID   *uint         `json:"branch_id" binding:"omitempty"`
-	Name       *string       `json:"name" binding:"omitempty"`
-	Status     *DeviceStatus `json:"status" binding:"omitempty"`
-	LastSeenAt *time.Time    `json:"last_seen_at" binding:"omitempty"`
+	BranchID *uint         `json:"branch_id" binding:"omitempty"`
+	Name     *string       `json:"name" binding:"omitempty"`
+	Status   *DeviceStatus `json:"status" binding:"omitempty"`
 }
 
 // UpdateMeRequest is the request body for the endpoint that creates or updates a User.
@@ -70,14 +71,15 @@ type UpdateMeRequest struct {
 	CredentialHash *string      `json:"credential_hash" binding:"omitempty"` // TODO: accept a plaintext secret here and hash it server-side - never a client-supplied hash
 }
 
-// UpdateStaffRequest is the request body for the endpoint that creates or updates a Staff.
-// TODO: fields mirroring org/branch/staff/device ownership (e.g. OrgID, BranchID, StaffID)
-// likely belong to the authenticated session/context, not client input - review before use.
+// UpdateStaffRequest is the request body for the endpoint that updates a
+// Staff. Same reasoning as CreateStaffRequest: BranchID (moving a staff
+// member to a different branch) is re-verified against the caller's org, and
+// Pin is a plaintext 6-digit PIN, hashed by Service.UpdateStaff before it reaches the repository.
 type UpdateStaffRequest struct {
 	BranchID *uint        `json:"branch_id" binding:"omitempty"`
 	Name     *string      `json:"name" binding:"omitempty"`
 	Role     *uint        `json:"role" binding:"omitempty"`
-	PinHash  *string      `json:"pin_hash" binding:"omitempty"` // TODO: accept a plaintext secret here and hash it server-side - never a client-supplied hash
+	Pin      *string      `json:"pin" binding:"omitempty,len=6,number"`
 	Phone    *string      `json:"phone" binding:"omitempty"`
 	Status   *StaffStatus `json:"status" binding:"omitempty"`
 }
@@ -86,19 +88,62 @@ type UpdateStaffRequest struct {
 
 // CreateAccountInput is the request body for `POST /internal/accounts`.
 // Not part of the ERD - this is an API-only shape for provisioning a brand
-// new tenant in one call (Organization + owner User + a default Branch).
+// new tenant: an Organization plus its owner User and service_center User
+// (two distinct logins, each with their own email/password). Branch and
+// Device creation happen afterward through the normal, already-authenticated
+// POST /branches and POST /devices endpoints, using the org_id
+// returned here - this endpoint no longer creates a Branch itself.
 type CreateAccountInput struct {
-	OrganizationName string `json:"organization_name" binding:"required"`
-	OwnerEmail       string `json:"owner_email" binding:"required,email"`
-	OwnerPassword    string `json:"owner_password" binding:"required,min=8"`
-	BranchName       string `json:"branch_name" binding:"required"`
+	OrganizationName      string `json:"organization_name" binding:"required"`
+	OwnerEmail            string `json:"owner_email" binding:"required,email"`
+	OwnerPassword         string `json:"owner_password" binding:"required,min=8"`
+	ServiceCenterEmail    string `json:"service_center_email" binding:"required,email"`
+	ServiceCenterPassword string `json:"service_center_password" binding:"required,min=8"`
 }
 
 // CreateAccountResult is returned after provisioning a new tenant.
 type CreateAccountResult struct {
-	Organization Organization `json:"organization"`
-	Owner        User         `json:"owner"`
-	Branch       Branch       `json:"branch"`
+	Organization  Organization `json:"organization"`
+	Owner         User         `json:"owner"`
+	ServiceCenter User         `json:"service_center"`
+}
+
+// CreateBranchInternalRequest is the request body for
+// `POST /internal/branches`. Shagan-team-only: identical to
+// CreateBranchRequest except OrgID is explicit, since there's no
+// authenticated owner session to read it from (see
+// middleware.OrgIDFromContext) - this is how Shagan's own tooling creates
+// the first branch for a tenant just provisioned via CreateAccount.
+type CreateBranchInternalRequest struct {
+	OrgID   uint         `json:"org_id" binding:"required"`
+	Name    string       `json:"name" binding:"required"`
+	Status  BranchStatus `json:"status" binding:"required"`
+	Address string       `json:"address" binding:"required"`
+	Phone   string       `json:"phone" binding:"required"`
+}
+
+// CreateDeviceInternalRequest is the request body for
+// `POST /internal/devices`. Same reasoning as CreateBranchInternalRequest -
+// explicit OrgID since this is Shagan-team tooling, not an authenticated
+// owner session.
+type CreateDeviceInternalRequest struct {
+	OrgID    uint         `json:"org_id" binding:"required"`
+	BranchID uint         `json:"branch_id" binding:"required"`
+	Name     string       `json:"name" binding:"required"`
+	Status   DeviceStatus `json:"status" binding:"required"`
+}
+
+// CreatePosAccountInput is the request body for `POST /internal/accounts/pos`.
+// Unlike CreateAccountInput, this attaches one User to an EXISTING
+// Organization and Device - it never creates a new org. DeviceID implies
+// which branch this account is tied to (via Device.BranchID), so BranchID
+// isn't part of this request. There's no Name - a pos account represents a
+// terminal/device credential, not a named person.
+type CreatePosAccountInput struct {
+	OrgID    uint   `json:"org_id" binding:"required"`
+	DeviceID uint   `json:"device_id" binding:"required"`
+	Email    string `json:"email" binding:"required,email"`
+	Password string `json:"password" binding:"required,min=8"`
 }
 
 // LoginRequest is the request body for `POST /auth/login`.
@@ -124,4 +169,19 @@ type SessionResult struct {
 	AccessToken  string    `json:"access_token"`
 	RefreshToken string    `json:"refresh_token"`
 	ExpiresAt    time.Time `json:"expires_at"`
+}
+
+// VerifyStaffPINRequest is the request body for `POST /staff/:id/pin/verify`.
+// Same PIN format as CreateStaffRequest/UpdateStaffRequest.
+type VerifyStaffPINRequest struct {
+	Pin string `json:"pin" binding:"required,len=6,number"`
+}
+
+// VerifyStaffPINResult is returned on a successful staff PIN verification.
+// Token is a separate, shorter-lived JWT from the caller's own device/owner
+// access token - see authtoken.StaffClaims.
+type VerifyStaffPINResult struct {
+	Staff     Staff     `json:"staff"`
+	Token     string    `json:"token"`
+	ExpiresAt time.Time `json:"expires_at"`
 }

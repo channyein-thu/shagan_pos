@@ -47,27 +47,67 @@ func (r *RepositoryImpl) CreateSession(ctx context.Context, userID uint, refresh
 
 // GetSessionByRefreshHash backs Service.RefreshSession's token lookup.
 func (r *RepositoryImpl) GetSessionByRefreshHash(ctx context.Context, refreshHash string) (*Session, error) {
-	return nil, common.ErrNotImplemented
+	var session Session
+	if err := r.db.WithContext(ctx).Where("refresh_hash = ?", refreshHash).First(&session).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, common.NotFoundError("session not found")
+		}
+		return nil, err
+	}
+	return &session, nil
 }
 
 // GetUserByID backs Service.RefreshSession's need for the user's OrgID.
 func (r *RepositoryImpl) GetUserByID(ctx context.Context, id uint) (*User, error) {
-	return nil, common.ErrNotImplemented
+	var user User
+	if err := r.db.WithContext(ctx).First(&user, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, common.NotFoundError("user not found")
+		}
+		return nil, err
+	}
+	return &user, nil
 }
 
 // RevokeSession backs Service.RefreshSession (rotation) and Service.Logout.
 func (r *RepositoryImpl) RevokeSession(ctx context.Context, sessionID uint) error {
-	return common.ErrNotImplemented
+	return r.db.WithContext(ctx).
+		Model(&Session{}).
+		Where("id = ?", sessionID).
+		Update("revoked_at", time.Now()).
+		Error
 }
 
-// GetMe backs `GET /me`. Caller's identity + roles/permissions
-func (r *RepositoryImpl) GetMe(ctx context.Context) (*User, error) {
-	return nil, common.ErrNotImplemented
-}
+// UpdateMe backs `PATCH /me`. Only Name and Email are genuinely safe for a
+// user to change about themselves:
+//   - OrgID is deliberately never written - letting a user move themselves to
+//     a different organization would be a tenant-isolation break.
+//   - AccountType is a privilege level, not a profile field - changing it is
+//     an admin action, not self-service.
+//   - DeviceID is set by device pairing (CreateDevice), not a profile edit.
+//   - CredentialHash: even though the DTO carries this field (see the TODO on
+//     UpdateMeRequest), a real password change needs its own flow that
+//     verifies the current password first - never just overwrite the hash.
+func (r *RepositoryImpl) UpdateMe(ctx context.Context, userID uint, in UpdateMeRequest) (*User, error) {
+	updates := map[string]any{}
+	if in.Name != nil {
+		updates["name"] = *in.Name
+	}
+	if in.Email != nil {
+		updates["email"] = *in.Email
+	}
 
-// UpdateMe backs `PATCH /me`. Locale preference, etc.
-func (r *RepositoryImpl) UpdateMe(ctx context.Context, in UpdateMeRequest) (*User, error) {
-	return nil, common.ErrNotImplemented
+	if len(updates) > 0 {
+		err := r.db.WithContext(ctx).Model(&User{}).Where("id = ?", userID).Updates(updates).Error
+		if err != nil {
+			if common.IsDuplicateError(err) {
+				return nil, common.ConflictError("an account with this email already exists")
+			}
+			return nil, err
+		}
+	}
+
+	return r.GetUserByID(ctx, userID)
 }
 
 // VerifyManagerPIN backs `POST /auth/manager-pin/verify`. Short-lived elevation token for void/return/exchange approval
@@ -75,91 +115,301 @@ func (r *RepositoryImpl) VerifyManagerPIN(ctx context.Context) (*Staff, error) {
 	return nil, common.ErrNotImplemented
 }
 
-// VerifyStaffPIN backs `POST /staff/:id/pin/verify`. Cashier PIN sign-on at a terminal
-func (r *RepositoryImpl) VerifyStaffPIN(ctx context.Context, id uint) (*Staff, error) {
-	return nil, common.ErrNotImplemented
+// getDeviceInOrg fetches a device, scoped to orgID via its branch - same
+// not-found-not-forbidden reasoning as getBranch/getStaff.
+func (r *RepositoryImpl) getDeviceInOrg(ctx context.Context, orgID uint, id uint) (*Device, error) {
+	var device Device
+	err := r.db.WithContext(ctx).
+		Where("id = ? AND branch_id IN (?)", id, r.orgBranchIDs(ctx, orgID)).
+		First(&device).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, common.NotFoundError("device not found")
+		}
+		return nil, err
+	}
+	return &device, nil
 }
 
-// RegisterDevice backs `POST /devices/register`. Provisions a pos-type login seat
-func (r *RepositoryImpl) RegisterDevice(ctx context.Context, in RegisterDeviceRequest) (*Device, error) {
-	return nil, common.ErrNotImplemented
+// CreateDevice backs `POST /devices`. Provisions a pos-type login seat
+func (r *RepositoryImpl) CreateDevice(ctx context.Context, orgID uint, in CreateDeviceRequest) (*Device, error) {
+	// the target branch must belong to this org, same check as CreateStaff.
+	if _, err := r.GetBranch(ctx, orgID, in.BranchID); err != nil {
+		return nil, err
+	}
+
+	device := Device{
+		BranchID:   in.BranchID,
+		Name:       in.Name,
+		Status:     in.Status,
+		LastSeenAt: time.Now(),
+	}
+	if err := r.db.WithContext(ctx).Create(&device).Error; err != nil {
+		return nil, err
+	}
+	return &device, nil
 }
 
 // ListDevices backs `GET /devices`.
-func (r *RepositoryImpl) ListDevices(ctx context.Context) ([]Device, error) {
-	return nil, common.ErrNotImplemented
+func (r *RepositoryImpl) ListDevices(ctx context.Context, orgID uint) ([]Device, error) {
+	var devices []Device
+	err := r.db.WithContext(ctx).
+		Where("branch_id IN (?)", r.orgBranchIDs(ctx, orgID)).
+		Find(&devices).Error
+	if err != nil {
+		return nil, err
+	}
+	return devices, nil
 }
 
 // UpdateDevice backs `PATCH /devices/:id`.
-func (r *RepositoryImpl) UpdateDevice(ctx context.Context, id uint, in UpdateDeviceRequest) (*Device, error) {
-	return nil, common.ErrNotImplemented
+func (r *RepositoryImpl) UpdateDevice(ctx context.Context, orgID uint, id uint, in UpdateDeviceRequest) (*Device, error) {
+	if _, err := r.getDeviceInOrg(ctx, orgID, id); err != nil {
+		return nil, err
+	}
+
+	updates := map[string]any{}
+	if in.BranchID != nil {
+		// moving a device to a different branch - that branch must belong to
+		// this org too, same check as CreateStaff/UpdateStaff.
+		if _, err := r.GetBranch(ctx, orgID, *in.BranchID); err != nil {
+			return nil, err
+		}
+		updates["branch_id"] = *in.BranchID
+	}
+	if in.Name != nil {
+		updates["name"] = *in.Name
+	}
+	if in.Status != nil {
+		updates["status"] = *in.Status
+	}
+
+	if len(updates) > 0 {
+		if err := r.db.WithContext(ctx).Model(&Device{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+			return nil, err
+		}
+	}
+
+	return r.getDeviceInOrg(ctx, orgID, id)
 }
 
 // ListBranches backs `GET /branches`.
-func (r *RepositoryImpl) ListBranches(ctx context.Context) ([]Branch, error) {
-	return nil, common.ErrNotImplemented
+func (r *RepositoryImpl) ListBranches(ctx context.Context, orgID uint) ([]Branch, error) {
+	var branches []Branch
+	if err := r.db.WithContext(ctx).Where("org_id = ?", orgID).Find(&branches).Error; err != nil {
+		return nil, err
+	}
+	return branches, nil
 }
 
 // CreateBranch backs `POST /branches`.
-func (r *RepositoryImpl) CreateBranch(ctx context.Context, in CreateBranchRequest) (*Branch, error) {
-	return nil, common.ErrNotImplemented
+func (r *RepositoryImpl) CreateBranch(ctx context.Context, orgID uint, in CreateBranchRequest) (*Branch, error) {
+	branch := Branch{
+		OrgID:   orgID,
+		Name:    in.Name,
+		Status:  in.Status,
+		Address: in.Address,
+		Phone:   in.Phone,
+	}
+	if err := r.db.WithContext(ctx).Create(&branch).Error; err != nil {
+		return nil, err
+	}
+	return &branch, nil
 }
 
-// GetBranch backs `GET /branches/:id`.
-func (r *RepositoryImpl) GetBranch(ctx context.Context, id uint) (*Branch, error) {
-	return nil, common.ErrNotImplemented
+// GetBranch backs `GET /branches/:id`. Scoped to orgID - see the Repository
+// interface doc on why a cross-org ID returns 404, not 403.
+func (r *RepositoryImpl) GetBranch(ctx context.Context, orgID uint, id uint) (*Branch, error) {
+	var branch Branch
+	err := r.db.WithContext(ctx).Where("id = ? AND org_id = ?", id, orgID).First(&branch).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, common.NotFoundError("branch not found")
+		}
+		return nil, err
+	}
+	return &branch, nil
 }
 
 // UpdateBranch backs `PATCH /branches/:id`.
-func (r *RepositoryImpl) UpdateBranch(ctx context.Context, id uint, in UpdateBranchRequest) (*Branch, error) {
-	return nil, common.ErrNotImplemented
+func (r *RepositoryImpl) UpdateBranch(ctx context.Context, orgID uint, id uint, in UpdateBranchRequest) (*Branch, error) {
+	// confirms the branch exists AND belongs to orgID before touching anything
+	if _, err := r.GetBranch(ctx, orgID, id); err != nil {
+		return nil, err
+	}
+
+	updates := map[string]any{}
+	if in.Name != nil {
+		updates["name"] = *in.Name
+	}
+	if in.Status != nil {
+		updates["status"] = *in.Status
+	}
+	if in.Address != nil {
+		updates["address"] = *in.Address
+	}
+	if in.Phone != nil {
+		updates["phone"] = *in.Phone
+	}
+
+	if len(updates) > 0 {
+		if err := r.db.WithContext(ctx).Model(&Branch{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+			return nil, err
+		}
+	}
+
+	return r.GetBranch(ctx, orgID, id)
 }
 
 // ListBranchStaff backs `GET /branches/:id/staff`.
-func (r *RepositoryImpl) ListBranchStaff(ctx context.Context, id uint) ([]Staff, error) {
-	return nil, common.ErrNotImplemented
+func (r *RepositoryImpl) ListBranchStaff(ctx context.Context, orgID uint, id uint) ([]Staff, error) {
+	// confirms the branch belongs to orgID before revealing which staff work there
+	if _, err := r.GetBranch(ctx, orgID, id); err != nil {
+		return nil, err
+	}
+
+	var staff []Staff
+	if err := r.db.WithContext(ctx).Where("branch_id = ?", id).Find(&staff).Error; err != nil {
+		return nil, err
+	}
+	return staff, nil
+}
+
+// orgBranchIDs is a subquery selecting the IDs of every branch belonging to
+// orgID - used to scope Staff (which has no org_id column of its own) to the
+// caller's organization via its branch.
+func (r *RepositoryImpl) orgBranchIDs(ctx context.Context, orgID uint) *gorm.DB {
+	return r.db.WithContext(ctx).Model(&Branch{}).Where("org_id = ?", orgID).Select("id")
 }
 
 // ListStaff backs `GET /staff`.
-func (r *RepositoryImpl) ListStaff(ctx context.Context) ([]Staff, error) {
-	return nil, common.ErrNotImplemented
+func (r *RepositoryImpl) ListStaff(ctx context.Context, orgID uint) ([]Staff, error) {
+	var staff []Staff
+	err := r.db.WithContext(ctx).
+		Where("branch_id IN (?)", r.orgBranchIDs(ctx, orgID)).
+		Find(&staff).Error
+	if err != nil {
+		return nil, err
+	}
+	return staff, nil
 }
 
 // CreateStaff backs `POST /staff`. Ends in PIN set step
-func (r *RepositoryImpl) CreateStaff(ctx context.Context, in CreateStaffRequest) (*Staff, error) {
-	return nil, common.ErrNotImplemented
+func (r *RepositoryImpl) CreateStaff(ctx context.Context, orgID uint, in CreateStaffRequest) (*Staff, error) {
+	// the target branch must actually belong to this org, or a caller could
+	// plant a staff row in someone else's branch by guessing its ID.
+	if _, err := r.GetBranch(ctx, orgID, in.BranchID); err != nil {
+		return nil, err
+	}
+
+	staff := Staff{
+		BranchID: in.BranchID,
+		Name:     in.Name,
+		RoleID:   in.Role,
+		PinHash:  in.Pin, // already hashed by Service.CreateStaff
+		Phone:    in.Phone,
+		Status:   in.Status,
+	}
+	if err := r.db.WithContext(ctx).Create(&staff).Error; err != nil {
+		return nil, err
+	}
+	return &staff, nil
 }
 
 // GetStaff backs `GET /staff/:id`.
-func (r *RepositoryImpl) GetStaff(ctx context.Context, id uint) (*Staff, error) {
-	return nil, common.ErrNotImplemented
+func (r *RepositoryImpl) GetStaff(ctx context.Context, orgID uint, id uint) (*Staff, error) {
+	var staff Staff
+	err := r.db.WithContext(ctx).
+		Where("id = ? AND branch_id IN (?)", id, r.orgBranchIDs(ctx, orgID)).
+		First(&staff).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, common.NotFoundError("staff not found")
+		}
+		return nil, err
+	}
+	return &staff, nil
 }
 
 // UpdateStaff backs `PATCH /staff/:id`. Never a hard delete - deactivate only
-func (r *RepositoryImpl) UpdateStaff(ctx context.Context, id uint, in UpdateStaffRequest) (*Staff, error) {
-	return nil, common.ErrNotImplemented
+func (r *RepositoryImpl) UpdateStaff(ctx context.Context, orgID uint, id uint, in UpdateStaffRequest) (*Staff, error) {
+	if _, err := r.GetStaff(ctx, orgID, id); err != nil {
+		return nil, err
+	}
+
+	updates := map[string]any{}
+	if in.BranchID != nil {
+		// moving staff to a different branch - that branch must belong to
+		// this org too, same check as CreateStaff.
+		if _, err := r.GetBranch(ctx, orgID, *in.BranchID); err != nil {
+			return nil, err
+		}
+		updates["branch_id"] = *in.BranchID
+	}
+	if in.Name != nil {
+		updates["name"] = *in.Name
+	}
+	if in.Role != nil {
+		updates["role"] = *in.Role
+	}
+	if in.Pin != nil {
+		updates["pin_hash"] = *in.Pin // already hashed by Service.UpdateStaff
+	}
+	if in.Phone != nil {
+		updates["phone"] = *in.Phone
+	}
+	if in.Status != nil {
+		updates["status"] = *in.Status
+	}
+
+	if len(updates) > 0 {
+		if err := r.db.WithContext(ctx).Model(&Staff{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+			return nil, err
+		}
+	}
+
+	return r.GetStaff(ctx, orgID, id)
 }
 
-// ListRoles backs `GET /roles`.
+// ListRoles backs `GET /roles`. Roles are global and fixed for v1 (not
+// per-org customizable - see the 09-12 permissions-model decision), so
+// there's no org scoping here, unlike Branches/Staff/Devices.
 func (r *RepositoryImpl) ListRoles(ctx context.Context) ([]Role, error) {
-	return nil, common.ErrNotImplemented
+	var roles []Role
+	if err := r.db.WithContext(ctx).Find(&roles).Error; err != nil {
+		return nil, err
+	}
+	return roles, nil
 }
 
-// ListPermissions backs `GET /permissions`.
+// ListPermissions backs `GET /permissions`. Global, same reasoning as ListRoles.
 func (r *RepositoryImpl) ListPermissions(ctx context.Context) ([]Permission, error) {
-	return nil, common.ErrNotImplemented
+	var permissions []Permission
+	if err := r.db.WithContext(ctx).Find(&permissions).Error; err != nil {
+		return nil, err
+	}
+	return permissions, nil
 }
 
 // ListRolePermissions backs `GET /roles/:id/permissions`. Read the matrix
 func (r *RepositoryImpl) ListRolePermissions(ctx context.Context, id uint) ([]Permission, error) {
-	return nil, common.ErrNotImplemented
+	var permissions []Permission
+	err := r.db.WithContext(ctx).
+		Where("id IN (?)", r.db.WithContext(ctx).Model(&RolePermission{}).Where("role_id = ?", id).Select("permission_id")).
+		Find(&permissions).Error
+	if err != nil {
+		return nil, err
+	}
+	return permissions, nil
 }
 
 // CreateAccount backs `POST /internal/accounts`. Shagan-team-only: provisions
-// a new tenant (Organization + owner User + a default Branch) in one
+// a new tenant (Organization + owner User + service_center User) in one
 // transaction, so a failure partway through never leaves an orphaned
-// Organization with no owner. By the time in.OwnerPassword reaches here it is
-// expected to already be a hash - see Service.CreateAccount.
+// Organization with no owner. No Branch is created here - that happens
+// afterward through the normal, already-authenticated POST /branches
+// endpoint. By the time in.OwnerPassword/in.ServiceCenterPassword reach here
+// they are expected to already be hashes - see Service.CreateAccount.
 func (r *RepositoryImpl) CreateAccount(ctx context.Context, in CreateAccountInput) (*CreateAccountResult, error) {
 	var result CreateAccountResult
 
@@ -169,11 +419,11 @@ func (r *RepositoryImpl) CreateAccount(ctx context.Context, in CreateAccountInpu
 			return err
 		}
 
-		email := in.OwnerEmail
+		ownerEmail := in.OwnerEmail
 		owner := User{
 			OrgID:          org.ID,
 			AccountType:    AccountTypeOwner,
-			Email:          &email,
+			Email:          &ownerEmail,
 			CredentialHash: in.OwnerPassword,
 		}
 		if err := tx.Create(&owner).Error; err != nil {
@@ -183,16 +433,21 @@ func (r *RepositoryImpl) CreateAccount(ctx context.Context, in CreateAccountInpu
 			return err
 		}
 
-		branch := Branch{
-			OrgID:  org.ID,
-			Name:   in.BranchName,
-			Status: BranchStatusActive,
+		serviceCenterEmail := in.ServiceCenterEmail
+		serviceCenter := User{
+			OrgID:          org.ID,
+			AccountType:    AccountTypeServiceCenter,
+			Email:          &serviceCenterEmail,
+			CredentialHash: in.ServiceCenterPassword,
 		}
-		if err := tx.Create(&branch).Error; err != nil {
+		if err := tx.Create(&serviceCenter).Error; err != nil {
+			if common.IsDuplicateError(err) {
+				return common.ConflictError("an account with this email already exists")
+			}
 			return err
 		}
 
-		result = CreateAccountResult{Organization: org, Owner: owner, Branch: branch}
+		result = CreateAccountResult{Organization: org, Owner: owner, ServiceCenter: serviceCenter}
 		return nil
 	})
 	if err != nil {
@@ -200,4 +455,35 @@ func (r *RepositoryImpl) CreateAccount(ctx context.Context, in CreateAccountInpu
 	}
 
 	return &result, nil
+}
+
+// CreatePosAccount backs `POST /internal/accounts/pos`. Shagan-team-only:
+// attaches a new pos-type User to an existing Organization + Device. Unlike
+// CreateAccount, it never creates an Organization - in.DeviceID must already
+// belong to in.OrgID, verified the same not-found-not-forbidden way as
+// CreateDevice/UpdateDevice. By the time in.Password reaches here it is
+// expected to already be a hash - see Service.CreatePosAccount.
+func (r *RepositoryImpl) CreatePosAccount(ctx context.Context, in CreatePosAccountInput) (*User, error) {
+	device, err := r.getDeviceInOrg(ctx, in.OrgID, in.DeviceID)
+	if err != nil {
+		return nil, err
+	}
+
+	email := in.Email
+	user := User{
+		OrgID:          in.OrgID,
+		AccountType:    AccountTypePos,
+		DeviceID:       &device.ID,
+		BranchID:       &device.BranchID,
+		Email:          &email,
+		CredentialHash: in.Password,
+	}
+	if err := r.db.WithContext(ctx).Create(&user).Error; err != nil {
+		if common.IsDuplicateError(err) {
+			return nil, common.ConflictError("an account with this email already exists")
+		}
+		return nil, err
+	}
+
+	return &user, nil
 }

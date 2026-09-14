@@ -81,9 +81,9 @@ func (_c *MockRepository_CreateAccount_Call) RunAndReturn(run func(context.Conte
 	return _c
 }
 
-// CreateBranch provides a mock function with given fields: ctx, in
-func (_m *MockRepository) CreateBranch(ctx context.Context, in CreateBranchRequest) (*Branch, error) {
-	ret := _m.Called(ctx, in)
+// CreateBranch provides a mock function with given fields: ctx, orgID, in
+func (_m *MockRepository) CreateBranch(ctx context.Context, orgID uint, in CreateBranchRequest) (*Branch, error) {
+	ret := _m.Called(ctx, orgID, in)
 
 	if len(ret) == 0 {
 		panic("no return value specified for CreateBranch")
@@ -91,19 +91,19 @@ func (_m *MockRepository) CreateBranch(ctx context.Context, in CreateBranchReque
 
 	var r0 *Branch
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, CreateBranchRequest) (*Branch, error)); ok {
-		return rf(ctx, in)
+	if rf, ok := ret.Get(0).(func(context.Context, uint, CreateBranchRequest) (*Branch, error)); ok {
+		return rf(ctx, orgID, in)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, CreateBranchRequest) *Branch); ok {
-		r0 = rf(ctx, in)
+	if rf, ok := ret.Get(0).(func(context.Context, uint, CreateBranchRequest) *Branch); ok {
+		r0 = rf(ctx, orgID, in)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(*Branch)
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, CreateBranchRequest) error); ok {
-		r1 = rf(ctx, in)
+	if rf, ok := ret.Get(1).(func(context.Context, uint, CreateBranchRequest) error); ok {
+		r1 = rf(ctx, orgID, in)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -118,14 +118,15 @@ type MockRepository_CreateBranch_Call struct {
 
 // CreateBranch is a helper method to define mock.On call
 //   - ctx context.Context
+//   - orgID uint
 //   - in CreateBranchRequest
-func (_e *MockRepository_Expecter) CreateBranch(ctx interface{}, in interface{}) *MockRepository_CreateBranch_Call {
-	return &MockRepository_CreateBranch_Call{Call: _e.mock.On("CreateBranch", ctx, in)}
+func (_e *MockRepository_Expecter) CreateBranch(ctx interface{}, orgID interface{}, in interface{}) *MockRepository_CreateBranch_Call {
+	return &MockRepository_CreateBranch_Call{Call: _e.mock.On("CreateBranch", ctx, orgID, in)}
 }
 
-func (_c *MockRepository_CreateBranch_Call) Run(run func(ctx context.Context, in CreateBranchRequest)) *MockRepository_CreateBranch_Call {
+func (_c *MockRepository_CreateBranch_Call) Run(run func(ctx context.Context, orgID uint, in CreateBranchRequest)) *MockRepository_CreateBranch_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(CreateBranchRequest))
+		run(args[0].(context.Context), args[1].(uint), args[2].(CreateBranchRequest))
 	})
 	return _c
 }
@@ -135,7 +136,126 @@ func (_c *MockRepository_CreateBranch_Call) Return(_a0 *Branch, _a1 error) *Mock
 	return _c
 }
 
-func (_c *MockRepository_CreateBranch_Call) RunAndReturn(run func(context.Context, CreateBranchRequest) (*Branch, error)) *MockRepository_CreateBranch_Call {
+func (_c *MockRepository_CreateBranch_Call) RunAndReturn(run func(context.Context, uint, CreateBranchRequest) (*Branch, error)) *MockRepository_CreateBranch_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// CreateDevice provides a mock function with given fields: ctx, orgID, in
+func (_m *MockRepository) CreateDevice(ctx context.Context, orgID uint, in CreateDeviceRequest) (*Device, error) {
+	ret := _m.Called(ctx, orgID, in)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CreateDevice")
+	}
+
+	var r0 *Device
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, uint, CreateDeviceRequest) (*Device, error)); ok {
+		return rf(ctx, orgID, in)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, uint, CreateDeviceRequest) *Device); ok {
+		r0 = rf(ctx, orgID, in)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*Device)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, uint, CreateDeviceRequest) error); ok {
+		r1 = rf(ctx, orgID, in)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// MockRepository_CreateDevice_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CreateDevice'
+type MockRepository_CreateDevice_Call struct {
+	*mock.Call
+}
+
+// CreateDevice is a helper method to define mock.On call
+//   - ctx context.Context
+//   - orgID uint
+//   - in CreateDeviceRequest
+func (_e *MockRepository_Expecter) CreateDevice(ctx interface{}, orgID interface{}, in interface{}) *MockRepository_CreateDevice_Call {
+	return &MockRepository_CreateDevice_Call{Call: _e.mock.On("CreateDevice", ctx, orgID, in)}
+}
+
+func (_c *MockRepository_CreateDevice_Call) Run(run func(ctx context.Context, orgID uint, in CreateDeviceRequest)) *MockRepository_CreateDevice_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(uint), args[2].(CreateDeviceRequest))
+	})
+	return _c
+}
+
+func (_c *MockRepository_CreateDevice_Call) Return(_a0 *Device, _a1 error) *MockRepository_CreateDevice_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *MockRepository_CreateDevice_Call) RunAndReturn(run func(context.Context, uint, CreateDeviceRequest) (*Device, error)) *MockRepository_CreateDevice_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// CreatePosAccount provides a mock function with given fields: ctx, in
+func (_m *MockRepository) CreatePosAccount(ctx context.Context, in CreatePosAccountInput) (*User, error) {
+	ret := _m.Called(ctx, in)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CreatePosAccount")
+	}
+
+	var r0 *User
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, CreatePosAccountInput) (*User, error)); ok {
+		return rf(ctx, in)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, CreatePosAccountInput) *User); ok {
+		r0 = rf(ctx, in)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*User)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, CreatePosAccountInput) error); ok {
+		r1 = rf(ctx, in)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// MockRepository_CreatePosAccount_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CreatePosAccount'
+type MockRepository_CreatePosAccount_Call struct {
+	*mock.Call
+}
+
+// CreatePosAccount is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in CreatePosAccountInput
+func (_e *MockRepository_Expecter) CreatePosAccount(ctx interface{}, in interface{}) *MockRepository_CreatePosAccount_Call {
+	return &MockRepository_CreatePosAccount_Call{Call: _e.mock.On("CreatePosAccount", ctx, in)}
+}
+
+func (_c *MockRepository_CreatePosAccount_Call) Run(run func(ctx context.Context, in CreatePosAccountInput)) *MockRepository_CreatePosAccount_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(CreatePosAccountInput))
+	})
+	return _c
+}
+
+func (_c *MockRepository_CreatePosAccount_Call) Return(_a0 *User, _a1 error) *MockRepository_CreatePosAccount_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *MockRepository_CreatePosAccount_Call) RunAndReturn(run func(context.Context, CreatePosAccountInput) (*User, error)) *MockRepository_CreatePosAccount_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -201,9 +321,9 @@ func (_c *MockRepository_CreateSession_Call) RunAndReturn(run func(context.Conte
 	return _c
 }
 
-// CreateStaff provides a mock function with given fields: ctx, in
-func (_m *MockRepository) CreateStaff(ctx context.Context, in CreateStaffRequest) (*Staff, error) {
-	ret := _m.Called(ctx, in)
+// CreateStaff provides a mock function with given fields: ctx, orgID, in
+func (_m *MockRepository) CreateStaff(ctx context.Context, orgID uint, in CreateStaffRequest) (*Staff, error) {
+	ret := _m.Called(ctx, orgID, in)
 
 	if len(ret) == 0 {
 		panic("no return value specified for CreateStaff")
@@ -211,19 +331,19 @@ func (_m *MockRepository) CreateStaff(ctx context.Context, in CreateStaffRequest
 
 	var r0 *Staff
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, CreateStaffRequest) (*Staff, error)); ok {
-		return rf(ctx, in)
+	if rf, ok := ret.Get(0).(func(context.Context, uint, CreateStaffRequest) (*Staff, error)); ok {
+		return rf(ctx, orgID, in)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, CreateStaffRequest) *Staff); ok {
-		r0 = rf(ctx, in)
+	if rf, ok := ret.Get(0).(func(context.Context, uint, CreateStaffRequest) *Staff); ok {
+		r0 = rf(ctx, orgID, in)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(*Staff)
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, CreateStaffRequest) error); ok {
-		r1 = rf(ctx, in)
+	if rf, ok := ret.Get(1).(func(context.Context, uint, CreateStaffRequest) error); ok {
+		r1 = rf(ctx, orgID, in)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -238,14 +358,15 @@ type MockRepository_CreateStaff_Call struct {
 
 // CreateStaff is a helper method to define mock.On call
 //   - ctx context.Context
+//   - orgID uint
 //   - in CreateStaffRequest
-func (_e *MockRepository_Expecter) CreateStaff(ctx interface{}, in interface{}) *MockRepository_CreateStaff_Call {
-	return &MockRepository_CreateStaff_Call{Call: _e.mock.On("CreateStaff", ctx, in)}
+func (_e *MockRepository_Expecter) CreateStaff(ctx interface{}, orgID interface{}, in interface{}) *MockRepository_CreateStaff_Call {
+	return &MockRepository_CreateStaff_Call{Call: _e.mock.On("CreateStaff", ctx, orgID, in)}
 }
 
-func (_c *MockRepository_CreateStaff_Call) Run(run func(ctx context.Context, in CreateStaffRequest)) *MockRepository_CreateStaff_Call {
+func (_c *MockRepository_CreateStaff_Call) Run(run func(ctx context.Context, orgID uint, in CreateStaffRequest)) *MockRepository_CreateStaff_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(CreateStaffRequest))
+		run(args[0].(context.Context), args[1].(uint), args[2].(CreateStaffRequest))
 	})
 	return _c
 }
@@ -255,14 +376,14 @@ func (_c *MockRepository_CreateStaff_Call) Return(_a0 *Staff, _a1 error) *MockRe
 	return _c
 }
 
-func (_c *MockRepository_CreateStaff_Call) RunAndReturn(run func(context.Context, CreateStaffRequest) (*Staff, error)) *MockRepository_CreateStaff_Call {
+func (_c *MockRepository_CreateStaff_Call) RunAndReturn(run func(context.Context, uint, CreateStaffRequest) (*Staff, error)) *MockRepository_CreateStaff_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
-// GetBranch provides a mock function with given fields: ctx, id
-func (_m *MockRepository) GetBranch(ctx context.Context, id uint) (*Branch, error) {
-	ret := _m.Called(ctx, id)
+// GetBranch provides a mock function with given fields: ctx, orgID, id
+func (_m *MockRepository) GetBranch(ctx context.Context, orgID uint, id uint) (*Branch, error) {
+	ret := _m.Called(ctx, orgID, id)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetBranch")
@@ -270,19 +391,19 @@ func (_m *MockRepository) GetBranch(ctx context.Context, id uint) (*Branch, erro
 
 	var r0 *Branch
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, uint) (*Branch, error)); ok {
-		return rf(ctx, id)
+	if rf, ok := ret.Get(0).(func(context.Context, uint, uint) (*Branch, error)); ok {
+		return rf(ctx, orgID, id)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, uint) *Branch); ok {
-		r0 = rf(ctx, id)
+	if rf, ok := ret.Get(0).(func(context.Context, uint, uint) *Branch); ok {
+		r0 = rf(ctx, orgID, id)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(*Branch)
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, uint) error); ok {
-		r1 = rf(ctx, id)
+	if rf, ok := ret.Get(1).(func(context.Context, uint, uint) error); ok {
+		r1 = rf(ctx, orgID, id)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -297,14 +418,15 @@ type MockRepository_GetBranch_Call struct {
 
 // GetBranch is a helper method to define mock.On call
 //   - ctx context.Context
+//   - orgID uint
 //   - id uint
-func (_e *MockRepository_Expecter) GetBranch(ctx interface{}, id interface{}) *MockRepository_GetBranch_Call {
-	return &MockRepository_GetBranch_Call{Call: _e.mock.On("GetBranch", ctx, id)}
+func (_e *MockRepository_Expecter) GetBranch(ctx interface{}, orgID interface{}, id interface{}) *MockRepository_GetBranch_Call {
+	return &MockRepository_GetBranch_Call{Call: _e.mock.On("GetBranch", ctx, orgID, id)}
 }
 
-func (_c *MockRepository_GetBranch_Call) Run(run func(ctx context.Context, id uint)) *MockRepository_GetBranch_Call {
+func (_c *MockRepository_GetBranch_Call) Run(run func(ctx context.Context, orgID uint, id uint)) *MockRepository_GetBranch_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(uint))
+		run(args[0].(context.Context), args[1].(uint), args[2].(uint))
 	})
 	return _c
 }
@@ -314,65 +436,7 @@ func (_c *MockRepository_GetBranch_Call) Return(_a0 *Branch, _a1 error) *MockRep
 	return _c
 }
 
-func (_c *MockRepository_GetBranch_Call) RunAndReturn(run func(context.Context, uint) (*Branch, error)) *MockRepository_GetBranch_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
-// GetMe provides a mock function with given fields: ctx
-func (_m *MockRepository) GetMe(ctx context.Context) (*User, error) {
-	ret := _m.Called(ctx)
-
-	if len(ret) == 0 {
-		panic("no return value specified for GetMe")
-	}
-
-	var r0 *User
-	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context) (*User, error)); ok {
-		return rf(ctx)
-	}
-	if rf, ok := ret.Get(0).(func(context.Context) *User); ok {
-		r0 = rf(ctx)
-	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*User)
-		}
-	}
-
-	if rf, ok := ret.Get(1).(func(context.Context) error); ok {
-		r1 = rf(ctx)
-	} else {
-		r1 = ret.Error(1)
-	}
-
-	return r0, r1
-}
-
-// MockRepository_GetMe_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetMe'
-type MockRepository_GetMe_Call struct {
-	*mock.Call
-}
-
-// GetMe is a helper method to define mock.On call
-//   - ctx context.Context
-func (_e *MockRepository_Expecter) GetMe(ctx interface{}) *MockRepository_GetMe_Call {
-	return &MockRepository_GetMe_Call{Call: _e.mock.On("GetMe", ctx)}
-}
-
-func (_c *MockRepository_GetMe_Call) Run(run func(ctx context.Context)) *MockRepository_GetMe_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context))
-	})
-	return _c
-}
-
-func (_c *MockRepository_GetMe_Call) Return(_a0 *User, _a1 error) *MockRepository_GetMe_Call {
-	_c.Call.Return(_a0, _a1)
-	return _c
-}
-
-func (_c *MockRepository_GetMe_Call) RunAndReturn(run func(context.Context) (*User, error)) *MockRepository_GetMe_Call {
+func (_c *MockRepository_GetBranch_Call) RunAndReturn(run func(context.Context, uint, uint) (*Branch, error)) *MockRepository_GetBranch_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -436,9 +500,9 @@ func (_c *MockRepository_GetSessionByRefreshHash_Call) RunAndReturn(run func(con
 	return _c
 }
 
-// GetStaff provides a mock function with given fields: ctx, id
-func (_m *MockRepository) GetStaff(ctx context.Context, id uint) (*Staff, error) {
-	ret := _m.Called(ctx, id)
+// GetStaff provides a mock function with given fields: ctx, orgID, id
+func (_m *MockRepository) GetStaff(ctx context.Context, orgID uint, id uint) (*Staff, error) {
+	ret := _m.Called(ctx, orgID, id)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetStaff")
@@ -446,19 +510,19 @@ func (_m *MockRepository) GetStaff(ctx context.Context, id uint) (*Staff, error)
 
 	var r0 *Staff
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, uint) (*Staff, error)); ok {
-		return rf(ctx, id)
+	if rf, ok := ret.Get(0).(func(context.Context, uint, uint) (*Staff, error)); ok {
+		return rf(ctx, orgID, id)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, uint) *Staff); ok {
-		r0 = rf(ctx, id)
+	if rf, ok := ret.Get(0).(func(context.Context, uint, uint) *Staff); ok {
+		r0 = rf(ctx, orgID, id)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(*Staff)
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, uint) error); ok {
-		r1 = rf(ctx, id)
+	if rf, ok := ret.Get(1).(func(context.Context, uint, uint) error); ok {
+		r1 = rf(ctx, orgID, id)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -473,14 +537,15 @@ type MockRepository_GetStaff_Call struct {
 
 // GetStaff is a helper method to define mock.On call
 //   - ctx context.Context
+//   - orgID uint
 //   - id uint
-func (_e *MockRepository_Expecter) GetStaff(ctx interface{}, id interface{}) *MockRepository_GetStaff_Call {
-	return &MockRepository_GetStaff_Call{Call: _e.mock.On("GetStaff", ctx, id)}
+func (_e *MockRepository_Expecter) GetStaff(ctx interface{}, orgID interface{}, id interface{}) *MockRepository_GetStaff_Call {
+	return &MockRepository_GetStaff_Call{Call: _e.mock.On("GetStaff", ctx, orgID, id)}
 }
 
-func (_c *MockRepository_GetStaff_Call) Run(run func(ctx context.Context, id uint)) *MockRepository_GetStaff_Call {
+func (_c *MockRepository_GetStaff_Call) Run(run func(ctx context.Context, orgID uint, id uint)) *MockRepository_GetStaff_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(uint))
+		run(args[0].(context.Context), args[1].(uint), args[2].(uint))
 	})
 	return _c
 }
@@ -490,7 +555,7 @@ func (_c *MockRepository_GetStaff_Call) Return(_a0 *Staff, _a1 error) *MockRepos
 	return _c
 }
 
-func (_c *MockRepository_GetStaff_Call) RunAndReturn(run func(context.Context, uint) (*Staff, error)) *MockRepository_GetStaff_Call {
+func (_c *MockRepository_GetStaff_Call) RunAndReturn(run func(context.Context, uint, uint) (*Staff, error)) *MockRepository_GetStaff_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -613,9 +678,9 @@ func (_c *MockRepository_GetUserByID_Call) RunAndReturn(run func(context.Context
 	return _c
 }
 
-// ListBranchStaff provides a mock function with given fields: ctx, id
-func (_m *MockRepository) ListBranchStaff(ctx context.Context, id uint) ([]Staff, error) {
-	ret := _m.Called(ctx, id)
+// ListBranchStaff provides a mock function with given fields: ctx, orgID, id
+func (_m *MockRepository) ListBranchStaff(ctx context.Context, orgID uint, id uint) ([]Staff, error) {
+	ret := _m.Called(ctx, orgID, id)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ListBranchStaff")
@@ -623,19 +688,19 @@ func (_m *MockRepository) ListBranchStaff(ctx context.Context, id uint) ([]Staff
 
 	var r0 []Staff
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, uint) ([]Staff, error)); ok {
-		return rf(ctx, id)
+	if rf, ok := ret.Get(0).(func(context.Context, uint, uint) ([]Staff, error)); ok {
+		return rf(ctx, orgID, id)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, uint) []Staff); ok {
-		r0 = rf(ctx, id)
+	if rf, ok := ret.Get(0).(func(context.Context, uint, uint) []Staff); ok {
+		r0 = rf(ctx, orgID, id)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]Staff)
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, uint) error); ok {
-		r1 = rf(ctx, id)
+	if rf, ok := ret.Get(1).(func(context.Context, uint, uint) error); ok {
+		r1 = rf(ctx, orgID, id)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -650,14 +715,15 @@ type MockRepository_ListBranchStaff_Call struct {
 
 // ListBranchStaff is a helper method to define mock.On call
 //   - ctx context.Context
+//   - orgID uint
 //   - id uint
-func (_e *MockRepository_Expecter) ListBranchStaff(ctx interface{}, id interface{}) *MockRepository_ListBranchStaff_Call {
-	return &MockRepository_ListBranchStaff_Call{Call: _e.mock.On("ListBranchStaff", ctx, id)}
+func (_e *MockRepository_Expecter) ListBranchStaff(ctx interface{}, orgID interface{}, id interface{}) *MockRepository_ListBranchStaff_Call {
+	return &MockRepository_ListBranchStaff_Call{Call: _e.mock.On("ListBranchStaff", ctx, orgID, id)}
 }
 
-func (_c *MockRepository_ListBranchStaff_Call) Run(run func(ctx context.Context, id uint)) *MockRepository_ListBranchStaff_Call {
+func (_c *MockRepository_ListBranchStaff_Call) Run(run func(ctx context.Context, orgID uint, id uint)) *MockRepository_ListBranchStaff_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(uint))
+		run(args[0].(context.Context), args[1].(uint), args[2].(uint))
 	})
 	return _c
 }
@@ -667,14 +733,14 @@ func (_c *MockRepository_ListBranchStaff_Call) Return(_a0 []Staff, _a1 error) *M
 	return _c
 }
 
-func (_c *MockRepository_ListBranchStaff_Call) RunAndReturn(run func(context.Context, uint) ([]Staff, error)) *MockRepository_ListBranchStaff_Call {
+func (_c *MockRepository_ListBranchStaff_Call) RunAndReturn(run func(context.Context, uint, uint) ([]Staff, error)) *MockRepository_ListBranchStaff_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
-// ListBranches provides a mock function with given fields: ctx
-func (_m *MockRepository) ListBranches(ctx context.Context) ([]Branch, error) {
-	ret := _m.Called(ctx)
+// ListBranches provides a mock function with given fields: ctx, orgID
+func (_m *MockRepository) ListBranches(ctx context.Context, orgID uint) ([]Branch, error) {
+	ret := _m.Called(ctx, orgID)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ListBranches")
@@ -682,19 +748,19 @@ func (_m *MockRepository) ListBranches(ctx context.Context) ([]Branch, error) {
 
 	var r0 []Branch
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context) ([]Branch, error)); ok {
-		return rf(ctx)
+	if rf, ok := ret.Get(0).(func(context.Context, uint) ([]Branch, error)); ok {
+		return rf(ctx, orgID)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context) []Branch); ok {
-		r0 = rf(ctx)
+	if rf, ok := ret.Get(0).(func(context.Context, uint) []Branch); ok {
+		r0 = rf(ctx, orgID)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]Branch)
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context) error); ok {
-		r1 = rf(ctx)
+	if rf, ok := ret.Get(1).(func(context.Context, uint) error); ok {
+		r1 = rf(ctx, orgID)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -709,13 +775,14 @@ type MockRepository_ListBranches_Call struct {
 
 // ListBranches is a helper method to define mock.On call
 //   - ctx context.Context
-func (_e *MockRepository_Expecter) ListBranches(ctx interface{}) *MockRepository_ListBranches_Call {
-	return &MockRepository_ListBranches_Call{Call: _e.mock.On("ListBranches", ctx)}
+//   - orgID uint
+func (_e *MockRepository_Expecter) ListBranches(ctx interface{}, orgID interface{}) *MockRepository_ListBranches_Call {
+	return &MockRepository_ListBranches_Call{Call: _e.mock.On("ListBranches", ctx, orgID)}
 }
 
-func (_c *MockRepository_ListBranches_Call) Run(run func(ctx context.Context)) *MockRepository_ListBranches_Call {
+func (_c *MockRepository_ListBranches_Call) Run(run func(ctx context.Context, orgID uint)) *MockRepository_ListBranches_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context))
+		run(args[0].(context.Context), args[1].(uint))
 	})
 	return _c
 }
@@ -725,14 +792,14 @@ func (_c *MockRepository_ListBranches_Call) Return(_a0 []Branch, _a1 error) *Moc
 	return _c
 }
 
-func (_c *MockRepository_ListBranches_Call) RunAndReturn(run func(context.Context) ([]Branch, error)) *MockRepository_ListBranches_Call {
+func (_c *MockRepository_ListBranches_Call) RunAndReturn(run func(context.Context, uint) ([]Branch, error)) *MockRepository_ListBranches_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
-// ListDevices provides a mock function with given fields: ctx
-func (_m *MockRepository) ListDevices(ctx context.Context) ([]Device, error) {
-	ret := _m.Called(ctx)
+// ListDevices provides a mock function with given fields: ctx, orgID
+func (_m *MockRepository) ListDevices(ctx context.Context, orgID uint) ([]Device, error) {
+	ret := _m.Called(ctx, orgID)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ListDevices")
@@ -740,19 +807,19 @@ func (_m *MockRepository) ListDevices(ctx context.Context) ([]Device, error) {
 
 	var r0 []Device
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context) ([]Device, error)); ok {
-		return rf(ctx)
+	if rf, ok := ret.Get(0).(func(context.Context, uint) ([]Device, error)); ok {
+		return rf(ctx, orgID)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context) []Device); ok {
-		r0 = rf(ctx)
+	if rf, ok := ret.Get(0).(func(context.Context, uint) []Device); ok {
+		r0 = rf(ctx, orgID)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]Device)
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context) error); ok {
-		r1 = rf(ctx)
+	if rf, ok := ret.Get(1).(func(context.Context, uint) error); ok {
+		r1 = rf(ctx, orgID)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -767,13 +834,14 @@ type MockRepository_ListDevices_Call struct {
 
 // ListDevices is a helper method to define mock.On call
 //   - ctx context.Context
-func (_e *MockRepository_Expecter) ListDevices(ctx interface{}) *MockRepository_ListDevices_Call {
-	return &MockRepository_ListDevices_Call{Call: _e.mock.On("ListDevices", ctx)}
+//   - orgID uint
+func (_e *MockRepository_Expecter) ListDevices(ctx interface{}, orgID interface{}) *MockRepository_ListDevices_Call {
+	return &MockRepository_ListDevices_Call{Call: _e.mock.On("ListDevices", ctx, orgID)}
 }
 
-func (_c *MockRepository_ListDevices_Call) Run(run func(ctx context.Context)) *MockRepository_ListDevices_Call {
+func (_c *MockRepository_ListDevices_Call) Run(run func(ctx context.Context, orgID uint)) *MockRepository_ListDevices_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context))
+		run(args[0].(context.Context), args[1].(uint))
 	})
 	return _c
 }
@@ -783,7 +851,7 @@ func (_c *MockRepository_ListDevices_Call) Return(_a0 []Device, _a1 error) *Mock
 	return _c
 }
 
-func (_c *MockRepository_ListDevices_Call) RunAndReturn(run func(context.Context) ([]Device, error)) *MockRepository_ListDevices_Call {
+func (_c *MockRepository_ListDevices_Call) RunAndReturn(run func(context.Context, uint) ([]Device, error)) *MockRepository_ListDevices_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -963,9 +1031,9 @@ func (_c *MockRepository_ListRoles_Call) RunAndReturn(run func(context.Context) 
 	return _c
 }
 
-// ListStaff provides a mock function with given fields: ctx
-func (_m *MockRepository) ListStaff(ctx context.Context) ([]Staff, error) {
-	ret := _m.Called(ctx)
+// ListStaff provides a mock function with given fields: ctx, orgID
+func (_m *MockRepository) ListStaff(ctx context.Context, orgID uint) ([]Staff, error) {
+	ret := _m.Called(ctx, orgID)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ListStaff")
@@ -973,19 +1041,19 @@ func (_m *MockRepository) ListStaff(ctx context.Context) ([]Staff, error) {
 
 	var r0 []Staff
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context) ([]Staff, error)); ok {
-		return rf(ctx)
+	if rf, ok := ret.Get(0).(func(context.Context, uint) ([]Staff, error)); ok {
+		return rf(ctx, orgID)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context) []Staff); ok {
-		r0 = rf(ctx)
+	if rf, ok := ret.Get(0).(func(context.Context, uint) []Staff); ok {
+		r0 = rf(ctx, orgID)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]Staff)
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context) error); ok {
-		r1 = rf(ctx)
+	if rf, ok := ret.Get(1).(func(context.Context, uint) error); ok {
+		r1 = rf(ctx, orgID)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -1000,13 +1068,14 @@ type MockRepository_ListStaff_Call struct {
 
 // ListStaff is a helper method to define mock.On call
 //   - ctx context.Context
-func (_e *MockRepository_Expecter) ListStaff(ctx interface{}) *MockRepository_ListStaff_Call {
-	return &MockRepository_ListStaff_Call{Call: _e.mock.On("ListStaff", ctx)}
+//   - orgID uint
+func (_e *MockRepository_Expecter) ListStaff(ctx interface{}, orgID interface{}) *MockRepository_ListStaff_Call {
+	return &MockRepository_ListStaff_Call{Call: _e.mock.On("ListStaff", ctx, orgID)}
 }
 
-func (_c *MockRepository_ListStaff_Call) Run(run func(ctx context.Context)) *MockRepository_ListStaff_Call {
+func (_c *MockRepository_ListStaff_Call) Run(run func(ctx context.Context, orgID uint)) *MockRepository_ListStaff_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context))
+		run(args[0].(context.Context), args[1].(uint))
 	})
 	return _c
 }
@@ -1016,66 +1085,7 @@ func (_c *MockRepository_ListStaff_Call) Return(_a0 []Staff, _a1 error) *MockRep
 	return _c
 }
 
-func (_c *MockRepository_ListStaff_Call) RunAndReturn(run func(context.Context) ([]Staff, error)) *MockRepository_ListStaff_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
-// RegisterDevice provides a mock function with given fields: ctx, in
-func (_m *MockRepository) RegisterDevice(ctx context.Context, in RegisterDeviceRequest) (*Device, error) {
-	ret := _m.Called(ctx, in)
-
-	if len(ret) == 0 {
-		panic("no return value specified for RegisterDevice")
-	}
-
-	var r0 *Device
-	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, RegisterDeviceRequest) (*Device, error)); ok {
-		return rf(ctx, in)
-	}
-	if rf, ok := ret.Get(0).(func(context.Context, RegisterDeviceRequest) *Device); ok {
-		r0 = rf(ctx, in)
-	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*Device)
-		}
-	}
-
-	if rf, ok := ret.Get(1).(func(context.Context, RegisterDeviceRequest) error); ok {
-		r1 = rf(ctx, in)
-	} else {
-		r1 = ret.Error(1)
-	}
-
-	return r0, r1
-}
-
-// MockRepository_RegisterDevice_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'RegisterDevice'
-type MockRepository_RegisterDevice_Call struct {
-	*mock.Call
-}
-
-// RegisterDevice is a helper method to define mock.On call
-//   - ctx context.Context
-//   - in RegisterDeviceRequest
-func (_e *MockRepository_Expecter) RegisterDevice(ctx interface{}, in interface{}) *MockRepository_RegisterDevice_Call {
-	return &MockRepository_RegisterDevice_Call{Call: _e.mock.On("RegisterDevice", ctx, in)}
-}
-
-func (_c *MockRepository_RegisterDevice_Call) Run(run func(ctx context.Context, in RegisterDeviceRequest)) *MockRepository_RegisterDevice_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(RegisterDeviceRequest))
-	})
-	return _c
-}
-
-func (_c *MockRepository_RegisterDevice_Call) Return(_a0 *Device, _a1 error) *MockRepository_RegisterDevice_Call {
-	_c.Call.Return(_a0, _a1)
-	return _c
-}
-
-func (_c *MockRepository_RegisterDevice_Call) RunAndReturn(run func(context.Context, RegisterDeviceRequest) (*Device, error)) *MockRepository_RegisterDevice_Call {
+func (_c *MockRepository_ListStaff_Call) RunAndReturn(run func(context.Context, uint) ([]Staff, error)) *MockRepository_ListStaff_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -1127,9 +1137,9 @@ func (_c *MockRepository_RevokeSession_Call) RunAndReturn(run func(context.Conte
 	return _c
 }
 
-// UpdateBranch provides a mock function with given fields: ctx, id, in
-func (_m *MockRepository) UpdateBranch(ctx context.Context, id uint, in UpdateBranchRequest) (*Branch, error) {
-	ret := _m.Called(ctx, id, in)
+// UpdateBranch provides a mock function with given fields: ctx, orgID, id, in
+func (_m *MockRepository) UpdateBranch(ctx context.Context, orgID uint, id uint, in UpdateBranchRequest) (*Branch, error) {
+	ret := _m.Called(ctx, orgID, id, in)
 
 	if len(ret) == 0 {
 		panic("no return value specified for UpdateBranch")
@@ -1137,19 +1147,19 @@ func (_m *MockRepository) UpdateBranch(ctx context.Context, id uint, in UpdateBr
 
 	var r0 *Branch
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, uint, UpdateBranchRequest) (*Branch, error)); ok {
-		return rf(ctx, id, in)
+	if rf, ok := ret.Get(0).(func(context.Context, uint, uint, UpdateBranchRequest) (*Branch, error)); ok {
+		return rf(ctx, orgID, id, in)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, uint, UpdateBranchRequest) *Branch); ok {
-		r0 = rf(ctx, id, in)
+	if rf, ok := ret.Get(0).(func(context.Context, uint, uint, UpdateBranchRequest) *Branch); ok {
+		r0 = rf(ctx, orgID, id, in)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(*Branch)
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, uint, UpdateBranchRequest) error); ok {
-		r1 = rf(ctx, id, in)
+	if rf, ok := ret.Get(1).(func(context.Context, uint, uint, UpdateBranchRequest) error); ok {
+		r1 = rf(ctx, orgID, id, in)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -1164,15 +1174,16 @@ type MockRepository_UpdateBranch_Call struct {
 
 // UpdateBranch is a helper method to define mock.On call
 //   - ctx context.Context
+//   - orgID uint
 //   - id uint
 //   - in UpdateBranchRequest
-func (_e *MockRepository_Expecter) UpdateBranch(ctx interface{}, id interface{}, in interface{}) *MockRepository_UpdateBranch_Call {
-	return &MockRepository_UpdateBranch_Call{Call: _e.mock.On("UpdateBranch", ctx, id, in)}
+func (_e *MockRepository_Expecter) UpdateBranch(ctx interface{}, orgID interface{}, id interface{}, in interface{}) *MockRepository_UpdateBranch_Call {
+	return &MockRepository_UpdateBranch_Call{Call: _e.mock.On("UpdateBranch", ctx, orgID, id, in)}
 }
 
-func (_c *MockRepository_UpdateBranch_Call) Run(run func(ctx context.Context, id uint, in UpdateBranchRequest)) *MockRepository_UpdateBranch_Call {
+func (_c *MockRepository_UpdateBranch_Call) Run(run func(ctx context.Context, orgID uint, id uint, in UpdateBranchRequest)) *MockRepository_UpdateBranch_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(uint), args[2].(UpdateBranchRequest))
+		run(args[0].(context.Context), args[1].(uint), args[2].(uint), args[3].(UpdateBranchRequest))
 	})
 	return _c
 }
@@ -1182,14 +1193,14 @@ func (_c *MockRepository_UpdateBranch_Call) Return(_a0 *Branch, _a1 error) *Mock
 	return _c
 }
 
-func (_c *MockRepository_UpdateBranch_Call) RunAndReturn(run func(context.Context, uint, UpdateBranchRequest) (*Branch, error)) *MockRepository_UpdateBranch_Call {
+func (_c *MockRepository_UpdateBranch_Call) RunAndReturn(run func(context.Context, uint, uint, UpdateBranchRequest) (*Branch, error)) *MockRepository_UpdateBranch_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
-// UpdateDevice provides a mock function with given fields: ctx, id, in
-func (_m *MockRepository) UpdateDevice(ctx context.Context, id uint, in UpdateDeviceRequest) (*Device, error) {
-	ret := _m.Called(ctx, id, in)
+// UpdateDevice provides a mock function with given fields: ctx, orgID, id, in
+func (_m *MockRepository) UpdateDevice(ctx context.Context, orgID uint, id uint, in UpdateDeviceRequest) (*Device, error) {
+	ret := _m.Called(ctx, orgID, id, in)
 
 	if len(ret) == 0 {
 		panic("no return value specified for UpdateDevice")
@@ -1197,19 +1208,19 @@ func (_m *MockRepository) UpdateDevice(ctx context.Context, id uint, in UpdateDe
 
 	var r0 *Device
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, uint, UpdateDeviceRequest) (*Device, error)); ok {
-		return rf(ctx, id, in)
+	if rf, ok := ret.Get(0).(func(context.Context, uint, uint, UpdateDeviceRequest) (*Device, error)); ok {
+		return rf(ctx, orgID, id, in)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, uint, UpdateDeviceRequest) *Device); ok {
-		r0 = rf(ctx, id, in)
+	if rf, ok := ret.Get(0).(func(context.Context, uint, uint, UpdateDeviceRequest) *Device); ok {
+		r0 = rf(ctx, orgID, id, in)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(*Device)
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, uint, UpdateDeviceRequest) error); ok {
-		r1 = rf(ctx, id, in)
+	if rf, ok := ret.Get(1).(func(context.Context, uint, uint, UpdateDeviceRequest) error); ok {
+		r1 = rf(ctx, orgID, id, in)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -1224,15 +1235,16 @@ type MockRepository_UpdateDevice_Call struct {
 
 // UpdateDevice is a helper method to define mock.On call
 //   - ctx context.Context
+//   - orgID uint
 //   - id uint
 //   - in UpdateDeviceRequest
-func (_e *MockRepository_Expecter) UpdateDevice(ctx interface{}, id interface{}, in interface{}) *MockRepository_UpdateDevice_Call {
-	return &MockRepository_UpdateDevice_Call{Call: _e.mock.On("UpdateDevice", ctx, id, in)}
+func (_e *MockRepository_Expecter) UpdateDevice(ctx interface{}, orgID interface{}, id interface{}, in interface{}) *MockRepository_UpdateDevice_Call {
+	return &MockRepository_UpdateDevice_Call{Call: _e.mock.On("UpdateDevice", ctx, orgID, id, in)}
 }
 
-func (_c *MockRepository_UpdateDevice_Call) Run(run func(ctx context.Context, id uint, in UpdateDeviceRequest)) *MockRepository_UpdateDevice_Call {
+func (_c *MockRepository_UpdateDevice_Call) Run(run func(ctx context.Context, orgID uint, id uint, in UpdateDeviceRequest)) *MockRepository_UpdateDevice_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(uint), args[2].(UpdateDeviceRequest))
+		run(args[0].(context.Context), args[1].(uint), args[2].(uint), args[3].(UpdateDeviceRequest))
 	})
 	return _c
 }
@@ -1242,14 +1254,14 @@ func (_c *MockRepository_UpdateDevice_Call) Return(_a0 *Device, _a1 error) *Mock
 	return _c
 }
 
-func (_c *MockRepository_UpdateDevice_Call) RunAndReturn(run func(context.Context, uint, UpdateDeviceRequest) (*Device, error)) *MockRepository_UpdateDevice_Call {
+func (_c *MockRepository_UpdateDevice_Call) RunAndReturn(run func(context.Context, uint, uint, UpdateDeviceRequest) (*Device, error)) *MockRepository_UpdateDevice_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
-// UpdateMe provides a mock function with given fields: ctx, in
-func (_m *MockRepository) UpdateMe(ctx context.Context, in UpdateMeRequest) (*User, error) {
-	ret := _m.Called(ctx, in)
+// UpdateMe provides a mock function with given fields: ctx, userID, in
+func (_m *MockRepository) UpdateMe(ctx context.Context, userID uint, in UpdateMeRequest) (*User, error) {
+	ret := _m.Called(ctx, userID, in)
 
 	if len(ret) == 0 {
 		panic("no return value specified for UpdateMe")
@@ -1257,19 +1269,19 @@ func (_m *MockRepository) UpdateMe(ctx context.Context, in UpdateMeRequest) (*Us
 
 	var r0 *User
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, UpdateMeRequest) (*User, error)); ok {
-		return rf(ctx, in)
+	if rf, ok := ret.Get(0).(func(context.Context, uint, UpdateMeRequest) (*User, error)); ok {
+		return rf(ctx, userID, in)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, UpdateMeRequest) *User); ok {
-		r0 = rf(ctx, in)
+	if rf, ok := ret.Get(0).(func(context.Context, uint, UpdateMeRequest) *User); ok {
+		r0 = rf(ctx, userID, in)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(*User)
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, UpdateMeRequest) error); ok {
-		r1 = rf(ctx, in)
+	if rf, ok := ret.Get(1).(func(context.Context, uint, UpdateMeRequest) error); ok {
+		r1 = rf(ctx, userID, in)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -1284,14 +1296,15 @@ type MockRepository_UpdateMe_Call struct {
 
 // UpdateMe is a helper method to define mock.On call
 //   - ctx context.Context
+//   - userID uint
 //   - in UpdateMeRequest
-func (_e *MockRepository_Expecter) UpdateMe(ctx interface{}, in interface{}) *MockRepository_UpdateMe_Call {
-	return &MockRepository_UpdateMe_Call{Call: _e.mock.On("UpdateMe", ctx, in)}
+func (_e *MockRepository_Expecter) UpdateMe(ctx interface{}, userID interface{}, in interface{}) *MockRepository_UpdateMe_Call {
+	return &MockRepository_UpdateMe_Call{Call: _e.mock.On("UpdateMe", ctx, userID, in)}
 }
 
-func (_c *MockRepository_UpdateMe_Call) Run(run func(ctx context.Context, in UpdateMeRequest)) *MockRepository_UpdateMe_Call {
+func (_c *MockRepository_UpdateMe_Call) Run(run func(ctx context.Context, userID uint, in UpdateMeRequest)) *MockRepository_UpdateMe_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(UpdateMeRequest))
+		run(args[0].(context.Context), args[1].(uint), args[2].(UpdateMeRequest))
 	})
 	return _c
 }
@@ -1301,14 +1314,14 @@ func (_c *MockRepository_UpdateMe_Call) Return(_a0 *User, _a1 error) *MockReposi
 	return _c
 }
 
-func (_c *MockRepository_UpdateMe_Call) RunAndReturn(run func(context.Context, UpdateMeRequest) (*User, error)) *MockRepository_UpdateMe_Call {
+func (_c *MockRepository_UpdateMe_Call) RunAndReturn(run func(context.Context, uint, UpdateMeRequest) (*User, error)) *MockRepository_UpdateMe_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
-// UpdateStaff provides a mock function with given fields: ctx, id, in
-func (_m *MockRepository) UpdateStaff(ctx context.Context, id uint, in UpdateStaffRequest) (*Staff, error) {
-	ret := _m.Called(ctx, id, in)
+// UpdateStaff provides a mock function with given fields: ctx, orgID, id, in
+func (_m *MockRepository) UpdateStaff(ctx context.Context, orgID uint, id uint, in UpdateStaffRequest) (*Staff, error) {
+	ret := _m.Called(ctx, orgID, id, in)
 
 	if len(ret) == 0 {
 		panic("no return value specified for UpdateStaff")
@@ -1316,19 +1329,19 @@ func (_m *MockRepository) UpdateStaff(ctx context.Context, id uint, in UpdateSta
 
 	var r0 *Staff
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, uint, UpdateStaffRequest) (*Staff, error)); ok {
-		return rf(ctx, id, in)
+	if rf, ok := ret.Get(0).(func(context.Context, uint, uint, UpdateStaffRequest) (*Staff, error)); ok {
+		return rf(ctx, orgID, id, in)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, uint, UpdateStaffRequest) *Staff); ok {
-		r0 = rf(ctx, id, in)
+	if rf, ok := ret.Get(0).(func(context.Context, uint, uint, UpdateStaffRequest) *Staff); ok {
+		r0 = rf(ctx, orgID, id, in)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(*Staff)
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, uint, UpdateStaffRequest) error); ok {
-		r1 = rf(ctx, id, in)
+	if rf, ok := ret.Get(1).(func(context.Context, uint, uint, UpdateStaffRequest) error); ok {
+		r1 = rf(ctx, orgID, id, in)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -1343,15 +1356,16 @@ type MockRepository_UpdateStaff_Call struct {
 
 // UpdateStaff is a helper method to define mock.On call
 //   - ctx context.Context
+//   - orgID uint
 //   - id uint
 //   - in UpdateStaffRequest
-func (_e *MockRepository_Expecter) UpdateStaff(ctx interface{}, id interface{}, in interface{}) *MockRepository_UpdateStaff_Call {
-	return &MockRepository_UpdateStaff_Call{Call: _e.mock.On("UpdateStaff", ctx, id, in)}
+func (_e *MockRepository_Expecter) UpdateStaff(ctx interface{}, orgID interface{}, id interface{}, in interface{}) *MockRepository_UpdateStaff_Call {
+	return &MockRepository_UpdateStaff_Call{Call: _e.mock.On("UpdateStaff", ctx, orgID, id, in)}
 }
 
-func (_c *MockRepository_UpdateStaff_Call) Run(run func(ctx context.Context, id uint, in UpdateStaffRequest)) *MockRepository_UpdateStaff_Call {
+func (_c *MockRepository_UpdateStaff_Call) Run(run func(ctx context.Context, orgID uint, id uint, in UpdateStaffRequest)) *MockRepository_UpdateStaff_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(uint), args[2].(UpdateStaffRequest))
+		run(args[0].(context.Context), args[1].(uint), args[2].(uint), args[3].(UpdateStaffRequest))
 	})
 	return _c
 }
@@ -1361,7 +1375,7 @@ func (_c *MockRepository_UpdateStaff_Call) Return(_a0 *Staff, _a1 error) *MockRe
 	return _c
 }
 
-func (_c *MockRepository_UpdateStaff_Call) RunAndReturn(run func(context.Context, uint, UpdateStaffRequest) (*Staff, error)) *MockRepository_UpdateStaff_Call {
+func (_c *MockRepository_UpdateStaff_Call) RunAndReturn(run func(context.Context, uint, uint, UpdateStaffRequest) (*Staff, error)) *MockRepository_UpdateStaff_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -1420,65 +1434,6 @@ func (_c *MockRepository_VerifyManagerPIN_Call) Return(_a0 *Staff, _a1 error) *M
 }
 
 func (_c *MockRepository_VerifyManagerPIN_Call) RunAndReturn(run func(context.Context) (*Staff, error)) *MockRepository_VerifyManagerPIN_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
-// VerifyStaffPIN provides a mock function with given fields: ctx, id
-func (_m *MockRepository) VerifyStaffPIN(ctx context.Context, id uint) (*Staff, error) {
-	ret := _m.Called(ctx, id)
-
-	if len(ret) == 0 {
-		panic("no return value specified for VerifyStaffPIN")
-	}
-
-	var r0 *Staff
-	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, uint) (*Staff, error)); ok {
-		return rf(ctx, id)
-	}
-	if rf, ok := ret.Get(0).(func(context.Context, uint) *Staff); ok {
-		r0 = rf(ctx, id)
-	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*Staff)
-		}
-	}
-
-	if rf, ok := ret.Get(1).(func(context.Context, uint) error); ok {
-		r1 = rf(ctx, id)
-	} else {
-		r1 = ret.Error(1)
-	}
-
-	return r0, r1
-}
-
-// MockRepository_VerifyStaffPIN_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'VerifyStaffPIN'
-type MockRepository_VerifyStaffPIN_Call struct {
-	*mock.Call
-}
-
-// VerifyStaffPIN is a helper method to define mock.On call
-//   - ctx context.Context
-//   - id uint
-func (_e *MockRepository_Expecter) VerifyStaffPIN(ctx interface{}, id interface{}) *MockRepository_VerifyStaffPIN_Call {
-	return &MockRepository_VerifyStaffPIN_Call{Call: _e.mock.On("VerifyStaffPIN", ctx, id)}
-}
-
-func (_c *MockRepository_VerifyStaffPIN_Call) Run(run func(ctx context.Context, id uint)) *MockRepository_VerifyStaffPIN_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(uint))
-	})
-	return _c
-}
-
-func (_c *MockRepository_VerifyStaffPIN_Call) Return(_a0 *Staff, _a1 error) *MockRepository_VerifyStaffPIN_Call {
-	_c.Call.Return(_a0, _a1)
-	return _c
-}
-
-func (_c *MockRepository_VerifyStaffPIN_Call) RunAndReturn(run func(context.Context, uint) (*Staff, error)) *MockRepository_VerifyStaffPIN_Call {
 	_c.Call.Return(run)
 	return _c
 }
