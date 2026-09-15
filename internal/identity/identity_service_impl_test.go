@@ -911,6 +911,7 @@ func TestService_VerifyStaffPIN_WrongPin_ReturnsSameGenericUnauthorized(t *testi
 
 	staff := &Staff{ID: 5, BranchID: 3, RoleID: 2, PinHash: hashPassword(t, "123456")}
 	repo.EXPECT().GetStaff(mock.Anything, uint(7), uint(5)).Return(staff, nil).Once()
+	repo.EXPECT().UpdateStaffPinAttempts(mock.Anything, uint(5), 1, (*time.Time)(nil)).Return(nil).Once()
 
 	_, err := svc.VerifyStaffPIN(context.Background(), 7, nil, 5, VerifyStaffPINRequest{Pin: "999999"})
 	require.Error(t, err)
@@ -947,6 +948,55 @@ func TestService_VerifyStaffPIN_UnexpectedRepositoryError_PropagatesAsIs(t *test
 
 	_, err := svc.VerifyStaffPIN(context.Background(), 7, nil, 5, VerifyStaffPINRequest{Pin: "123456"})
 	require.ErrorIs(t, err, dbErr)
+}
+
+func TestService_VerifyStaffPIN_WrongPin_ReachesThreshold_LocksOut(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo)
+
+	// already at 4 prior failures - this 5th wrong guess must trigger the lock.
+	staff := &Staff{ID: 5, BranchID: 3, RoleID: 2, PinHash: hashPassword(t, "123456"), FailedPinAttempts: DefaultPinLockoutThreshold - 1}
+	repo.EXPECT().GetStaff(mock.Anything, uint(7), uint(5)).Return(staff, nil).Once()
+	repo.EXPECT().
+		UpdateStaffPinAttempts(mock.Anything, uint(5), DefaultPinLockoutThreshold, mock.MatchedBy(func(lockedUntil *time.Time) bool {
+			return lockedUntil != nil && lockedUntil.After(time.Now())
+		})).
+		Return(nil).Once()
+
+	_, err := svc.VerifyStaffPIN(context.Background(), 7, nil, 5, VerifyStaffPINRequest{Pin: "999999"})
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusUnauthorized)
+}
+
+func TestService_VerifyStaffPIN_CurrentlyLockedOut_RejectsWithoutCheckingPin(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo)
+
+	lockedUntil := time.Now().Add(10 * time.Minute)
+	// correct PIN, but locked out - must still be rejected, and must not
+	// even reach the point of touching PIN-attempt bookkeeping again.
+	staff := &Staff{ID: 5, BranchID: 3, RoleID: 2, PinHash: hashPassword(t, "123456"), PinLockedUntil: &lockedUntil}
+	repo.EXPECT().GetStaff(mock.Anything, uint(7), uint(5)).Return(staff, nil).Once()
+
+	_, err := svc.VerifyStaffPIN(context.Background(), 7, nil, 5, VerifyStaffPINRequest{Pin: "123456"})
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusTooManyRequests)
+}
+
+func TestService_VerifyStaffPIN_LockoutExpired_AllowsRetryAgain(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo)
+
+	expiredLock := time.Now().Add(-1 * time.Minute)
+	const plaintext = "123456"
+	staff := &Staff{ID: 5, BranchID: 3, RoleID: 2, PinHash: hashPassword(t, plaintext), FailedPinAttempts: DefaultPinLockoutThreshold, PinLockedUntil: &expiredLock}
+	repo.EXPECT().GetStaff(mock.Anything, uint(7), uint(5)).Return(staff, nil).Once()
+	repo.EXPECT().UpdateStaffPinAttempts(mock.Anything, uint(5), 0, (*time.Time)(nil)).Return(nil).Once()
+	repo.EXPECT().ListRolePermissions(mock.Anything, uint(2)).Return([]Permission{}, nil).Once()
+
+	result, err := svc.VerifyStaffPIN(context.Background(), 7, nil, 5, VerifyStaffPINRequest{Pin: plaintext})
+	require.NoError(t, err)
+	require.NotEmpty(t, result.Token)
 }
 
 func TestService_VerifyManagerPIN_HappyPath_GrantsShortLivedToken(t *testing.T) {
@@ -1014,6 +1064,7 @@ func TestService_VerifyManagerPIN_WrongPin_ReturnsSameGenericUnauthorized(t *tes
 
 	staff := &Staff{ID: 9, BranchID: 3, RoleID: 3, PinHash: hashPassword(t, "654321")}
 	repo.EXPECT().GetStaff(mock.Anything, uint(7), uint(9)).Return(staff, nil).Once()
+	repo.EXPECT().UpdateStaffPinAttempts(mock.Anything, uint(9), 1, (*time.Time)(nil)).Return(nil).Once()
 
 	_, err := svc.VerifyManagerPIN(context.Background(), 7, nil, 9, VerifyManagerPINRequest{Pin: "000000", Permission: "approve_void"})
 	require.Error(t, err)

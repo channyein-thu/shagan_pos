@@ -103,15 +103,21 @@ type Session struct {
 
 // Staff maps to the "Staffs" table in the ERD.
 type Staff struct {
-	ID        uint        `gorm:"primaryKey;autoIncrement" json:"id"`
-	BranchID  uint        `gorm:"index;not null" json:"branch_id"`
-	Name      string      `gorm:"size:255;not null" json:"name"`
-	RoleID    uint        `gorm:"column:role;index;not null" json:"role"`
-	PinHash   string      `gorm:"size:255;not null" json:"pin_hash"`
-	Phone     string      `gorm:"size:25;not null" json:"phone"`
-	Status    StaffStatus `gorm:"type:varchar(30);not null" json:"status"` // one of StaffStatus* constants below (TODO: confirm real values)
-	CreatedAt time.Time   `gorm:"autoCreateTime;not null" json:"created_at"`
-	UpdatedAt time.Time   `gorm:"autoUpdateTime;not null" json:"updated_at"`
+	ID       uint        `gorm:"primaryKey;autoIncrement" json:"id"`
+	BranchID uint        `gorm:"index;not null" json:"branch_id"`
+	Name     string      `gorm:"size:255;not null" json:"name"`
+	RoleID   uint        `gorm:"column:role;index;not null" json:"role"`
+	PinHash  string      `gorm:"size:255;not null" json:"pin_hash"`
+	Phone    string      `gorm:"size:25;not null" json:"phone"`
+	Status   StaffStatus `gorm:"type:varchar(30);not null" json:"status"` // one of StaffStatus* constants below (TODO: confirm real values)
+	// FailedPinAttempts/PinLockedUntil back PIN brute-force lockout - shared
+	// between VerifyStaffPIN and VerifyManagerPIN since both check the same
+	// PinHash (see identity.Service.VerifyStaffPIN). Internal bookkeeping,
+	// never serialized to the client.
+	FailedPinAttempts int        `gorm:"not null;default:0" json:"-"`
+	PinLockedUntil    *time.Time `json:"-"`
+	CreatedAt         time.Time  `gorm:"autoCreateTime;not null" json:"created_at"`
+	UpdatedAt         time.Time  `gorm:"autoUpdateTime;not null" json:"updated_at"`
 }
 
 // Permission maps to the "Permissions" table in the ERD.

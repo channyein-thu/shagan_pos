@@ -49,6 +49,16 @@ func NotImplementedError(message string) RestError {
 	return RestError{Status: http.StatusNotImplemented, Message: message}
 }
 
+// TooManyRequestsError is for rate-limiting/lockout responses - e.g. a staff
+// PIN locked out after too many wrong guesses (see identity.Service.VerifyStaffPIN).
+// Deliberately distinct from UnauthorizedError: the caller needs to know
+// *why* a correct PIN is being rejected, unlike the generic "wrong
+// PIN/branch/staff" responses elsewhere that fold everything together on
+// purpose to prevent enumeration.
+func TooManyRequestsError(message string) RestError {
+	return RestError{Status: http.StatusTooManyRequests, Message: message}
+}
+
 func ValidationError(message string, errs []FieldError) RestError {
 	return RestError{
 		Status:  http.StatusBadRequest,

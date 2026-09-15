@@ -3,6 +3,7 @@ package identity
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"slices"
 	"time"
@@ -28,6 +29,13 @@ const (
 	// (void/return/manual discount), not a session, so this is deliberately
 	// much shorter than DefaultStaffPINTokenTTL.
 	DefaultManagerPINTokenTTL = 2 * time.Minute
+	// DefaultPinLockoutThreshold is how many consecutive wrong PIN guesses
+	// (via VerifyStaffPIN or VerifyManagerPIN - they share one counter,
+	// see Staff.FailedPinAttempts) lock a staff's PIN out.
+	DefaultPinLockoutThreshold = 5
+	// DefaultPinLockoutDuration is how long a lockout lasts before it clears
+	// on its own - no explicit unlock endpoint exists yet.
+	DefaultPinLockoutDuration = 15 * time.Minute
 )
 
 // invalidCredentialsMessage is deliberately identical for "no such email" and
@@ -195,12 +203,14 @@ func (s *Service) UpdateMe(ctx context.Context, userID uint, in UpdateMeRequest)
 }
 
 // VerifyManagerPIN checks that the target staff (1) belongs to the caller's
-// org/branch, (2) has the right PIN, and (3) actually holds in.Permission via
-// their role - all three failure modes fold into the same generic
-// unauthorized response as VerifyStaffPIN, one level up: this also hides
-// "right staff, right PIN, wrong permission" so a terminal can't probe which
-// staff have which permissions. On success, issues a short elevation token
-// (DefaultManagerPINTokenTTL) - not a shift session.
+// org/branch, (2) isn't currently PIN-locked-out, (3) has the right PIN, and
+// (4) actually holds in.Permission via their role - branch/PIN/permission
+// failures all fold into the same generic unauthorized response as
+// VerifyStaffPIN, one level up: this also hides "right staff, right PIN,
+// wrong permission" so a terminal can't probe which staff have which
+// permissions. Lockout gets its own distinct response - see checkPinLockout.
+// On success, issues a short elevation token (DefaultManagerPINTokenTTL) -
+// not a shift session.
 func (s *Service) VerifyManagerPIN(ctx context.Context, orgID uint, branchID *uint, id uint, in VerifyManagerPINRequest) (*VerifyManagerPINResult, error) {
 	staff, err := s.repo.GetStaff(ctx, orgID, id)
 	if err != nil {
@@ -215,8 +225,18 @@ func (s *Service) VerifyManagerPIN(ctx context.Context, orgID uint, branchID *ui
 		return nil, common.UnauthorizedError(invalidManagerPINMessage)
 	}
 
+	if err := checkPinLockout(staff); err != nil {
+		return nil, err
+	}
+
 	if bcrypt.CompareHashAndPassword([]byte(staff.PinHash), []byte(in.Pin)) != nil {
+		if err := s.recordFailedPinAttempt(ctx, staff); err != nil {
+			return nil, err
+		}
 		return nil, common.UnauthorizedError(invalidManagerPINMessage)
+	}
+	if err := s.resetPinAttempts(ctx, staff); err != nil {
+		return nil, err
 	}
 
 	permissions, err := s.repo.ListRolePermissions(ctx, staff.RoleID)
@@ -241,9 +261,9 @@ func (s *Service) VerifyManagerPIN(ctx context.Context, orgID uint, branchID *ui
 }
 
 // VerifyStaffPIN looks up the staff via the same org-scoped query GetStaff
-// uses (no dedicated repository method needed), then checks branch and PIN
-// itself - same layering as Login, which fetches the user then does its own
-// bcrypt compare rather than pushing that into the repository.
+// uses (no dedicated repository method needed), then checks branch, lockout,
+// and PIN itself - same layering as Login, which fetches the user then does
+// its own bcrypt compare rather than pushing that into the repository.
 func (s *Service) VerifyStaffPIN(ctx context.Context, orgID uint, branchID *uint, id uint, in VerifyStaffPINRequest) (*VerifyStaffPINResult, error) {
 	staff, err := s.repo.GetStaff(ctx, orgID, id)
 	if err != nil {
@@ -258,8 +278,18 @@ func (s *Service) VerifyStaffPIN(ctx context.Context, orgID uint, branchID *uint
 		return nil, common.UnauthorizedError(invalidStaffPINMessage)
 	}
 
+	if err := checkPinLockout(staff); err != nil {
+		return nil, err
+	}
+
 	if bcrypt.CompareHashAndPassword([]byte(staff.PinHash), []byte(in.Pin)) != nil {
+		if err := s.recordFailedPinAttempt(ctx, staff); err != nil {
+			return nil, err
+		}
 		return nil, common.UnauthorizedError(invalidStaffPINMessage)
+	}
+	if err := s.resetPinAttempts(ctx, staff); err != nil {
+		return nil, err
 	}
 
 	permissions, err := s.repo.ListRolePermissions(ctx, staff.RoleID)
@@ -277,6 +307,46 @@ func (s *Service) VerifyStaffPIN(ctx context.Context, orgID uint, branchID *uint
 		Token:     token,
 		ExpiresAt: time.Now().Add(s.staffPINTokenTTL),
 	}, nil
+}
+
+// checkPinLockout returns common.TooManyRequestsError if staff is currently
+// locked out from PIN attempts - deliberately distinct from
+// invalidStaffPINMessage/invalidManagerPINMessage's generic response, since a
+// legitimate staff member needs to know *why* their correct PIN is being
+// rejected (same reasoning an ATM tells you "too many attempts" instead of
+// silently failing).
+func checkPinLockout(staff *Staff) error {
+	if staff.PinLockedUntil != nil && time.Now().Before(*staff.PinLockedUntil) {
+		return common.TooManyRequestsError(fmt.Sprintf(
+			"too many failed PIN attempts - locked until %s",
+			staff.PinLockedUntil.Format(time.RFC3339),
+		))
+	}
+	return nil
+}
+
+// recordFailedPinAttempt increments staff's failed-PIN counter and locks it
+// out for DefaultPinLockoutDuration once DefaultPinLockoutThreshold is
+// reached. Shared by VerifyStaffPIN/VerifyManagerPIN since both check the
+// same PinHash - a brute-force run against either endpoint counts toward the
+// same lockout.
+func (s *Service) recordFailedPinAttempt(ctx context.Context, staff *Staff) error {
+	attempts := staff.FailedPinAttempts + 1
+	var lockedUntil *time.Time
+	if attempts >= DefaultPinLockoutThreshold {
+		t := time.Now().Add(DefaultPinLockoutDuration)
+		lockedUntil = &t
+	}
+	return s.repo.UpdateStaffPinAttempts(ctx, staff.ID, attempts, lockedUntil)
+}
+
+// resetPinAttempts clears staff's failed-PIN counter after a successful PIN
+// check - skips the write entirely if there's nothing to clear.
+func (s *Service) resetPinAttempts(ctx context.Context, staff *Staff) error {
+	if staff.FailedPinAttempts == 0 && staff.PinLockedUntil == nil {
+		return nil
+	}
+	return s.repo.UpdateStaffPinAttempts(ctx, staff.ID, 0, nil)
 }
 
 // permissionCodes extracts just the Code field from each Permission, for
