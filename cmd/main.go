@@ -51,7 +51,7 @@ func main() {
 	r.GET("/healthz", healthcheck.Handler(db))
 	r.GET("/health", healthcheck.Handler(db))
 
-	identityAPI := api.NewIdentityAPI(db, []byte(jwtSecret), identity.DefaultAccessTokenTTL, identity.DefaultRefreshTokenTTL, identity.DefaultStaffPINTokenTTL)
+	identityAPI := api.NewIdentityAPI(db, []byte(jwtSecret), identity.DefaultAccessTokenTTL, identity.DefaultRefreshTokenTTL, identity.DefaultStaffPINTokenTTL, identity.DefaultManagerPINTokenTTL)
 
 	// Login and refresh can't require a valid access token - that's exactly
 	// what they exist to hand out. Same "/api/v1" prefix, no Auth middleware.

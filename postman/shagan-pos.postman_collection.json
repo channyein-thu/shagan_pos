@@ -422,7 +422,7 @@
           }
         },
         {
-          "name": "VerifyManagerPIN - POST /auth/manager-pin/verify",
+          "name": "VerifyManagerPIN - POST /staff/:id/manager-pin/verify",
           "request": {
             "method": "POST",
             "header": [
@@ -430,22 +430,43 @@
                 "key": "Authorization",
                 "value": "Bearer {{token}}",
                 "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/auth/manager-pin/verify",
+              "raw": "{{baseUrl}}/api/v1/staff/:id/manager-pin/verify",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "auth",
+                "staff",
+                ":id",
                 "manager-pin",
                 "verify"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1"
+                }
               ]
             },
-            "description": "Short-lived elevation token for void/return/exchange approval"
+            "description": "Short-lived elevation token for a single approval (void/return/manual-discount) - NOT for a manager's own backoffice sign-in, use VerifyStaffPIN for that. Requires a valid bearer access token (the calling device or owner) - :id is the staff being asked to approve, scoped to the caller's org (and branch, if the caller's own token carries one). permission is the specific permission code this approval is for (e.g. approve_void, approve_return, apply_manual_discount) - the target staff's role must actually grant it, checked via the same Roles/Permissions matrix as GET /roles/:id/permissions. Wrong staff, wrong branch, wrong PIN, and role-lacks-permission all return the same generic 401 (never 404) - a terminal can't enumerate staff IDs, branches, or role grants by probing. On success, returns the Staff record plus a separate 2-minute token (authtoken.StaffClaims) - much shorter than VerifyStaffPIN's 12-hour shift token, since this proves one momentary approval, not a signed-in session.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pin\": \"111111\",\n  \"permission\": \"approve_void\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           }
         },
         {
@@ -779,6 +800,45 @@
               ]
             },
             "description": "ListBranchStaff"
+          }
+        },
+        {
+          "name": "ListBranchManagers - GET /branches/:id/managers",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/branches/:id/managers?permission=approve_void",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "branches",
+                ":id",
+                "managers"
+              ],
+              "query": [
+                {
+                  "key": "permission",
+                  "value": "approve_void"
+                }
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Lists staff at this branch whose role grants the given permission code (query param, required) - not staff with role=manager specifically, since e.g. apply_manual_discount is granted to both super_staff and manager (see the v1 role/permission grant table). Use this to build a picker of who's eligible to approve a specific action before calling VerifyManagerPIN with the same permission code. An unrecognized permission code just returns an empty list, not an error."
           }
         },
         {

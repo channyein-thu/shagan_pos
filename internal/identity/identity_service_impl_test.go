@@ -34,7 +34,7 @@ func (fakeTransactioner) Transaction(fc func(tx *gorm.DB) error, _ ...*sql.TxOpt
 }
 
 func newTestService(repo Repository) *Service {
-	return NewService(repo, fakeTransactioner{}, testJWTSecret, DefaultAccessTokenTTL, DefaultRefreshTokenTTL, DefaultStaffPINTokenTTL)
+	return NewService(repo, fakeTransactioner{}, testJWTSecret, DefaultAccessTokenTTL, DefaultRefreshTokenTTL, DefaultStaffPINTokenTTL, DefaultManagerPINTokenTTL)
 }
 
 func TestService_CreateAccount_HashesPasswordBeforePersisting(t *testing.T) {
@@ -675,14 +675,51 @@ func TestService_ListBranchStaff_PropagatesNotFound(t *testing.T) {
 	requireRestErrorStatus(t, err, http.StatusNotFound)
 }
 
+func TestService_ListBranchManagers_DelegatesToRepository(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo)
+
+	want := []Staff{{ID: 1, BranchID: 1, RoleID: 3}}
+	repo.EXPECT().ListBranchManagers(mock.Anything, uint(7), uint(1), "approve_void").Return(want, nil).Once()
+
+	got, err := svc.ListBranchManagers(context.Background(), 7, 1, "approve_void")
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+}
+
+func TestService_ListBranchManagers_PropagatesNotFound(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo)
+
+	wantErr := common.NotFoundError("branch not found")
+	repo.EXPECT().ListBranchManagers(mock.Anything, uint(7), uint(999), "approve_void").Return(nil, wantErr).Once()
+
+	_, err := svc.ListBranchManagers(context.Background(), 7, 999, "approve_void")
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusNotFound)
+}
+
 func TestService_ListStaff_DelegatesToRepository(t *testing.T) {
 	repo := NewMockRepository(t)
 	svc := newTestService(repo)
 
 	want := []Staff{{ID: 1, BranchID: 1}, {ID: 2, BranchID: 2}}
-	repo.EXPECT().ListStaff(mock.Anything, uint(7)).Return(want, nil).Once()
+	repo.EXPECT().ListStaff(mock.Anything, uint(7), (*uint)(nil)).Return(want, nil).Once()
 
-	got, err := svc.ListStaff(context.Background(), 7)
+	got, err := svc.ListStaff(context.Background(), 7, nil)
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+}
+
+func TestService_ListStaff_PassesThroughCallerBranchID(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo)
+
+	branchID := uint(3)
+	want := []Staff{{ID: 1, BranchID: 3}}
+	repo.EXPECT().ListStaff(mock.Anything, uint(7), &branchID).Return(want, nil).Once()
+
+	got, err := svc.ListStaff(context.Background(), 7, &branchID)
 	require.NoError(t, err)
 	require.Equal(t, want, got)
 }
@@ -692,9 +729,9 @@ func TestService_ListStaff_PropagatesRepositoryError(t *testing.T) {
 	svc := newTestService(repo)
 
 	wantErr := common.SystemError("db read failed")
-	repo.EXPECT().ListStaff(mock.Anything, uint(7)).Return(nil, wantErr).Once()
+	repo.EXPECT().ListStaff(mock.Anything, uint(7), (*uint)(nil)).Return(nil, wantErr).Once()
 
-	_, err := svc.ListStaff(context.Background(), 7)
+	_, err := svc.ListStaff(context.Background(), 7, nil)
 	require.Error(t, err)
 	requireRestErrorStatus(t, err, http.StatusInternalServerError)
 }
@@ -819,6 +856,8 @@ func TestService_VerifyStaffPIN_HappyPath_NoBranchRestriction(t *testing.T) {
 	const plaintext = "123456"
 	staff := &Staff{ID: 5, BranchID: 3, RoleID: 2, PinHash: hashPassword(t, plaintext)}
 	repo.EXPECT().GetStaff(mock.Anything, uint(7), uint(5)).Return(staff, nil).Once()
+	repo.EXPECT().ListRolePermissions(mock.Anything, uint(2)).
+		Return([]Permission{{Code: "access_pos_portal"}, {Code: "apply_manual_discount"}}, nil).Once()
 
 	result, err := svc.VerifyStaffPIN(context.Background(), 7, nil, 5, VerifyStaffPINRequest{Pin: plaintext})
 	require.NoError(t, err)
@@ -830,6 +869,7 @@ func TestService_VerifyStaffPIN_HappyPath_NoBranchRestriction(t *testing.T) {
 	require.Equal(t, staff.ID, claims.StaffID)
 	require.Equal(t, staff.BranchID, claims.BranchID)
 	require.Equal(t, staff.RoleID, claims.RoleID)
+	require.ElementsMatch(t, []string{"access_pos_portal", "apply_manual_discount"}, claims.Permissions)
 }
 
 func TestService_VerifyStaffPIN_MatchingBranch_Succeeds(t *testing.T) {
@@ -839,6 +879,7 @@ func TestService_VerifyStaffPIN_MatchingBranch_Succeeds(t *testing.T) {
 	const plaintext = "123456"
 	staff := &Staff{ID: 5, BranchID: 3, RoleID: 2, PinHash: hashPassword(t, plaintext)}
 	repo.EXPECT().GetStaff(mock.Anything, uint(7), uint(5)).Return(staff, nil).Once()
+	repo.EXPECT().ListRolePermissions(mock.Anything, uint(2)).Return([]Permission{}, nil).Once()
 
 	callerBranch := uint(3)
 	result, err := svc.VerifyStaffPIN(context.Background(), 7, &callerBranch, 5, VerifyStaffPINRequest{Pin: plaintext})
@@ -905,6 +946,109 @@ func TestService_VerifyStaffPIN_UnexpectedRepositoryError_PropagatesAsIs(t *test
 	repo.EXPECT().GetStaff(mock.Anything, uint(7), uint(5)).Return(nil, dbErr).Once()
 
 	_, err := svc.VerifyStaffPIN(context.Background(), 7, nil, 5, VerifyStaffPINRequest{Pin: "123456"})
+	require.ErrorIs(t, err, dbErr)
+}
+
+func TestService_VerifyManagerPIN_HappyPath_GrantsShortLivedToken(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo)
+
+	const plaintext = "654321"
+	staff := &Staff{ID: 9, BranchID: 3, RoleID: 3, PinHash: hashPassword(t, plaintext)}
+	repo.EXPECT().GetStaff(mock.Anything, uint(7), uint(9)).Return(staff, nil).Once()
+	repo.EXPECT().ListRolePermissions(mock.Anything, uint(3)).
+		Return([]Permission{{Code: "apply_manual_discount"}, {Code: "approve_void"}, {Code: "approve_return"}}, nil).Once()
+
+	result, err := svc.VerifyManagerPIN(context.Background(), 7, nil, 9, VerifyManagerPINRequest{Pin: plaintext, Permission: "approve_void"})
+	require.NoError(t, err)
+	require.Equal(t, *staff, result.Staff)
+	require.WithinDuration(t, time.Now().Add(DefaultManagerPINTokenTTL), result.ExpiresAt, 5*time.Second)
+
+	claims, err := authtoken.ParseStaffToken(testJWTSecret, result.Token)
+	require.NoError(t, err)
+	require.Equal(t, staff.ID, claims.StaffID)
+	require.Equal(t, staff.BranchID, claims.BranchID)
+	require.Equal(t, staff.RoleID, claims.RoleID)
+}
+
+func TestService_VerifyManagerPIN_RoleLacksPermission_ReturnsGenericUnauthorized(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo)
+
+	const plaintext = "654321"
+	// a super_staff-shaped role: has apply_manual_discount but not approve_void
+	staff := &Staff{ID: 9, BranchID: 3, RoleID: 2, PinHash: hashPassword(t, plaintext)}
+	repo.EXPECT().GetStaff(mock.Anything, uint(7), uint(9)).Return(staff, nil).Once()
+	repo.EXPECT().ListRolePermissions(mock.Anything, uint(2)).
+		Return([]Permission{{Code: "apply_manual_discount"}}, nil).Once()
+
+	_, err := svc.VerifyManagerPIN(context.Background(), 7, nil, 9, VerifyManagerPINRequest{Pin: plaintext, Permission: "approve_void"})
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusUnauthorized)
+
+	var restErr common.RestError
+	errors.As(err, &restErr)
+	require.Equal(t, invalidManagerPINMessage, restErr.Message)
+}
+
+func TestService_VerifyManagerPIN_WrongBranch_ReturnsGenericUnauthorized(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo)
+
+	staff := &Staff{ID: 9, BranchID: 3, RoleID: 3, PinHash: hashPassword(t, "654321")}
+	repo.EXPECT().GetStaff(mock.Anything, uint(7), uint(9)).Return(staff, nil).Once()
+
+	callerBranch := uint(99)
+	_, err := svc.VerifyManagerPIN(context.Background(), 7, &callerBranch, 9, VerifyManagerPINRequest{Pin: "654321", Permission: "approve_void"})
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusUnauthorized)
+
+	var restErr common.RestError
+	errors.As(err, &restErr)
+	require.Equal(t, invalidManagerPINMessage, restErr.Message)
+}
+
+func TestService_VerifyManagerPIN_WrongPin_ReturnsSameGenericUnauthorized(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo)
+
+	staff := &Staff{ID: 9, BranchID: 3, RoleID: 3, PinHash: hashPassword(t, "654321")}
+	repo.EXPECT().GetStaff(mock.Anything, uint(7), uint(9)).Return(staff, nil).Once()
+
+	_, err := svc.VerifyManagerPIN(context.Background(), 7, nil, 9, VerifyManagerPINRequest{Pin: "000000", Permission: "approve_void"})
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusUnauthorized)
+
+	var restErr common.RestError
+	errors.As(err, &restErr)
+	require.Equal(t, invalidManagerPINMessage, restErr.Message)
+}
+
+func TestService_VerifyManagerPIN_StaffNotFound_ReturnsSameGenericUnauthorized(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo)
+
+	repo.EXPECT().GetStaff(mock.Anything, uint(7), uint(999)).
+		Return(nil, common.NotFoundError("staff not found")).Once()
+
+	_, err := svc.VerifyManagerPIN(context.Background(), 7, nil, 999, VerifyManagerPINRequest{Pin: "654321", Permission: "approve_void"})
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusUnauthorized)
+
+	var restErr common.RestError
+	errors.As(err, &restErr)
+	require.Equal(t, invalidManagerPINMessage, restErr.Message,
+		"must match the wrong-PIN/wrong-branch/wrong-permission message exactly - no staff-ID enumeration")
+}
+
+func TestService_VerifyManagerPIN_UnexpectedRepositoryError_PropagatesAsIs(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo)
+
+	dbErr := errors.New("connection refused")
+	repo.EXPECT().GetStaff(mock.Anything, uint(7), uint(9)).Return(nil, dbErr).Once()
+
+	_, err := svc.VerifyManagerPIN(context.Background(), 7, nil, 9, VerifyManagerPINRequest{Pin: "654321", Permission: "approve_void"})
 	require.ErrorIs(t, err, dbErr)
 }
 

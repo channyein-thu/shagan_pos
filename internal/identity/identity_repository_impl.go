@@ -110,11 +110,6 @@ func (r *RepositoryImpl) UpdateMe(ctx context.Context, userID uint, in UpdateMeR
 	return r.GetUserByID(ctx, userID)
 }
 
-// VerifyManagerPIN backs `POST /auth/manager-pin/verify`. Short-lived elevation token for void/return/exchange approval
-func (r *RepositoryImpl) VerifyManagerPIN(ctx context.Context) (*Staff, error) {
-	return nil, common.ErrNotImplemented
-}
-
 // getDeviceInOrg fetches a device, scoped to orgID via its branch - same
 // not-found-not-forbidden reasoning as getBranch/getStaff.
 func (r *RepositoryImpl) getDeviceInOrg(ctx context.Context, orgID uint, id uint) (*Device, error) {
@@ -275,6 +270,29 @@ func (r *RepositoryImpl) ListBranchStaff(ctx context.Context, orgID uint, id uin
 	return staff, nil
 }
 
+// ListBranchManagers backs `GET /branches/:id/managers`. Same org/branch
+// scoping as ListBranchStaff, additionally filtered to staff whose role
+// grants permissionCode - via a subquery on role_permission/permissions,
+// same shape as Service.VerifyManagerPIN's own permission check.
+func (r *RepositoryImpl) ListBranchManagers(ctx context.Context, orgID uint, id uint, permissionCode string) ([]Staff, error) {
+	if _, err := r.GetBranch(ctx, orgID, id); err != nil {
+		return nil, err
+	}
+
+	grantedRoleIDs := r.db.WithContext(ctx).Model(&RolePermission{}).
+		Where("permission_id = (?)", r.db.WithContext(ctx).Model(&Permission{}).Where("code = ?", permissionCode).Select("id")).
+		Select("role_id")
+
+	var staff []Staff
+	err := r.db.WithContext(ctx).
+		Where("branch_id = ? AND role IN (?)", id, grantedRoleIDs).
+		Find(&staff).Error
+	if err != nil {
+		return nil, err
+	}
+	return staff, nil
+}
+
 // orgBranchIDs is a subquery selecting the IDs of every branch belonging to
 // orgID - used to scope Staff (which has no org_id column of its own) to the
 // caller's organization via its branch.
@@ -283,12 +301,13 @@ func (r *RepositoryImpl) orgBranchIDs(ctx context.Context, orgID uint) *gorm.DB 
 }
 
 // ListStaff backs `GET /staff`.
-func (r *RepositoryImpl) ListStaff(ctx context.Context, orgID uint) ([]Staff, error) {
+func (r *RepositoryImpl) ListStaff(ctx context.Context, orgID uint, branchID *uint) ([]Staff, error) {
 	var staff []Staff
-	err := r.db.WithContext(ctx).
-		Where("branch_id IN (?)", r.orgBranchIDs(ctx, orgID)).
-		Find(&staff).Error
-	if err != nil {
+	q := r.db.WithContext(ctx).Where("branch_id IN (?)", r.orgBranchIDs(ctx, orgID))
+	if branchID != nil {
+		q = q.Where("branch_id = ?", *branchID)
+	}
+	if err := q.Find(&staff).Error; err != nil {
 		return nil, err
 	}
 	return staff, nil

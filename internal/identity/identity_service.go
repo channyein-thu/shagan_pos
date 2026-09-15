@@ -9,7 +9,12 @@ type Interface interface {
 	Logout(ctx context.Context, in LogoutRequest) error
 	GetMe(ctx context.Context, userID uint) (*User, error)
 	UpdateMe(ctx context.Context, userID uint, in UpdateMeRequest) (*User, error)
-	VerifyManagerPIN(ctx context.Context) (*Staff, error)
+	// VerifyManagerPIN backs `POST /staff/:id/manager-pin/verify`. Same
+	// org/branch scoping and generic-401 reasoning as VerifyStaffPIN below,
+	// plus a check that the target staff's role actually grants in.Permission
+	// - momentary single-action elevation only, not a backoffice sign-in (use
+	// VerifyStaffPIN for that).
+	VerifyManagerPIN(ctx context.Context, orgID uint, branchID *uint, id uint, in VerifyManagerPINRequest) (*VerifyManagerPINResult, error)
 	// VerifyStaffPIN backs `POST /staff/:id/pin/verify`. branchID is the
 	// caller's own branch (nil for an owner/service_center token, which isn't
 	// branch-locked) - when set, the staff being verified must belong to that
@@ -25,7 +30,8 @@ type Interface interface {
 	GetBranch(ctx context.Context, orgID uint, id uint) (*Branch, error)
 	UpdateBranch(ctx context.Context, orgID uint, id uint, in UpdateBranchRequest) (*Branch, error)
 	ListBranchStaff(ctx context.Context, orgID uint, id uint) ([]Staff, error)
-	ListStaff(ctx context.Context, orgID uint) ([]Staff, error)
+	ListBranchManagers(ctx context.Context, orgID uint, id uint, permissionCode string) ([]Staff, error)
+	ListStaff(ctx context.Context, orgID uint, branchID *uint) ([]Staff, error)
 	CreateStaff(ctx context.Context, orgID uint, in CreateStaffRequest) (*Staff, error)
 	GetStaff(ctx context.Context, orgID uint, id uint) (*Staff, error)
 	UpdateStaff(ctx context.Context, orgID uint, id uint, in UpdateStaffRequest) (*Staff, error)

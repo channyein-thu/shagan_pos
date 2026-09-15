@@ -60,25 +60,31 @@ func ParseAccessToken(secret []byte, tokenString string) (*Claims, error) {
 
 // StaffClaims is the payload of a staff-PIN session token - a separate,
 // shorter-lived token from the device/owner access token above. It's issued
-// by identity.Service.VerifyStaffPIN once a cashier signs in at a terminal,
-// and identifies *who is currently operating the terminal* (for permission
-// checks tied to RoleID), which the device's own access token has no notion
-// of.
+// by identity.Service.VerifyStaffPIN/VerifyManagerPIN once a cashier or
+// manager PINs in, and identifies *who is currently operating* (RoleID) and
+// *what they're allowed to do* (Permissions - the target's role's full
+// permission-code list at the moment of issuance, so middleware.RequirePermission
+// can check it with no DB access, the same way ParseAccessToken needs none).
+// A grant/revoke on the Roles/Permissions matrix only takes effect on this
+// staff's next PIN verify, not immediately - same staleness tradeoff every
+// other TTL'd token in this codebase already accepts.
 type StaffClaims struct {
-	StaffID  uint `json:"staff_id"`
-	BranchID uint `json:"branch_id"`
-	RoleID   uint `json:"role_id"`
+	StaffID     uint     `json:"staff_id"`
+	BranchID    uint     `json:"branch_id"`
+	RoleID      uint     `json:"role_id"`
+	Permissions []string `json:"permissions"`
 	jwt.RegisteredClaims
 }
 
 // GenerateStaffToken signs a staff-PIN session JWT identifying staffID's
-// branch/role, valid for ttl.
-func GenerateStaffToken(secret []byte, staffID, branchID, roleID uint, ttl time.Duration) (string, error) {
+// branch/role/permissions, valid for ttl.
+func GenerateStaffToken(secret []byte, staffID, branchID, roleID uint, permissions []string, ttl time.Duration) (string, error) {
 	now := time.Now()
 	claims := StaffClaims{
-		StaffID:  staffID,
-		BranchID: branchID,
-		RoleID:   roleID,
+		StaffID:     staffID,
+		BranchID:    branchID,
+		RoleID:      roleID,
+		Permissions: permissions,
 		RegisteredClaims: jwt.RegisteredClaims{
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),

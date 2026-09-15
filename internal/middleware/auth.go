@@ -22,10 +22,10 @@ const bearerPrefix = "Bearer "
 // and attaches the caller's user_id/org_id to the request context for
 // handlers to read.
 //
-// This only proves *who* is calling (authentication) - it doesn't yet check
-// *what* they're allowed to do. Authorization (role/permission checks) needs
-// staff PIN login to exist first, since Roles/Permissions are tied to Staff,
-// not the owner User this token represents - see identity.VerifyStaffPIN.
+// This only proves *who/what is calling* (the device or owner) - it doesn't
+// check permissions, since Roles/Permissions are tied to Staff, not the
+// device/owner this token represents. For that, stack RequirePermission
+// (permission.go) after this, which reads a separate X-Staff-Token header.
 func Auth(jwtSecret []byte) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		header := c.GetHeader("Authorization")

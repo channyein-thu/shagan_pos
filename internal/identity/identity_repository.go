@@ -31,7 +31,6 @@ type Repository interface {
 	// Service.GetMe just calls GetUserByID, since fetching your own profile
 	// by ID is the exact same query as fetching anyone else's.
 	UpdateMe(ctx context.Context, userID uint, in UpdateMeRequest) (*User, error)
-	VerifyManagerPIN(ctx context.Context) (*Staff, error)
 	// Devices are scoped to orgID via their branch, same as Staff.
 	CreateDevice(ctx context.Context, orgID uint, in CreateDeviceRequest) (*Device, error)
 	ListDevices(ctx context.Context, orgID uint) ([]Device, error)
@@ -46,9 +45,20 @@ type Repository interface {
 	GetBranch(ctx context.Context, orgID uint, id uint) (*Branch, error)
 	UpdateBranch(ctx context.Context, orgID uint, id uint, in UpdateBranchRequest) (*Branch, error)
 	ListBranchStaff(ctx context.Context, orgID uint, id uint) ([]Staff, error)
+	// ListBranchManagers is ListBranchStaff further filtered to staff whose
+	// role grants permissionCode - "manager" isn't one role, since e.g.
+	// apply_manual_discount is granted to both super_staff and manager (see
+	// the v1 role/permission grant table and VerifyManagerPIN). An unknown
+	// permissionCode just yields zero rows, not an error - no permission
+	// grants it, same as any other empty filter.
+	ListBranchManagers(ctx context.Context, orgID uint, id uint, permissionCode string) ([]Staff, error)
 	// Staff are scoped to orgID via their branch (Staff has no org_id column
 	// of its own) - same not-found-not-forbidden reasoning as branches.
-	ListStaff(ctx context.Context, orgID uint) ([]Staff, error)
+	// branchID additionally restricts to one branch when set - the caller's
+	// own branch (from a pos-device token), never a client-supplied ID, so
+	// no extra "does this branch belong to the org" check is needed here
+	// (unlike ListBranchStaff's client-supplied :id).
+	ListStaff(ctx context.Context, orgID uint, branchID *uint) ([]Staff, error)
 	CreateStaff(ctx context.Context, orgID uint, in CreateStaffRequest) (*Staff, error)
 	GetStaff(ctx context.Context, orgID uint, id uint) (*Staff, error)
 	UpdateStaff(ctx context.Context, orgID uint, id uint, in UpdateStaffRequest) (*Staff, error)

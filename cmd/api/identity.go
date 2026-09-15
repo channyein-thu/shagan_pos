@@ -17,9 +17,9 @@ type IdentityAPI struct {
 	service identity.Interface
 }
 
-func NewIdentityAPI(db *gorm.DB, jwtSecret []byte, accessTokenTTL, refreshTokenTTL, staffPINTokenTTL time.Duration) *IdentityAPI {
+func NewIdentityAPI(db *gorm.DB, jwtSecret []byte, accessTokenTTL, refreshTokenTTL, staffPINTokenTTL, managerPINTokenTTL time.Duration) *IdentityAPI {
 	return &IdentityAPI{
-		service: identity.NewService(identity.NewRepository(db), db, jwtSecret, accessTokenTTL, refreshTokenTTL, staffPINTokenTTL),
+		service: identity.NewService(identity.NewRepository(db), db, jwtSecret, accessTokenTTL, refreshTokenTTL, staffPINTokenTTL, managerPINTokenTTL),
 	}
 }
 
@@ -36,7 +36,7 @@ func (a *IdentityAPI) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.POST("/auth/logout", a.Logout)
 	rg.GET("/me", a.GetMe)
 	rg.PATCH("/me", a.UpdateMe)
-	rg.POST("/auth/manager-pin/verify", a.VerifyManagerPIN)
+	rg.POST("/staff/:id/manager-pin/verify", a.VerifyManagerPIN)
 	rg.POST("/staff/:id/pin/verify", a.VerifyStaffPIN)
 	rg.POST("/devices", a.CreateDevice)
 	rg.GET("/devices", a.ListDevices)
@@ -46,6 +46,7 @@ func (a *IdentityAPI) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.GET("/branches/:id", a.GetBranch)
 	rg.PATCH("/branches/:id", a.UpdateBranch)
 	rg.GET("/branches/:id/staff", a.ListBranchStaff)
+	rg.GET("/branches/:id/managers", a.ListBranchManagers)
 	rg.GET("/staff", a.ListStaff)
 	rg.POST("/staff", a.CreateStaff)
 	rg.GET("/staff/:id", a.GetStaff)
@@ -144,9 +145,31 @@ func (a *IdentityAPI) UpdateMe(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// VerifyManagerPIN handles `POST /auth/manager-pin/verify`. Short-lived elevation token for void/return/exchange approval
+// VerifyManagerPIN handles `POST /staff/:id/manager-pin/verify`. Short-lived
+// elevation token for void/return/manual-discount approval - :id is the
+// staff being asked to approve, in.Permission is the specific permission
+// this approval is for (e.g. "approve_void"). Not for backoffice sign-in -
+// see VerifyStaffPIN for that.
 func (a *IdentityAPI) VerifyManagerPIN(c *gin.Context) {
-	result, err := a.service.VerifyManagerPIN(c.Request.Context())
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		common.HandleError(c, common.BadRequestError("invalid id"))
+		return
+	}
+	var in identity.VerifyManagerPINRequest
+	if err := c.ShouldBindJSON(&in); err != nil {
+		common.HandleError(c, common.BadRequestError(err.Error()))
+		return
+	}
+	var branchID *uint
+	if bID, ok := middleware.BranchIDFromContext(c); ok {
+		branchID = &bID
+	}
+	result, err := a.service.VerifyManagerPIN(c.Request.Context(), orgID, branchID, uint(idVal), in)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -345,13 +368,45 @@ func (a *IdentityAPI) ListBranchStaff(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// ListStaff handles `GET /staff`.
+// ListBranchManagers handles `GET /branches/:id/managers`. permission is a
+// required query param (a permission code like "approve_void") - staff
+// eligible to approve one action aren't eligible to approve every action, so
+// "manager" alone isn't a well-defined filter (see identity.Repository.ListBranchManagers).
+func (a *IdentityAPI) ListBranchManagers(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		common.HandleError(c, common.BadRequestError("invalid id"))
+		return
+	}
+	permission := c.Query("permission")
+	if permission == "" {
+		common.HandleError(c, common.BadRequestError("permission query param is required"))
+		return
+	}
+	result, err := a.service.ListBranchManagers(c.Request.Context(), orgID, uint(idVal), permission)
+	if err != nil {
+		common.HandleError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// ListStaff handles `GET /staff`. Restricted to the caller's own branch when
+// the caller's token carries one (a pos device) - org-wide for owner/service_center.
 func (a *IdentityAPI) ListStaff(c *gin.Context) {
 	orgID, ok := requireOrgID(c)
 	if !ok {
 		return
 	}
-	result, err := a.service.ListStaff(c.Request.Context(), orgID)
+	var branchID *uint
+	if bID, ok := middleware.BranchIDFromContext(c); ok {
+		branchID = &bID
+	}
+	result, err := a.service.ListStaff(c.Request.Context(), orgID, branchID)
 	if err != nil {
 		common.HandleError(c, err)
 		return

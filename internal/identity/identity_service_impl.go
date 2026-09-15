@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -22,6 +23,11 @@ const (
 	// valid - shift-length, not request-length, since re-entering a PIN
 	// before every single sale would be unusable at a terminal.
 	DefaultStaffPINTokenTTL = 12 * time.Hour
+	// DefaultManagerPINTokenTTL is how long a manager-PIN elevation token
+	// stays valid - a momentary stamp of approval for one specific action
+	// (void/return/manual discount), not a session, so this is deliberately
+	// much shorter than DefaultStaffPINTokenTTL.
+	DefaultManagerPINTokenTTL = 2 * time.Minute
 )
 
 // invalidCredentialsMessage is deliberately identical for "no such email" and
@@ -35,23 +41,29 @@ const invalidCredentialsMessage = "invalid email or password"
 // like login, not a plain CRUD lookup like GetStaff.
 const invalidStaffPINMessage = "invalid staff or pin"
 
+// invalidManagerPINMessage additionally folds in "role doesn't grant this
+// permission" - same reasoning as invalidStaffPINMessage, one level up.
+const invalidManagerPINMessage = "invalid staff, pin, or permission"
+
 type Service struct {
-	repo             Repository
-	db               common.Transactioner
-	jwtSecret        []byte
-	accessTokenTTL   time.Duration
-	refreshTokenTTL  time.Duration
-	staffPINTokenTTL time.Duration
+	repo               Repository
+	db                 common.Transactioner
+	jwtSecret          []byte
+	accessTokenTTL     time.Duration
+	refreshTokenTTL    time.Duration
+	staffPINTokenTTL   time.Duration
+	managerPINTokenTTL time.Duration
 }
 
-func NewService(repo Repository, db common.Transactioner, jwtSecret []byte, accessTokenTTL, refreshTokenTTL, staffPINTokenTTL time.Duration) *Service {
+func NewService(repo Repository, db common.Transactioner, jwtSecret []byte, accessTokenTTL, refreshTokenTTL, staffPINTokenTTL, managerPINTokenTTL time.Duration) *Service {
 	return &Service{
-		repo:             repo,
-		db:               db,
-		jwtSecret:        jwtSecret,
-		accessTokenTTL:   accessTokenTTL,
-		refreshTokenTTL:  refreshTokenTTL,
-		staffPINTokenTTL: staffPINTokenTTL,
+		repo:               repo,
+		db:                 db,
+		jwtSecret:          jwtSecret,
+		accessTokenTTL:     accessTokenTTL,
+		refreshTokenTTL:    refreshTokenTTL,
+		staffPINTokenTTL:   staffPINTokenTTL,
+		managerPINTokenTTL: managerPINTokenTTL,
 	}
 }
 
@@ -182,8 +194,50 @@ func (s *Service) UpdateMe(ctx context.Context, userID uint, in UpdateMeRequest)
 	return s.repo.UpdateMe(ctx, userID, in)
 }
 
-func (s *Service) VerifyManagerPIN(ctx context.Context) (*Staff, error) {
-	return s.repo.VerifyManagerPIN(ctx)
+// VerifyManagerPIN checks that the target staff (1) belongs to the caller's
+// org/branch, (2) has the right PIN, and (3) actually holds in.Permission via
+// their role - all three failure modes fold into the same generic
+// unauthorized response as VerifyStaffPIN, one level up: this also hides
+// "right staff, right PIN, wrong permission" so a terminal can't probe which
+// staff have which permissions. On success, issues a short elevation token
+// (DefaultManagerPINTokenTTL) - not a shift session.
+func (s *Service) VerifyManagerPIN(ctx context.Context, orgID uint, branchID *uint, id uint, in VerifyManagerPINRequest) (*VerifyManagerPINResult, error) {
+	staff, err := s.repo.GetStaff(ctx, orgID, id)
+	if err != nil {
+		var restErr common.RestError
+		if errors.As(err, &restErr) && restErr.Status == http.StatusNotFound {
+			return nil, common.UnauthorizedError(invalidManagerPINMessage)
+		}
+		return nil, err
+	}
+
+	if branchID != nil && staff.BranchID != *branchID {
+		return nil, common.UnauthorizedError(invalidManagerPINMessage)
+	}
+
+	if bcrypt.CompareHashAndPassword([]byte(staff.PinHash), []byte(in.Pin)) != nil {
+		return nil, common.UnauthorizedError(invalidManagerPINMessage)
+	}
+
+	permissions, err := s.repo.ListRolePermissions(ctx, staff.RoleID)
+	if err != nil {
+		return nil, err
+	}
+	codes := permissionCodes(permissions)
+	if !slices.Contains(codes, in.Permission) {
+		return nil, common.UnauthorizedError(invalidManagerPINMessage)
+	}
+
+	token, err := authtoken.GenerateStaffToken(s.jwtSecret, staff.ID, staff.BranchID, staff.RoleID, codes, s.managerPINTokenTTL)
+	if err != nil {
+		return nil, common.SystemError("failed to issue manager token")
+	}
+
+	return &VerifyManagerPINResult{
+		Staff:     *staff,
+		Token:     token,
+		ExpiresAt: time.Now().Add(s.managerPINTokenTTL),
+	}, nil
 }
 
 // VerifyStaffPIN looks up the staff via the same org-scoped query GetStaff
@@ -208,7 +262,12 @@ func (s *Service) VerifyStaffPIN(ctx context.Context, orgID uint, branchID *uint
 		return nil, common.UnauthorizedError(invalidStaffPINMessage)
 	}
 
-	token, err := authtoken.GenerateStaffToken(s.jwtSecret, staff.ID, staff.BranchID, staff.RoleID, s.staffPINTokenTTL)
+	permissions, err := s.repo.ListRolePermissions(ctx, staff.RoleID)
+	if err != nil {
+		return nil, err
+	}
+
+	token, err := authtoken.GenerateStaffToken(s.jwtSecret, staff.ID, staff.BranchID, staff.RoleID, permissionCodes(permissions), s.staffPINTokenTTL)
 	if err != nil {
 		return nil, common.SystemError("failed to issue staff token")
 	}
@@ -218,6 +277,16 @@ func (s *Service) VerifyStaffPIN(ctx context.Context, orgID uint, branchID *uint
 		Token:     token,
 		ExpiresAt: time.Now().Add(s.staffPINTokenTTL),
 	}, nil
+}
+
+// permissionCodes extracts just the Code field from each Permission, for
+// embedding into a StaffClaims token - see VerifyStaffPIN/VerifyManagerPIN.
+func permissionCodes(permissions []Permission) []string {
+	codes := make([]string, len(permissions))
+	for i, p := range permissions {
+		codes[i] = p.Code
+	}
+	return codes
 }
 
 func (s *Service) CreateDevice(ctx context.Context, orgID uint, in CreateDeviceRequest) (*Device, error) {
@@ -252,8 +321,12 @@ func (s *Service) ListBranchStaff(ctx context.Context, orgID uint, id uint) ([]S
 	return s.repo.ListBranchStaff(ctx, orgID, id)
 }
 
-func (s *Service) ListStaff(ctx context.Context, orgID uint) ([]Staff, error) {
-	return s.repo.ListStaff(ctx, orgID)
+func (s *Service) ListBranchManagers(ctx context.Context, orgID uint, id uint, permissionCode string) ([]Staff, error) {
+	return s.repo.ListBranchManagers(ctx, orgID, id, permissionCode)
+}
+
+func (s *Service) ListStaff(ctx context.Context, orgID uint, branchID *uint) ([]Staff, error) {
+	return s.repo.ListStaff(ctx, orgID, branchID)
 }
 
 // CreateStaff hashes the plaintext PIN before it ever reaches the repository

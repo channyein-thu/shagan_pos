@@ -185,3 +185,28 @@ type VerifyStaffPINResult struct {
 	Token     string    `json:"token"`
 	ExpiresAt time.Time `json:"expires_at"`
 }
+
+// VerifyManagerPINRequest is the request body for
+// `POST /staff/:id/manager-pin/verify`. Permission is the specific
+// permission code (e.g. "approve_void", "approve_return",
+// "apply_manual_discount") that this approval is for - "manager" isn't one
+// role check, since apply_manual_discount is also granted to super_staff
+// while approve_void/approve_return are manager-only (see the v1
+// role/permission grant table). This is for momentary, single-action
+// elevation only - a manager wanting their own extended backoffice session
+// should sign in via VerifyStaffPIN instead, not this endpoint.
+type VerifyManagerPINRequest struct {
+	Pin        string `json:"pin" binding:"required,len=6,number"`
+	Permission string `json:"permission" binding:"required"`
+}
+
+// VerifyManagerPINResult is returned on a successful manager PIN
+// verification. Same shape as VerifyStaffPINResult, but Token is
+// deliberately much shorter-lived (see DefaultManagerPINTokenTTL) - it
+// proves "a manager approved this one action just now", not "who's signed
+// in for the shift".
+type VerifyManagerPINResult struct {
+	Staff     Staff     `json:"staff"`
+	Token     string    `json:"token"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
