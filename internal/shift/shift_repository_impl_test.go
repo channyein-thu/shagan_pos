@@ -1,0 +1,581 @@
+//go:build cgo
+
+package shift
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
+	"github.com/stretchr/testify/require"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
+
+	"shagan_pos/internal/identity"
+	"shagan_pos/internal/sales"
+)
+
+func TestRepository_OpenShift_CreatesShiftWhenBusinessRulesPass(t *testing.T) {
+	db := newOpenShiftTestDB(t)
+	branch, staff, device := seedActiveOpenShiftResources(t, db, 7)
+	repo := NewRepository(db)
+	openedAt := time.Date(2026, time.September, 15, 2, 30, 0, 0, time.UTC)
+
+	got, err := repo.OpenShift(context.Background(), OpenShiftRequest{
+		OrgID:       7,
+		BranchID:    branch.ID,
+		StaffID:     staff.ID,
+		DeviceID:    device.ID,
+		OpenedAt:    openedAt,
+		OpeningCash: decimal.RequireFromString("250.50"),
+		Status:      ShiftStatusOpen,
+	})
+
+	require.NoError(t, err)
+	require.NotZero(t, got.ID)
+	require.Equal(t, branch.ID, got.BranchID)
+	require.Equal(t, staff.ID, got.StaffID)
+	require.Equal(t, device.ID, got.DeviceID)
+	require.Equal(t, ShiftStatusOpen, got.Status)
+	require.Nil(t, got.ClosedAt)
+	require.True(t, decimal.RequireFromString("250.50").Equal(got.OpeningCash))
+
+	var persisted Shift
+	require.NoError(t, db.First(&persisted, got.ID).Error)
+	require.Equal(t, got.ID, persisted.ID)
+}
+
+func TestRepository_OpenShift_RejectsBranchOutsideAuthenticatedOrganization(t *testing.T) {
+	db := newOpenShiftTestDB(t)
+	branch, staff, device := seedActiveOpenShiftResources(t, db, 99)
+	repo := NewRepository(db)
+
+	got, err := repo.OpenShift(context.Background(), repositoryOpenShiftRequest(7, branch.ID, staff.ID, device.ID))
+
+	require.Nil(t, got)
+	requireRestErrorStatus(t, err, http.StatusNotFound)
+	require.Equal(t, int64(0), countShifts(t, db))
+}
+
+func TestRepository_OpenShift_RejectsInactiveOrCrossBranchResources(t *testing.T) {
+	tests := []struct {
+		name       string
+		wantStatus int
+		arrange    func(t *testing.T, db *gorm.DB, branch *identity.Branch, staff *identity.Staff, device *identity.Device)
+	}{
+		{
+			name:       "inactive branch",
+			wantStatus: http.StatusConflict,
+			arrange: func(t *testing.T, db *gorm.DB, branch *identity.Branch, _ *identity.Staff, _ *identity.Device) {
+				require.NoError(t, db.Model(branch).Update("status", identity.BranchStatusInactive).Error)
+			},
+		},
+		{
+			name:       "inactive staff",
+			wantStatus: http.StatusConflict,
+			arrange: func(t *testing.T, db *gorm.DB, _ *identity.Branch, staff *identity.Staff, _ *identity.Device) {
+				require.NoError(t, db.Model(staff).Update("status", identity.StaffStatusInactive).Error)
+			},
+		},
+		{
+			name:       "inactive device",
+			wantStatus: http.StatusConflict,
+			arrange: func(t *testing.T, db *gorm.DB, _ *identity.Branch, _ *identity.Staff, device *identity.Device) {
+				require.NoError(t, db.Model(device).Update("status", identity.DeviceStatusInactive).Error)
+			},
+		},
+		{
+			name:       "staff belongs to another branch",
+			wantStatus: http.StatusNotFound,
+			arrange: func(t *testing.T, db *gorm.DB, _ *identity.Branch, staff *identity.Staff, _ *identity.Device) {
+				other := identity.Branch{OrgID: 7, Name: "Other", Status: identity.BranchStatusActive, Address: "-", Phone: "-"}
+				require.NoError(t, db.Create(&other).Error)
+				require.NoError(t, db.Model(staff).Update("branch_id", other.ID).Error)
+			},
+		},
+		{
+			name:       "device belongs to another branch",
+			wantStatus: http.StatusNotFound,
+			arrange: func(t *testing.T, db *gorm.DB, _ *identity.Branch, _ *identity.Staff, device *identity.Device) {
+				other := identity.Branch{OrgID: 7, Name: "Other", Status: identity.BranchStatusActive, Address: "-", Phone: "-"}
+				require.NoError(t, db.Create(&other).Error)
+				require.NoError(t, db.Model(device).Update("branch_id", other.ID).Error)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := newOpenShiftTestDB(t)
+			branch, staff, device := seedActiveOpenShiftResources(t, db, 7)
+			tt.arrange(t, db, branch, staff, device)
+
+			got, err := NewRepository(db).OpenShift(
+				context.Background(),
+				repositoryOpenShiftRequest(7, branch.ID, staff.ID, device.ID),
+			)
+
+			require.Nil(t, got)
+			requireRestErrorStatus(t, err, tt.wantStatus)
+			require.Equal(t, int64(0), countShifts(t, db))
+		})
+	}
+}
+
+func TestRepository_OpenShift_RejectsExistingOpenShiftForStaffOrDevice(t *testing.T) {
+	tests := []struct {
+		name        string
+		reuseStaff  bool
+		reuseDevice bool
+	}{
+		{name: "same staff on another device", reuseStaff: true},
+		{name: "another staff on same device", reuseDevice: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := newOpenShiftTestDB(t)
+			branch, firstStaff, firstDevice := seedActiveOpenShiftResources(t, db, 7)
+			secondStaff := identity.Staff{BranchID: branch.ID, Name: "Second", RoleID: 1, PinHash: "hash", Phone: "2", Status: identity.StaffStatusActive}
+			secondDevice := identity.Device{BranchID: branch.ID, Name: "Second", Status: identity.DeviceStatusActive, LastSeenAt: time.Now()}
+			require.NoError(t, db.Create(&secondStaff).Error)
+			require.NoError(t, db.Create(&secondDevice).Error)
+
+			existing := Shift{
+				BranchID: branch.ID,
+				StaffID:  firstStaff.ID,
+				DeviceID: firstDevice.ID,
+				OpenedAt: time.Now().UTC(),
+				Status:   ShiftStatusOpen,
+			}
+			require.NoError(t, db.Create(&existing).Error)
+
+			staffID, deviceID := secondStaff.ID, secondDevice.ID
+			if tt.reuseStaff {
+				staffID = firstStaff.ID
+			}
+			if tt.reuseDevice {
+				deviceID = firstDevice.ID
+			}
+
+			got, err := NewRepository(db).OpenShift(
+				context.Background(),
+				repositoryOpenShiftRequest(7, branch.ID, staffID, deviceID),
+			)
+
+			require.Nil(t, got)
+			requireRestErrorStatus(t, err, http.StatusConflict)
+			require.Equal(t, int64(1), countShifts(t, db))
+		})
+	}
+}
+
+func TestRepository_OpenShift_AllowsStaffAndDeviceAfterPreviousShiftClosed(t *testing.T) {
+	db := newOpenShiftTestDB(t)
+	branch, staff, device := seedActiveOpenShiftResources(t, db, 7)
+	closedAt := time.Now().UTC()
+	previous := Shift{
+		BranchID: branch.ID,
+		StaffID:  staff.ID,
+		DeviceID: device.ID,
+		OpenedAt: closedAt.Add(-8 * time.Hour),
+		ClosedAt: &closedAt,
+		Status:   ShiftStatusClosed,
+	}
+	require.NoError(t, db.Create(&previous).Error)
+
+	got, err := NewRepository(db).OpenShift(
+		context.Background(),
+		repositoryOpenShiftRequest(7, branch.ID, staff.ID, device.ID),
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.Equal(t, ShiftStatusOpen, got.Status)
+	require.Equal(t, int64(2), countShifts(t, db))
+}
+
+func TestRepository_GetCurrentShift_ReturnsPairedDevicesOpenShift(t *testing.T) {
+	db := newOpenShiftTestDB(t)
+	branch, staff, device := seedActiveOpenShiftResources(t, db, 7)
+	user := seedPOSUser(t, db, 7, branch.ID, device.ID)
+	closedAt := time.Now().UTC().Add(-time.Hour)
+	closed := Shift{
+		BranchID: branch.ID,
+		StaffID:  staff.ID,
+		DeviceID: device.ID,
+		OpenedAt: closedAt.Add(-8 * time.Hour),
+		ClosedAt: &closedAt,
+		Status:   ShiftStatusClosed,
+	}
+	current := Shift{
+		BranchID:    branch.ID,
+		StaffID:     staff.ID,
+		DeviceID:    device.ID,
+		OpenedAt:    time.Now().UTC(),
+		OpeningCash: decimal.NewFromInt(100),
+		Status:      ShiftStatusOpen,
+	}
+	require.NoError(t, db.Create(&closed).Error)
+	require.NoError(t, db.Create(&current).Error)
+
+	got, err := NewRepository(db).GetCurrentShift(context.Background(), 7, user.ID)
+
+	require.NoError(t, err)
+	require.Equal(t, current.ID, got.ID)
+	require.Equal(t, ShiftStatusOpen, got.Status)
+}
+
+func TestRepository_GetCurrentShift_DoesNotReturnAnotherDeviceShift(t *testing.T) {
+	db := newOpenShiftTestDB(t)
+	branch, staff, device := seedActiveOpenShiftResources(t, db, 7)
+	otherDevice := identity.Device{BranchID: branch.ID, Name: "POS-2", Status: identity.DeviceStatusActive, LastSeenAt: time.Now()}
+	require.NoError(t, db.Create(&otherDevice).Error)
+	user := seedPOSUser(t, db, 7, branch.ID, device.ID)
+	otherShift := Shift{
+		BranchID: branch.ID,
+		StaffID:  staff.ID,
+		DeviceID: otherDevice.ID,
+		OpenedAt: time.Now().UTC(),
+		Status:   ShiftStatusOpen,
+	}
+	require.NoError(t, db.Create(&otherShift).Error)
+
+	got, err := NewRepository(db).GetCurrentShift(context.Background(), 7, user.ID)
+
+	require.Nil(t, got)
+	requireRestErrorStatus(t, err, http.StatusNotFound)
+}
+
+func TestRepository_GetCurrentShift_DoesNotTrustCrossOrganizationBranchOnUser(t *testing.T) {
+	db := newOpenShiftTestDB(t)
+	branch, staff, device := seedActiveOpenShiftResources(t, db, 99)
+	user := seedPOSUser(t, db, 7, branch.ID, device.ID)
+	shift := Shift{
+		BranchID: branch.ID,
+		StaffID:  staff.ID,
+		DeviceID: device.ID,
+		OpenedAt: time.Now().UTC(),
+		Status:   ShiftStatusOpen,
+	}
+	require.NoError(t, db.Create(&shift).Error)
+
+	got, err := NewRepository(db).GetCurrentShift(context.Background(), 7, user.ID)
+
+	require.Nil(t, got)
+	requireRestErrorStatus(t, err, http.StatusNotFound)
+}
+
+func TestRepository_GetCurrentShift_RejectsCrossOrganizationOrUnpairedAccount(t *testing.T) {
+	tests := []struct {
+		name       string
+		orgID      uint
+		account    identity.AccountType
+		paired     bool
+		wantStatus int
+	}{
+		{name: "user outside authenticated organization", orgID: 99, account: identity.AccountTypePos, paired: true, wantStatus: http.StatusNotFound},
+		{name: "owner account", orgID: 7, account: identity.AccountTypeOwner, paired: false, wantStatus: http.StatusForbidden},
+		{name: "unpaired pos account", orgID: 7, account: identity.AccountTypePos, paired: false, wantStatus: http.StatusForbidden},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := newOpenShiftTestDB(t)
+			branch, _, device := seedActiveOpenShiftResources(t, db, 7)
+			user := identity.User{OrgID: 7, AccountType: tt.account, CredentialHash: "hash"}
+			if tt.paired {
+				user.BranchID = &branch.ID
+				user.DeviceID = &device.ID
+			}
+			require.NoError(t, db.Create(&user).Error)
+
+			got, err := NewRepository(db).GetCurrentShift(context.Background(), tt.orgID, user.ID)
+
+			require.Nil(t, got)
+			requireRestErrorStatus(t, err, tt.wantStatus)
+		})
+	}
+}
+
+func TestRepository_GetShift_ReturnsOpenOrClosedShiftInOrganization(t *testing.T) {
+	tests := []struct {
+		name   string
+		status ShiftStatus
+	}{
+		{name: "open shift", status: ShiftStatusOpen},
+		{name: "closed shift", status: ShiftStatusClosed},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := newOpenShiftTestDB(t)
+			branch, staff, device := seedActiveOpenShiftResources(t, db, 7)
+			shift := Shift{
+				BranchID: branch.ID,
+				StaffID:  staff.ID,
+				DeviceID: device.ID,
+				OpenedAt: time.Now().UTC(),
+				Status:   tt.status,
+			}
+			if tt.status == ShiftStatusClosed {
+				closedAt := time.Now().UTC()
+				shift.ClosedAt = &closedAt
+			}
+			require.NoError(t, db.Create(&shift).Error)
+
+			got, err := NewRepository(db).GetShift(context.Background(), 7, shift.ID)
+
+			require.NoError(t, err)
+			require.Equal(t, shift.ID, got.ID)
+			require.Equal(t, tt.status, got.Status)
+		})
+	}
+}
+
+func TestRepository_GetShift_HidesMissingAndCrossOrganizationShift(t *testing.T) {
+	tests := []struct {
+		name       string
+		orgID      uint
+		useSavedID bool
+	}{
+		{name: "missing shift", orgID: 7},
+		{name: "shift in another organization", orgID: 99, useSavedID: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := newOpenShiftTestDB(t)
+			branch, staff, device := seedActiveOpenShiftResources(t, db, 7)
+			shift := Shift{BranchID: branch.ID, StaffID: staff.ID, DeviceID: device.ID, OpenedAt: time.Now().UTC(), Status: ShiftStatusOpen}
+			require.NoError(t, db.Create(&shift).Error)
+			shiftID := uint(999)
+			if tt.useSavedID {
+				shiftID = shift.ID
+			}
+
+			got, err := NewRepository(db).GetShift(context.Background(), tt.orgID, shiftID)
+
+			require.Nil(t, got)
+			requireRestErrorStatus(t, err, http.StatusNotFound)
+			require.EqualError(t, err, "shift not found")
+		})
+	}
+}
+
+func TestRepository_CloseShift_ClosesAtomicallyAndWritesPaymentSnapshot(t *testing.T) {
+	db := newOpenShiftTestDB(t)
+	branch, staff, device := seedActiveOpenShiftResources(t, db, 7)
+	shift := Shift{
+		BranchID:    branch.ID,
+		StaffID:     staff.ID,
+		DeviceID:    device.ID,
+		OpenedAt:    time.Now().UTC().Add(-8 * time.Hour),
+		OpeningCash: decimal.NewFromInt(100),
+		Status:      ShiftStatusOpen,
+	}
+	require.NoError(t, db.Create(&shift).Error)
+	completedAt := time.Now().UTC().Add(-time.Hour)
+	sale := sales.Sale{
+		ID:          uuid.New(),
+		OrgID:       7,
+		BranchID:    branch.ID,
+		ShiftID:     shift.ID,
+		StaffID:     staff.ID,
+		DeviceID:    device.ID,
+		Total:       decimal.RequireFromString("87.25"),
+		Status:      sales.SaleStatusCompleted,
+		CompletedAt: &completedAt,
+	}
+	require.NoError(t, db.Create(&sale).Error)
+	payments := []sales.Payment{
+		{SaleID: sale.ID, Method: sales.PaymentMethodCash, Amount: decimal.RequireFromString("50.25")},
+		{SaleID: sale.ID, Method: sales.PaymentMethodCard, Amount: decimal.NewFromInt(20)},
+		{SaleID: sale.ID, Method: sales.PaymentMethodQR, Amount: decimal.NewFromInt(10)},
+		{SaleID: sale.ID, Method: sales.PaymentMethodMobileWallet, Amount: decimal.NewFromInt(5)},
+		{SaleID: sale.ID, Method: sales.PaymentMethodStoreCredit, Amount: decimal.NewFromInt(1)},
+		{SaleID: sale.ID, Method: sales.PaymentMethodOther, Amount: decimal.NewFromInt(1)},
+	}
+	require.NoError(t, db.Create(&payments).Error)
+	closedAt := time.Date(2026, time.September, 15, 14, 45, 0, 0, time.UTC)
+
+	got, err := NewRepository(db).CloseShift(context.Background(), 7, shift.ID, closedAt)
+
+	require.NoError(t, err)
+	require.Equal(t, ShiftStatusClosed, got.Status)
+	require.NotNil(t, got.ClosedAt)
+	require.Equal(t, closedAt, *got.ClosedAt)
+
+	var reconciliations []ShiftReconciliation
+	require.NoError(t, db.Where("shift_id = ?", shift.ID).Find(&reconciliations).Error)
+	require.Len(t, reconciliations, 5)
+	wantExpected := map[ReconciliationMethod]decimal.Decimal{
+		ReconciliationMethodCash:   decimal.RequireFromString("150.25"),
+		ReconciliationMethodCard:   decimal.NewFromInt(20),
+		ReconciliationMethodQR:     decimal.NewFromInt(10),
+		ReconciliationMethodMobile: decimal.NewFromInt(5),
+		ReconciliationMethodOther:  decimal.NewFromInt(2),
+	}
+	for _, reconciliation := range reconciliations {
+		want, ok := wantExpected[reconciliation.Method]
+		require.True(t, ok, "unexpected reconciliation method %q", reconciliation.Method)
+		require.True(t, want.Equal(reconciliation.Expected))
+		require.True(t, want.Equal(reconciliation.Counted))
+		require.True(t, reconciliation.Difference.IsZero())
+		require.Empty(t, reconciliation.Reason)
+	}
+}
+
+func TestRepository_CloseShift_WithNoSalesStillReconcilesOpeningCash(t *testing.T) {
+	db := newOpenShiftTestDB(t)
+	branch, staff, device := seedActiveOpenShiftResources(t, db, 7)
+	shift := Shift{
+		BranchID: branch.ID, StaffID: staff.ID, DeviceID: device.ID,
+		OpenedAt: time.Now().UTC(), OpeningCash: decimal.NewFromInt(25), Status: ShiftStatusOpen,
+	}
+	require.NoError(t, db.Create(&shift).Error)
+
+	got, err := NewRepository(db).CloseShift(context.Background(), 7, shift.ID, time.Now().UTC())
+
+	require.NoError(t, err)
+	require.Equal(t, ShiftStatusClosed, got.Status)
+	var reconciliations []ShiftReconciliation
+	require.NoError(t, db.Where("shift_id = ?", shift.ID).Find(&reconciliations).Error)
+	require.Len(t, reconciliations, 1)
+	require.Equal(t, ReconciliationMethodCash, reconciliations[0].Method)
+	require.True(t, decimal.NewFromInt(25).Equal(reconciliations[0].Expected))
+}
+
+func TestRepository_CloseShift_RejectsOpenSaleAndRollsBack(t *testing.T) {
+	db := newOpenShiftTestDB(t)
+	branch, staff, device := seedActiveOpenShiftResources(t, db, 7)
+	shift := Shift{BranchID: branch.ID, StaffID: staff.ID, DeviceID: device.ID, OpenedAt: time.Now().UTC(), Status: ShiftStatusOpen}
+	require.NoError(t, db.Create(&shift).Error)
+	openSale := sales.Sale{
+		ID: uuid.New(), OrgID: 7, BranchID: branch.ID, ShiftID: shift.ID,
+		StaffID: staff.ID, DeviceID: device.ID, Status: sales.SaleStatusOpen,
+	}
+	require.NoError(t, db.Create(&openSale).Error)
+
+	got, err := NewRepository(db).CloseShift(context.Background(), 7, shift.ID, time.Now().UTC())
+
+	require.Nil(t, got)
+	requireRestErrorStatus(t, err, http.StatusConflict)
+	require.EqualError(t, err, "shift has open sales")
+	var persisted Shift
+	require.NoError(t, db.First(&persisted, shift.ID).Error)
+	require.Equal(t, ShiftStatusOpen, persisted.Status)
+	require.Nil(t, persisted.ClosedAt)
+	require.Equal(t, int64(0), countReconciliations(t, db, shift.ID))
+}
+
+func TestRepository_CloseShift_RejectsAlreadyClosedMissingAndCrossOrganizationShift(t *testing.T) {
+	tests := []struct {
+		name       string
+		orgID      uint
+		status     ShiftStatus
+		useSavedID bool
+		wantStatus int
+		wantError  string
+	}{
+		{name: "already closed", orgID: 7, status: ShiftStatusClosed, useSavedID: true, wantStatus: http.StatusConflict, wantError: "shift is already closed"},
+		{name: "missing", orgID: 7, status: ShiftStatusOpen, wantStatus: http.StatusNotFound, wantError: "shift not found"},
+		{name: "another organization", orgID: 99, status: ShiftStatusOpen, useSavedID: true, wantStatus: http.StatusNotFound, wantError: "shift not found"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := newOpenShiftTestDB(t)
+			branch, staff, device := seedActiveOpenShiftResources(t, db, 7)
+			shift := Shift{BranchID: branch.ID, StaffID: staff.ID, DeviceID: device.ID, OpenedAt: time.Now().UTC(), Status: tt.status}
+			if tt.status == ShiftStatusClosed {
+				closedAt := time.Now().UTC()
+				shift.ClosedAt = &closedAt
+			}
+			require.NoError(t, db.Create(&shift).Error)
+			shiftID := uint(999)
+			if tt.useSavedID {
+				shiftID = shift.ID
+			}
+
+			got, err := NewRepository(db).CloseShift(context.Background(), tt.orgID, shiftID, time.Now().UTC())
+
+			require.Nil(t, got)
+			requireRestErrorStatus(t, err, tt.wantStatus)
+			require.EqualError(t, err, tt.wantError)
+			require.Equal(t, int64(0), countReconciliations(t, db, shift.ID))
+		})
+	}
+}
+
+func newOpenShiftTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	dbName := strings.NewReplacer("/", "_", " ", "_").Replace(t.Name())
+	db, err := gorm.Open(
+		sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", dbName)),
+		&gorm.Config{Logger: logger.Default.LogMode(logger.Silent)},
+	)
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(
+		&identity.Branch{}, &identity.Staff{}, &identity.Device{}, &identity.User{},
+		&sales.Sale{}, &sales.Payment{},
+		&Shift{}, &ShiftReconciliation{},
+	))
+	return db
+}
+
+func seedPOSUser(t *testing.T, db *gorm.DB, orgID, branchID, deviceID uint) *identity.User {
+	t.Helper()
+	user := &identity.User{
+		OrgID:          orgID,
+		AccountType:    identity.AccountTypePos,
+		BranchID:       &branchID,
+		DeviceID:       &deviceID,
+		CredentialHash: "hash",
+	}
+	require.NoError(t, db.Create(user).Error)
+	return user
+}
+
+func seedActiveOpenShiftResources(t *testing.T, db *gorm.DB, orgID uint) (*identity.Branch, *identity.Staff, *identity.Device) {
+	t.Helper()
+	branch := &identity.Branch{OrgID: orgID, Name: "Main", Status: identity.BranchStatusActive, Address: "-", Phone: "-"}
+	require.NoError(t, db.Create(branch).Error)
+	staff := &identity.Staff{BranchID: branch.ID, Name: "Cashier", RoleID: 1, PinHash: "hash", Phone: "1", Status: identity.StaffStatusActive}
+	require.NoError(t, db.Create(staff).Error)
+	device := &identity.Device{BranchID: branch.ID, Name: "POS-1", Status: identity.DeviceStatusActive, LastSeenAt: time.Now()}
+	require.NoError(t, db.Create(device).Error)
+	return branch, staff, device
+}
+
+func repositoryOpenShiftRequest(orgID, branchID, staffID, deviceID uint) OpenShiftRequest {
+	return OpenShiftRequest{
+		OrgID:       orgID,
+		BranchID:    branchID,
+		StaffID:     staffID,
+		DeviceID:    deviceID,
+		OpenedAt:    time.Now().UTC(),
+		OpeningCash: decimal.NewFromInt(100),
+		Status:      ShiftStatusOpen,
+	}
+}
+
+func countShifts(t *testing.T, db *gorm.DB) int64 {
+	t.Helper()
+	var count int64
+	require.NoError(t, db.Model(&Shift{}).Count(&count).Error)
+	return count
+}
+
+func countReconciliations(t *testing.T, db *gorm.DB, shiftID uint) int64 {
+	t.Helper()
+	var count int64
+	require.NoError(t, db.Model(&ShiftReconciliation{}).Where("shift_id = ?", shiftID).Count(&count).Error)
+	return count
+}

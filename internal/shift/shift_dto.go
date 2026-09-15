@@ -27,17 +27,21 @@ type CreateExpenseRequest struct {
 	CreatedBy uint            `json:"created_by" binding:"required"`
 }
 
-// OpenShiftRequest is the request body for the endpoint that creates or updates a Shift.
-// TODO: fields mirroring org/branch/staff/device ownership (e.g. OrgID, BranchID, StaffID)
-// likely belong to the authenticated session/context, not client input - review before use.
+// OpenShiftRequest is the request body for opening a Shift. OpenedAt, ClosedAt,
+// and Status remain for wire compatibility, but Service.OpenShift always
+// replaces them with server-owned lifecycle values before persistence.
 type OpenShiftRequest struct {
-	BranchID    uint            `json:"branch_id" binding:"required"`
+	// OrgID is populated from the authenticated access token by the API and
+	// is never accepted from JSON. Repository.OpenShift uses it for tenant
+	// scoping in the same way as the identity repository's branch operations.
+	OrgID       uint            `json:"-"`
+	BranchID    uint            `json:"branch_id"`
 	StaffID     uint            `json:"staff_id" binding:"required"`
 	DeviceID    uint            `json:"device_id" binding:"required"`
-	OpenedAt    time.Time       `json:"opened_at" binding:"required"`
+	OpenedAt    time.Time       `json:"opened_at"`
 	OpeningCash decimal.Decimal `json:"opening_cash" binding:"required"`
 	ClosedAt    *time.Time      `json:"closed_at"`
-	Status      ShiftStatus     `json:"status" binding:"required"`
+	Status      ShiftStatus     `json:"status"`
 }
 
 // UpdateExpenseRequest is the request body for the endpoint that creates or updates a Expense.

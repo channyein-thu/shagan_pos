@@ -5,9 +5,9 @@ import "context"
 // Interface defines the shift domain's use cases.
 type Interface interface {
 	OpenShift(ctx context.Context, in OpenShiftRequest) (*Shift, error)
-	GetCurrentShift(ctx context.Context) (*Shift, error)
-	GetShift(ctx context.Context, id uint) (*Shift, error)
-	CloseShift(ctx context.Context, id uint) (*Shift, error)
+	GetCurrentShift(ctx context.Context, orgID, userID uint) (*Shift, error)
+	GetShift(ctx context.Context, orgID, id uint) (*Shift, error)
+	CloseShift(ctx context.Context, orgID, id uint) (*Shift, error)
 	GetShiftSummary(ctx context.Context, id uint) (map[string]any, error)
 	ListShiftReconciliations(ctx context.Context, id uint) ([]ShiftReconciliation, error)
 	CreateDrawerEvent(ctx context.Context, in CreateDrawerEventRequest) (*DrawerEvent, error)
