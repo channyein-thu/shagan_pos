@@ -8,6 +8,7 @@ import (
 	"gorm.io/gorm"
 
 	"shagan_pos/internal/common"
+	"shagan_pos/internal/middleware"
 	"shagan_pos/internal/shift"
 )
 
@@ -36,22 +37,42 @@ func (a *ShiftAPI) RegisterRoutes(rg *gin.RouterGroup) {
 
 // OpenShift handles `POST /shifts`. Open shift with opening float
 func (a *ShiftAPI) OpenShift(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
 	var in shift.OpenShiftRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
+	}
+	in.OrgID = orgID
+	// A POS account is pinned to one branch in its signed access token. Owner
+	// and service-center accounts have no branch claim and must submit one;
+	// either way the repository still scopes it to the authenticated org.
+	if branchID, ok := middleware.BranchIDFromContext(c); ok {
+		in.BranchID = branchID
 	}
 	result, err := a.service.OpenShift(c.Request.Context(), in)
 	if err != nil {
 		common.HandleError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, result)
+	c.JSON(http.StatusCreated, result)
 }
 
 // GetCurrentShift handles `GET /shifts/current`.
 func (a *ShiftAPI) GetCurrentShift(c *gin.Context) {
-	result, err := a.service.GetCurrentShift(c.Request.Context())
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	userID, ok := middleware.UserIDFromContext(c)
+	if !ok {
+		common.HandleError(c, common.UnauthorizedError("missing or malformed authorization header"))
+		return
+	}
+	result, err := a.service.GetCurrentShift(c.Request.Context(), orgID, userID)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -61,12 +82,16 @@ func (a *ShiftAPI) GetCurrentShift(c *gin.Context) {
 
 // GetShift handles `GET /shifts/:id`.
 func (a *ShiftAPI) GetShift(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
-	result, err := a.service.GetShift(c.Request.Context(), uint(idVal))
+	result, err := a.service.GetShift(c.Request.Context(), orgID, uint(idVal))
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -76,12 +101,16 @@ func (a *ShiftAPI) GetShift(c *gin.Context) {
 
 // CloseShift handles `POST /shifts/:id/close`. Writes reconciliation row(s) as a side effect
 func (a *ShiftAPI) CloseShift(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
-	result, err := a.service.CloseShift(c.Request.Context(), uint(idVal))
+	result, err := a.service.CloseShift(c.Request.Context(), orgID, uint(idVal))
 	if err != nil {
 		common.HandleError(c, err)
 		return
