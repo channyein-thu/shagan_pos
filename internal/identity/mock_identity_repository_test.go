@@ -1480,6 +1480,55 @@ func (_c *MockRepository_UpdateStaff_Call) RunAndReturn(run func(context.Context
 	return _c
 }
 
+// UpdateStaffPinAttempts provides a mock function with given fields: ctx, staffID, attempts, lockedUntil
+func (_m *MockRepository) UpdateStaffPinAttempts(ctx context.Context, staffID uint, attempts int, lockedUntil *time.Time) error {
+	ret := _m.Called(ctx, staffID, attempts, lockedUntil)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateStaffPinAttempts")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, uint, int, *time.Time) error); ok {
+		r0 = rf(ctx, staffID, attempts, lockedUntil)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// MockRepository_UpdateStaffPinAttempts_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdateStaffPinAttempts'
+type MockRepository_UpdateStaffPinAttempts_Call struct {
+	*mock.Call
+}
+
+// UpdateStaffPinAttempts is a helper method to define mock.On call
+//   - ctx context.Context
+//   - staffID uint
+//   - attempts int
+//   - lockedUntil *time.Time
+func (_e *MockRepository_Expecter) UpdateStaffPinAttempts(ctx interface{}, staffID interface{}, attempts interface{}, lockedUntil interface{}) *MockRepository_UpdateStaffPinAttempts_Call {
+	return &MockRepository_UpdateStaffPinAttempts_Call{Call: _e.mock.On("UpdateStaffPinAttempts", ctx, staffID, attempts, lockedUntil)}
+}
+
+func (_c *MockRepository_UpdateStaffPinAttempts_Call) Run(run func(ctx context.Context, staffID uint, attempts int, lockedUntil *time.Time)) *MockRepository_UpdateStaffPinAttempts_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(uint), args[2].(int), args[3].(*time.Time))
+	})
+	return _c
+}
+
+func (_c *MockRepository_UpdateStaffPinAttempts_Call) Return(_a0 error) *MockRepository_UpdateStaffPinAttempts_Call {
+	_c.Call.Return(_a0)
+	return _c
+}
+
+func (_c *MockRepository_UpdateStaffPinAttempts_Call) RunAndReturn(run func(context.Context, uint, int, *time.Time) error) *MockRepository_UpdateStaffPinAttempts_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // NewMockRepository creates a new instance of MockRepository. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
 // The first argument is typically a *testing.T value.
 func NewMockRepository(t interface {

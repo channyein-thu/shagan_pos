@@ -390,6 +390,18 @@ func (r *RepositoryImpl) UpdateStaff(ctx context.Context, orgID uint, id uint, i
 	return r.GetStaff(ctx, orgID, id)
 }
 
+// UpdateStaffPinAttempts backs VerifyStaffPIN/VerifyManagerPIN's lockout
+// bookkeeping. Uses a map (not a struct) so lockedUntil=nil actually clears
+// pin_locked_until to NULL - GORM's struct-based Updates skips zero/nil
+// fields, but a map update writes exactly what it's given.
+func (r *RepositoryImpl) UpdateStaffPinAttempts(ctx context.Context, staffID uint, attempts int, lockedUntil *time.Time) error {
+	return r.db.WithContext(ctx).Model(&Staff{}).Where("id = ?", staffID).
+		Updates(map[string]any{
+			"failed_pin_attempts": attempts,
+			"pin_locked_until":    lockedUntil,
+		}).Error
+}
+
 // ListRoles backs `GET /roles`. Roles are global and fixed for v1 (not
 // per-org customizable - see the 09-12 permissions-model decision), so
 // there's no org scoping here, unlike Branches/Staff/Devices.

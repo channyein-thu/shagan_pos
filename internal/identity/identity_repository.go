@@ -62,6 +62,11 @@ type Repository interface {
 	CreateStaff(ctx context.Context, orgID uint, in CreateStaffRequest) (*Staff, error)
 	GetStaff(ctx context.Context, orgID uint, id uint) (*Staff, error)
 	UpdateStaff(ctx context.Context, orgID uint, id uint, in UpdateStaffRequest) (*Staff, error)
+	// UpdateStaffPinAttempts persists PIN-lockout bookkeeping - a plain field
+	// write, no business logic. attempts/lockedUntil are computed entirely by
+	// the service (see VerifyStaffPIN/VerifyManagerPIN's threshold/duration
+	// constants); this method has no opinion on either.
+	UpdateStaffPinAttempts(ctx context.Context, staffID uint, attempts int, lockedUntil *time.Time) error
 	ListRoles(ctx context.Context) ([]Role, error)
 	ListPermissions(ctx context.Context) ([]Permission, error)
 	ListRolePermissions(ctx context.Context, id uint) ([]Permission, error)
