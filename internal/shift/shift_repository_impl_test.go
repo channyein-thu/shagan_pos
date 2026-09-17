@@ -330,7 +330,7 @@ func TestRepository_GetShift_ReturnsOpenOrClosedShiftInOrganization(t *testing.T
 			}
 			require.NoError(t, db.Create(&shift).Error)
 
-			got, err := NewRepository(db).GetShift(context.Background(), 7, shift.ID)
+			got, err := NewRepository(db).GetShift(context.Background(), AccessScope{OrgID: 7}, shift.ID)
 
 			require.NoError(t, err)
 			require.Equal(t, shift.ID, got.ID)
@@ -360,7 +360,7 @@ func TestRepository_GetShift_HidesMissingAndCrossOrganizationShift(t *testing.T)
 				shiftID = shift.ID
 			}
 
-			got, err := NewRepository(db).GetShift(context.Background(), tt.orgID, shiftID)
+			got, err := NewRepository(db).GetShift(context.Background(), AccessScope{OrgID: tt.orgID}, shiftID)
 
 			require.Nil(t, got)
 			requireRestErrorStatus(t, err, http.StatusNotFound)
@@ -405,7 +405,7 @@ func TestRepository_CloseShift_ClosesAtomicallyAndWritesPaymentSnapshot(t *testi
 	require.NoError(t, db.Create(&payments).Error)
 	closedAt := time.Date(2026, time.September, 15, 14, 45, 0, 0, time.UTC)
 
-	got, err := NewRepository(db).CloseShift(context.Background(), 7, shift.ID, closedAt)
+	got, err := NewRepository(db).CloseShift(context.Background(), AccessScope{OrgID: 7}, shift.ID, closedAt)
 
 	require.NoError(t, err)
 	require.Equal(t, ShiftStatusClosed, got.Status)
@@ -441,7 +441,7 @@ func TestRepository_CloseShift_WithNoSalesStillReconcilesOpeningCash(t *testing.
 	}
 	require.NoError(t, db.Create(&shift).Error)
 
-	got, err := NewRepository(db).CloseShift(context.Background(), 7, shift.ID, time.Now().UTC())
+	got, err := NewRepository(db).CloseShift(context.Background(), AccessScope{OrgID: 7}, shift.ID, time.Now().UTC())
 
 	require.NoError(t, err)
 	require.Equal(t, ShiftStatusClosed, got.Status)
@@ -463,7 +463,7 @@ func TestRepository_CloseShift_RejectsOpenSaleAndRollsBack(t *testing.T) {
 	}
 	require.NoError(t, db.Create(&openSale).Error)
 
-	got, err := NewRepository(db).CloseShift(context.Background(), 7, shift.ID, time.Now().UTC())
+	got, err := NewRepository(db).CloseShift(context.Background(), AccessScope{OrgID: 7}, shift.ID, time.Now().UTC())
 
 	require.Nil(t, got)
 	requireRestErrorStatus(t, err, http.StatusConflict)
@@ -504,7 +504,7 @@ func TestRepository_CloseShift_RejectsAlreadyClosedMissingAndCrossOrganizationSh
 				shiftID = shift.ID
 			}
 
-			got, err := NewRepository(db).CloseShift(context.Background(), tt.orgID, shiftID, time.Now().UTC())
+			got, err := NewRepository(db).CloseShift(context.Background(), AccessScope{OrgID: tt.orgID}, shiftID, time.Now().UTC())
 
 			require.Nil(t, got)
 			requireRestErrorStatus(t, err, tt.wantStatus)
@@ -525,7 +525,7 @@ func newOpenShiftTestDB(t *testing.T) *gorm.DB {
 	require.NoError(t, db.AutoMigrate(
 		&identity.Branch{}, &identity.Staff{}, &identity.Device{}, &identity.User{},
 		&sales.Sale{}, &sales.Payment{},
-		&Shift{}, &ShiftReconciliation{},
+		&Shift{}, &ShiftReconciliation{}, &DrawerEvent{}, &Expense{},
 	))
 	return db
 }
@@ -578,4 +578,184 @@ func countReconciliations(t *testing.T, db *gorm.DB, shiftID uint) int64 {
 	var count int64
 	require.NoError(t, db.Model(&ShiftReconciliation{}).Where("shift_id = ?", shiftID).Count(&count).Error)
 	return count
+}
+func TestRepository_GetShiftSummary_ReturnsTenantScopedTotals(t *testing.T) {
+	db := newOpenShiftTestDB(t)
+	branch, staff, device := seedActiveOpenShiftResources(t, db, 7)
+	shift := seedShift(t, db, branch.ID, staff.ID, device.ID, ShiftStatusClosed)
+	completedAt := time.Now().UTC()
+	completed := sales.Sale{
+		ID: uuid.New(), OrgID: 7, BranchID: branch.ID, ShiftID: shift.ID,
+		StaffID: staff.ID, DeviceID: device.ID, Total: decimal.NewFromInt(75),
+		Status: sales.SaleStatusCompleted, CompletedAt: &completedAt,
+	}
+	voided := sales.Sale{
+		ID: uuid.New(), OrgID: 7, BranchID: branch.ID, ShiftID: shift.ID,
+		StaffID: staff.ID, DeviceID: device.ID, Total: decimal.NewFromInt(999),
+		Status: sales.SaleStatusVoided,
+	}
+	require.NoError(t, db.Create(&[]sales.Sale{completed, voided}).Error)
+	require.NoError(t, db.Create(&[]sales.Payment{
+		{SaleID: completed.ID, Method: sales.PaymentMethodCash, Amount: decimal.NewFromInt(50)},
+		{SaleID: completed.ID, Method: sales.PaymentMethodCard, Amount: decimal.NewFromInt(25)},
+		{SaleID: voided.ID, Method: sales.PaymentMethodCash, Amount: decimal.NewFromInt(999)},
+	}).Error)
+	reconciliation := ShiftReconciliation{
+		ShiftID: shift.ID, Method: ReconciliationMethodCash,
+		Expected: decimal.NewFromInt(150), Counted: decimal.NewFromInt(150),
+	}
+	require.NoError(t, db.Create(&reconciliation).Error)
+
+	got, err := NewRepository(db).GetShiftSummary(context.Background(), AccessScope{OrgID: 7}, shift.ID)
+
+	require.NoError(t, err)
+	require.Equal(t, int64(1), got["sales_count"])
+	require.True(t, decimal.NewFromInt(75).Equal(got["sales_total"].(decimal.Decimal)))
+	require.True(t, decimal.NewFromInt(150).Equal(got["expected_cash"].(decimal.Decimal)))
+	paymentTotals := got["payment_totals"].(map[string]decimal.Decimal)
+	require.True(t, decimal.NewFromInt(50).Equal(paymentTotals[string(sales.PaymentMethodCash)]))
+	require.True(t, decimal.NewFromInt(25).Equal(paymentTotals[string(sales.PaymentMethodCard)]))
+	require.Len(t, got["reconciliations"].([]ShiftReconciliation), 1)
+
+	_, err = NewRepository(db).GetShiftSummary(context.Background(), AccessScope{OrgID: 99}, shift.ID)
+	requireRestErrorStatus(t, err, http.StatusNotFound)
+}
+
+func TestRepository_ListShiftReconciliations_EnforcesBranchScope(t *testing.T) {
+	db := newOpenShiftTestDB(t)
+	branch, staff, device := seedActiveOpenShiftResources(t, db, 7)
+	shift := seedShift(t, db, branch.ID, staff.ID, device.ID, ShiftStatusClosed)
+	require.NoError(t, db.Create(&[]ShiftReconciliation{
+		{ShiftID: shift.ID, Method: ReconciliationMethodCash},
+		{ShiftID: shift.ID, Method: ReconciliationMethodCard},
+	}).Error)
+
+	branchID := branch.ID
+	got, err := NewRepository(db).ListShiftReconciliations(context.Background(), AccessScope{OrgID: 7, BranchID: &branchID}, shift.ID)
+	require.NoError(t, err)
+	require.Len(t, got, 2)
+
+	otherBranchID := branch.ID + 999
+	_, err = NewRepository(db).ListShiftReconciliations(context.Background(), AccessScope{OrgID: 7, BranchID: &otherBranchID}, shift.ID)
+	requireRestErrorStatus(t, err, http.StatusNotFound)
+}
+
+func TestRepository_CreateAndListDrawerEvents_EnforcesOpenShiftAndScope(t *testing.T) {
+	db := newOpenShiftTestDB(t)
+	branch, staff, device := seedActiveOpenShiftResources(t, db, 7)
+	openShift := seedShift(t, db, branch.ID, staff.ID, device.ID, ShiftStatusOpen)
+	branchID := branch.ID
+	scope := AccessScope{OrgID: 7, BranchID: &branchID}
+
+	created, err := NewRepository(db).CreateDrawerEvent(context.Background(), scope, CreateDrawerEventRequest{
+		ShiftID: openShift.ID, StaffID: staff.ID, Reason: "cash count",
+	})
+	require.NoError(t, err)
+	require.NotZero(t, created.ID)
+	require.False(t, created.CreatedAt.IsZero())
+
+	events, err := NewRepository(db).ListDrawerEvents(context.Background(), scope)
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	require.Equal(t, created.ID, events[0].ID)
+
+	closedShift := seedShift(t, db, branch.ID, staff.ID, device.ID, ShiftStatusClosed)
+	got, err := NewRepository(db).CreateDrawerEvent(context.Background(), scope, CreateDrawerEventRequest{
+		ShiftID: closedShift.ID, StaffID: staff.ID, Reason: "late event",
+	})
+	require.Nil(t, got)
+	requireRestErrorStatus(t, err, http.StatusConflict)
+
+	otherBranch := identity.Branch{OrgID: 7, Name: "Other", Status: identity.BranchStatusActive, Address: "-", Phone: "-"}
+	require.NoError(t, db.Create(&otherBranch).Error)
+	otherStaff := identity.Staff{BranchID: otherBranch.ID, Name: "Other", RoleID: 1, PinHash: "hash", Phone: "2", Status: identity.StaffStatusActive}
+	require.NoError(t, db.Create(&otherStaff).Error)
+	_, err = NewRepository(db).CreateDrawerEvent(context.Background(), scope, CreateDrawerEventRequest{
+		ShiftID: openShift.ID, StaffID: otherStaff.ID, Reason: "wrong staff",
+	})
+	requireRestErrorStatus(t, err, http.StatusNotFound)
+}
+
+func TestRepository_ExpenseCRUD_EnforcesTenantBranchAndStaff(t *testing.T) {
+	db := newOpenShiftTestDB(t)
+	branch, staff, _ := seedActiveOpenShiftResources(t, db, 7)
+	branchID := branch.ID
+	scope := AccessScope{OrgID: 7, BranchID: &branchID}
+	repo := NewRepository(db)
+
+	created, err := repo.CreateExpense(context.Background(), scope, CreateExpenseRequest{
+		BranchID: branch.ID, Date: time.Now().UTC(), Category: "supplies",
+		Amount: decimal.RequireFromString("12.50"), CreatedBy: staff.ID,
+	})
+	require.NoError(t, err)
+	require.NotZero(t, created.ID)
+
+	listed, err := repo.ListExpenses(context.Background(), scope)
+	require.NoError(t, err)
+	require.Len(t, listed, 1)
+	require.Equal(t, created.ID, listed[0].ID)
+
+	category := "transport"
+	amount := decimal.NewFromInt(20)
+	updated, err := repo.UpdateExpense(context.Background(), scope, created.ID, UpdateExpenseRequest{
+		Category: &category, Amount: &amount,
+	})
+	require.NoError(t, err)
+	require.Equal(t, category, updated.Category)
+	require.True(t, amount.Equal(updated.Amount))
+
+	otherBranch := identity.Branch{OrgID: 7, Name: "Other", Status: identity.BranchStatusActive, Address: "-", Phone: "-"}
+	require.NoError(t, db.Create(&otherBranch).Error)
+	otherStaff := identity.Staff{BranchID: otherBranch.ID, Name: "Other", RoleID: 1, PinHash: "hash", Phone: "2", Status: identity.StaffStatusActive}
+	require.NoError(t, db.Create(&otherStaff).Error)
+	_, err = repo.CreateExpense(context.Background(), scope, CreateExpenseRequest{
+		BranchID: otherBranch.ID, Date: time.Now(), Category: "hidden", Amount: decimal.NewFromInt(1), CreatedBy: otherStaff.ID,
+	})
+	requireRestErrorStatus(t, err, http.StatusNotFound)
+
+	otherScope := AccessScope{OrgID: 99}
+	_, err = repo.UpdateExpense(context.Background(), otherScope, created.ID, UpdateExpenseRequest{Category: &category})
+	requireRestErrorStatus(t, err, http.StatusNotFound)
+	requireRestErrorStatus(t, repo.DeleteExpense(context.Background(), otherScope, created.ID), http.StatusNotFound)
+
+	require.NoError(t, repo.DeleteExpense(context.Background(), scope, created.ID))
+	var count int64
+	require.NoError(t, db.Model(&Expense{}).Where("id = ?", created.ID).Count(&count).Error)
+	require.Zero(t, count)
+}
+
+func TestRepository_UpdateExpense_AllowsAtomicBranchAndCreatorMoveForOrgWideScope(t *testing.T) {
+	db := newOpenShiftTestDB(t)
+	branch, staff, _ := seedActiveOpenShiftResources(t, db, 7)
+	repo := NewRepository(db)
+	expense, err := repo.CreateExpense(context.Background(), AccessScope{OrgID: 7}, CreateExpenseRequest{
+		BranchID: branch.ID, Date: time.Now(), Category: "supplies", Amount: decimal.NewFromInt(5), CreatedBy: staff.ID,
+	})
+	require.NoError(t, err)
+	otherBranch := identity.Branch{OrgID: 7, Name: "Other", Status: identity.BranchStatusActive, Address: "-", Phone: "-"}
+	require.NoError(t, db.Create(&otherBranch).Error)
+	otherStaff := identity.Staff{BranchID: otherBranch.ID, Name: "Other", RoleID: 1, PinHash: "hash", Phone: "2", Status: identity.StaffStatusActive}
+	require.NoError(t, db.Create(&otherStaff).Error)
+
+	updated, err := repo.UpdateExpense(context.Background(), AccessScope{OrgID: 7}, expense.ID, UpdateExpenseRequest{
+		BranchID: &otherBranch.ID, CreatedBy: &otherStaff.ID,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, otherBranch.ID, updated.BranchID)
+	require.Equal(t, otherStaff.ID, updated.CreatedBy)
+}
+
+func seedShift(t *testing.T, db *gorm.DB, branchID, staffID, deviceID uint, status ShiftStatus) *Shift {
+	t.Helper()
+	shift := &Shift{
+		BranchID: branchID, StaffID: staffID, DeviceID: deviceID,
+		OpenedAt: time.Now().UTC().Add(-time.Hour), OpeningCash: decimal.NewFromInt(100), Status: status,
+	}
+	if status == ShiftStatusClosed {
+		closedAt := time.Now().UTC()
+		shift.ClosedAt = &closedAt
+	}
+	require.NoError(t, db.Create(shift).Error)
+	return shift
 }

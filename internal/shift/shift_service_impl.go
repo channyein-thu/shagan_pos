@@ -2,6 +2,7 @@ package shift
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -58,42 +59,122 @@ func (s *Service) GetCurrentShift(ctx context.Context, orgID, userID uint) (*Shi
 	return s.repo.GetCurrentShift(ctx, orgID, userID)
 }
 
-func (s *Service) GetShift(ctx context.Context, orgID, id uint) (*Shift, error) {
-	return s.repo.GetShift(ctx, orgID, id)
+func (s *Service) GetShift(ctx context.Context, scope AccessScope, id uint) (*Shift, error) {
+	return s.repo.GetShift(ctx, scope, id)
 }
 
-func (s *Service) CloseShift(ctx context.Context, orgID, id uint) (*Shift, error) {
-	return s.repo.CloseShift(ctx, orgID, id, s.now().UTC())
+func (s *Service) CloseShift(ctx context.Context, scope AccessScope, id uint) (*Shift, error) {
+	return s.repo.CloseShift(ctx, scope, id, s.now().UTC())
 }
 
-func (s *Service) GetShiftSummary(ctx context.Context, id uint) (map[string]any, error) {
-	return s.repo.GetShiftSummary(ctx, id)
+func (s *Service) GetShiftSummary(ctx context.Context, scope AccessScope, id uint) (map[string]any, error) {
+	return s.repo.GetShiftSummary(ctx, scope, id)
 }
 
-func (s *Service) ListShiftReconciliations(ctx context.Context, id uint) ([]ShiftReconciliation, error) {
-	return s.repo.ListShiftReconciliations(ctx, id)
+func (s *Service) ListShiftReconciliations(ctx context.Context, scope AccessScope, id uint) ([]ShiftReconciliation, error) {
+	return s.repo.ListShiftReconciliations(ctx, scope, id)
 }
 
-func (s *Service) CreateDrawerEvent(ctx context.Context, in CreateDrawerEventRequest) (*DrawerEvent, error) {
-	return s.repo.CreateDrawerEvent(ctx, in)
+func (s *Service) CreateDrawerEvent(ctx context.Context, scope AccessScope, in CreateDrawerEventRequest) (*DrawerEvent, error) {
+	validationErrors := make([]common.FieldError, 0, 3)
+	if in.ShiftID == 0 {
+		validationErrors = append(validationErrors, common.FieldError{Field: "ShiftID", Message: "required"})
+	}
+	if in.StaffID == 0 {
+		validationErrors = append(validationErrors, common.FieldError{Field: "StaffID", Message: "required"})
+	}
+	in.Reason = strings.TrimSpace(in.Reason)
+	if in.Reason == "" {
+		validationErrors = append(validationErrors, common.FieldError{Field: "Reason", Message: "required"})
+	}
+	if in.SaleID != nil && *in.SaleID == 0 {
+		validationErrors = append(validationErrors, common.FieldError{Field: "SaleID", Message: "must be greater than zero"})
+	}
+	if len(validationErrors) > 0 {
+		return nil, common.ValidationError("validation error", validationErrors)
+	}
+	return s.repo.CreateDrawerEvent(ctx, scope, in)
 }
 
-func (s *Service) ListDrawerEvents(ctx context.Context) ([]DrawerEvent, error) {
-	return s.repo.ListDrawerEvents(ctx)
+func (s *Service) ListDrawerEvents(ctx context.Context, scope AccessScope) ([]DrawerEvent, error) {
+	return s.repo.ListDrawerEvents(ctx, scope)
 }
 
-func (s *Service) ListExpenses(ctx context.Context) ([]Expense, error) {
-	return s.repo.ListExpenses(ctx)
+func (s *Service) ListExpenses(ctx context.Context, scope AccessScope) ([]Expense, error) {
+	return s.repo.ListExpenses(ctx, scope)
 }
 
-func (s *Service) CreateExpense(ctx context.Context, in CreateExpenseRequest) (*Expense, error) {
-	return s.repo.CreateExpense(ctx, in)
+func (s *Service) CreateExpense(ctx context.Context, scope AccessScope, in CreateExpenseRequest) (*Expense, error) {
+	validationErrors := validateExpenseInput(in.BranchID, in.Date, in.Category, in.Amount, in.CreatedBy)
+	if len(validationErrors) > 0 {
+		return nil, common.ValidationError("validation error", validationErrors)
+	}
+	in.Category = strings.TrimSpace(in.Category)
+	return s.repo.CreateExpense(ctx, scope, in)
 }
 
-func (s *Service) UpdateExpense(ctx context.Context, id uint, in UpdateExpenseRequest) (*Expense, error) {
-	return s.repo.UpdateExpense(ctx, id, in)
+func (s *Service) UpdateExpense(ctx context.Context, scope AccessScope, id uint, in UpdateExpenseRequest) (*Expense, error) {
+	validationErrors := make([]common.FieldError, 0, 5)
+	if in.BranchID == nil && in.Date == nil && in.Category == nil && in.Amount == nil && in.CreatedBy == nil {
+		validationErrors = append(validationErrors, common.FieldError{Field: "body", Message: "at least one field is required"})
+	}
+	if in.BranchID != nil && *in.BranchID == 0 {
+		validationErrors = append(validationErrors, common.FieldError{Field: "BranchID", Message: "required"})
+	}
+	if in.Date != nil && in.Date.IsZero() {
+		validationErrors = append(validationErrors, common.FieldError{Field: "Date", Message: "required"})
+	}
+	if in.Category != nil {
+		trimmed := strings.TrimSpace(*in.Category)
+		if trimmed == "" {
+			validationErrors = append(validationErrors, common.FieldError{Field: "Category", Message: "required"})
+		} else {
+			in.Category = &trimmed
+		}
+	}
+	if in.Amount != nil {
+		validationErrors = append(validationErrors, validatePositiveMoney("Amount", *in.Amount)...)
+	}
+	if in.CreatedBy != nil && *in.CreatedBy == 0 {
+		validationErrors = append(validationErrors, common.FieldError{Field: "CreatedBy", Message: "required"})
+	}
+	if len(validationErrors) > 0 {
+		return nil, common.ValidationError("validation error", validationErrors)
+	}
+	return s.repo.UpdateExpense(ctx, scope, id, in)
 }
 
-func (s *Service) DeleteExpense(ctx context.Context, id uint) error {
-	return s.repo.DeleteExpense(ctx, id)
+func (s *Service) DeleteExpense(ctx context.Context, scope AccessScope, id uint) error {
+	return s.repo.DeleteExpense(ctx, scope, id)
+}
+
+func validateExpenseInput(branchID uint, date time.Time, category string, amount decimal.Decimal, createdBy uint) []common.FieldError {
+	errs := make([]common.FieldError, 0, 5)
+	if branchID == 0 {
+		errs = append(errs, common.FieldError{Field: "BranchID", Message: "required"})
+	}
+	if date.IsZero() {
+		errs = append(errs, common.FieldError{Field: "Date", Message: "required"})
+	}
+	if strings.TrimSpace(category) == "" {
+		errs = append(errs, common.FieldError{Field: "Category", Message: "required"})
+	}
+	errs = append(errs, validatePositiveMoney("Amount", amount)...)
+	if createdBy == 0 {
+		errs = append(errs, common.FieldError{Field: "CreatedBy", Message: "required"})
+	}
+	return errs
+}
+
+func validatePositiveMoney(field string, amount decimal.Decimal) []common.FieldError {
+	switch {
+	case !amount.IsPositive():
+		return []common.FieldError{{Field: field, Message: "must be greater than zero"}}
+	case !amount.Round(2).Equal(amount):
+		return []common.FieldError{{Field: field, Message: "must have at most 2 decimal places"}}
+	case amount.GreaterThanOrEqual(maxOpeningCash):
+		return []common.FieldError{{Field: field, Message: "must be less than 100000000.00"}}
+	default:
+		return nil
+	}
 }

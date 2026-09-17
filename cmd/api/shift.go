@@ -35,6 +35,18 @@ func (a *ShiftAPI) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.DELETE("/expenses/:id", a.DeleteExpense)
 }
 
+func shiftAccessScope(c *gin.Context) (shift.AccessScope, bool) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return shift.AccessScope{}, false
+	}
+	scope := shift.AccessScope{OrgID: orgID}
+	if branchID, ok := middleware.BranchIDFromContext(c); ok {
+		scope.BranchID = &branchID
+	}
+	return scope, true
+}
+
 // OpenShift handles `POST /shifts`. Open shift with opening float
 func (a *ShiftAPI) OpenShift(c *gin.Context) {
 	orgID, ok := requireOrgID(c)
@@ -82,7 +94,7 @@ func (a *ShiftAPI) GetCurrentShift(c *gin.Context) {
 
 // GetShift handles `GET /shifts/:id`.
 func (a *ShiftAPI) GetShift(c *gin.Context) {
-	orgID, ok := requireOrgID(c)
+	scope, ok := shiftAccessScope(c)
 	if !ok {
 		return
 	}
@@ -91,7 +103,7 @@ func (a *ShiftAPI) GetShift(c *gin.Context) {
 		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
-	result, err := a.service.GetShift(c.Request.Context(), orgID, uint(idVal))
+	result, err := a.service.GetShift(c.Request.Context(), scope, uint(idVal))
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -101,7 +113,7 @@ func (a *ShiftAPI) GetShift(c *gin.Context) {
 
 // CloseShift handles `POST /shifts/:id/close`. Writes reconciliation row(s) as a side effect
 func (a *ShiftAPI) CloseShift(c *gin.Context) {
-	orgID, ok := requireOrgID(c)
+	scope, ok := shiftAccessScope(c)
 	if !ok {
 		return
 	}
@@ -110,7 +122,7 @@ func (a *ShiftAPI) CloseShift(c *gin.Context) {
 		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
-	result, err := a.service.CloseShift(c.Request.Context(), orgID, uint(idVal))
+	result, err := a.service.CloseShift(c.Request.Context(), scope, uint(idVal))
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -120,12 +132,16 @@ func (a *ShiftAPI) CloseShift(c *gin.Context) {
 
 // GetShiftSummary handles `GET /shifts/:id/summary`. Printable summary
 func (a *ShiftAPI) GetShiftSummary(c *gin.Context) {
+	scope, ok := shiftAccessScope(c)
+	if !ok {
+		return
+	}
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
-	result, err := a.service.GetShiftSummary(c.Request.Context(), uint(idVal))
+	result, err := a.service.GetShiftSummary(c.Request.Context(), scope, uint(idVal))
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -135,12 +151,16 @@ func (a *ShiftAPI) GetShiftSummary(c *gin.Context) {
 
 // ListShiftReconciliations handles `GET /shifts/:id/reconciliations`. Per-method breakdown
 func (a *ShiftAPI) ListShiftReconciliations(c *gin.Context) {
+	scope, ok := shiftAccessScope(c)
+	if !ok {
+		return
+	}
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
-	result, err := a.service.ListShiftReconciliations(c.Request.Context(), uint(idVal))
+	result, err := a.service.ListShiftReconciliations(c.Request.Context(), scope, uint(idVal))
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -150,12 +170,16 @@ func (a *ShiftAPI) ListShiftReconciliations(c *gin.Context) {
 
 // CreateDrawerEvent handles `POST /drawer-events`. Cash drawer opened without a sale
 func (a *ShiftAPI) CreateDrawerEvent(c *gin.Context) {
+	scope, ok := shiftAccessScope(c)
+	if !ok {
+		return
+	}
 	var in shift.CreateDrawerEventRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
-	result, err := a.service.CreateDrawerEvent(c.Request.Context(), in)
+	result, err := a.service.CreateDrawerEvent(c.Request.Context(), scope, in)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -165,7 +189,11 @@ func (a *ShiftAPI) CreateDrawerEvent(c *gin.Context) {
 
 // ListDrawerEvents handles `GET /drawer-events`.
 func (a *ShiftAPI) ListDrawerEvents(c *gin.Context) {
-	result, err := a.service.ListDrawerEvents(c.Request.Context())
+	scope, ok := shiftAccessScope(c)
+	if !ok {
+		return
+	}
+	result, err := a.service.ListDrawerEvents(c.Request.Context(), scope)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -175,7 +203,11 @@ func (a *ShiftAPI) ListDrawerEvents(c *gin.Context) {
 
 // ListExpenses handles `GET /expenses`.
 func (a *ShiftAPI) ListExpenses(c *gin.Context) {
-	result, err := a.service.ListExpenses(c.Request.Context())
+	scope, ok := shiftAccessScope(c)
+	if !ok {
+		return
+	}
+	result, err := a.service.ListExpenses(c.Request.Context(), scope)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -185,12 +217,19 @@ func (a *ShiftAPI) ListExpenses(c *gin.Context) {
 
 // CreateExpense handles `POST /expenses`.
 func (a *ShiftAPI) CreateExpense(c *gin.Context) {
+	scope, ok := shiftAccessScope(c)
+	if !ok {
+		return
+	}
 	var in shift.CreateExpenseRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
-	result, err := a.service.CreateExpense(c.Request.Context(), in)
+	if scope.BranchID != nil {
+		in.BranchID = *scope.BranchID
+	}
+	result, err := a.service.CreateExpense(c.Request.Context(), scope, in)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -200,6 +239,10 @@ func (a *ShiftAPI) CreateExpense(c *gin.Context) {
 
 // UpdateExpense handles `PATCH /expenses/:id`.
 func (a *ShiftAPI) UpdateExpense(c *gin.Context) {
+	scope, ok := shiftAccessScope(c)
+	if !ok {
+		return
+	}
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		common.HandleError(c, common.BadRequestError("invalid id"))
@@ -210,7 +253,11 @@ func (a *ShiftAPI) UpdateExpense(c *gin.Context) {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
-	result, err := a.service.UpdateExpense(c.Request.Context(), uint(idVal), in)
+	if scope.BranchID != nil && in.BranchID != nil {
+		branchID := *scope.BranchID
+		in.BranchID = &branchID
+	}
+	result, err := a.service.UpdateExpense(c.Request.Context(), scope, uint(idVal), in)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -220,12 +267,16 @@ func (a *ShiftAPI) UpdateExpense(c *gin.Context) {
 
 // DeleteExpense handles `DELETE /expenses/:id`.
 func (a *ShiftAPI) DeleteExpense(c *gin.Context) {
+	scope, ok := shiftAccessScope(c)
+	if !ok {
+		return
+	}
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
-	if err := a.service.DeleteExpense(c.Request.Context(), uint(idVal)); err != nil {
+	if err := a.service.DeleteExpense(c.Request.Context(), scope, uint(idVal)); err != nil {
 		common.HandleError(c, err)
 		return
 	}
