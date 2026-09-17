@@ -277,7 +277,22 @@
                 }
               }
             }
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const data = pm.response.json();",
+                  "    if (data.access_token) pm.environment.set('token', data.access_token);",
+                  "    if (data.refresh_token) pm.environment.set('refreshToken', data.refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "RefreshSession - POST /auth/refresh",
@@ -308,14 +323,29 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"refresh_token\": \"paste-refresh-token-from-login-here\"\n}",
+              "raw": "{\n  \"refresh_token\": \"{{refreshToken}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
             }
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const data = pm.response.json();",
+                  "    if (data.access_token) pm.environment.set('token', data.access_token);",
+                  "    if (data.refresh_token) pm.environment.set('refreshToken', data.refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "Logout - POST /auth/logout",
@@ -411,7 +441,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{}",
+              "raw": "{\n  \"name\": \"New Name\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -467,7 +497,21 @@
                 }
               }
             }
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const data = pm.response.json();",
+                  "    if (data.token) pm.environment.set('staffToken', data.token);",
+                  "}"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "VerifyStaffPIN - POST /staff/:id/pin/verify",
@@ -515,7 +559,21 @@
                 }
               }
             }
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const data = pm.response.json();",
+                  "    if (data.token) pm.environment.set('staffToken', data.token);",
+                  "}"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "CreateDevice - POST /devices",
@@ -546,7 +604,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{}",
+              "raw": "{\n  \"branch_id\": 1,\n  \"name\": \"Register 1\",\n  \"status\": \"active\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -617,7 +675,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{}",
+              "raw": "{\n  \"status\": \"inactive\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -681,7 +739,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{}",
+              "raw": "{\n  \"name\": \"Main Branch\",\n  \"status\": \"active\",\n  \"address\": \"123 Main St\",\n  \"phone\": \"0123456789\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -759,7 +817,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{}",
+              "raw": "{\n  \"name\": \"Renamed Branch\",\n  \"status\": \"active\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -895,7 +953,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{}",
+              "raw": "{\n  \"branch_id\": 1,\n  \"name\": \"Cashier Joe\",\n  \"role\": 1,\n  \"pin\": \"123456\",\n  \"phone\": \"0123456789\",\n  \"status\": \"active\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -973,7 +1031,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{}",
+              "raw": "{\n  \"pin\": \"654321\",\n  \"status\": \"active\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
