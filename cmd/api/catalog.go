@@ -124,7 +124,11 @@ func (a *CatalogAPI) DeleteProduct(c *gin.Context) {
 
 // ListCategories handles `GET /categories`.
 func (a *CatalogAPI) ListCategories(c *gin.Context) {
-	result, err := a.service.ListCategories(c.Request.Context())
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	result, err := a.service.ListCategories(c.Request.Context(), orgID)
 	if err != nil {
 		common.HandleError(c, err)
 		return

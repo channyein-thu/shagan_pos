@@ -48,9 +48,13 @@ func (r *RepositoryImpl) DeleteProduct(ctx context.Context, id uint) error {
 	return common.ErrNotImplemented
 }
 
-// ListCategories backs `GET /categories`.
-func (r *RepositoryImpl) ListCategories(ctx context.Context) ([]Category, error) {
-	return nil, common.ErrNotImplemented
+// ListCategories backs `GET /categories`, scoped to orgID.
+func (r *RepositoryImpl) ListCategories(ctx context.Context, orgID uint) ([]Category, error) {
+	var categories []Category
+	if err := r.db.WithContext(ctx).Where("org_id = ?", orgID).Find(&categories).Error; err != nil {
+		return nil, err
+	}
+	return categories, nil
 }
 
 // CreateCategory backs Service.CreateCategory. Plain insert - whatever error

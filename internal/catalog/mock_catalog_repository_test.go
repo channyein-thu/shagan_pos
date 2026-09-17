@@ -445,9 +445,9 @@ func (_c *MockRepository_GetProductByBarcode_Call) RunAndReturn(run func(context
 	return _c
 }
 
-// ListCategories provides a mock function with given fields: ctx
-func (_m *MockRepository) ListCategories(ctx context.Context) ([]Category, error) {
-	ret := _m.Called(ctx)
+// ListCategories provides a mock function with given fields: ctx, orgID
+func (_m *MockRepository) ListCategories(ctx context.Context, orgID uint) ([]Category, error) {
+	ret := _m.Called(ctx, orgID)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ListCategories")
@@ -455,19 +455,19 @@ func (_m *MockRepository) ListCategories(ctx context.Context) ([]Category, error
 
 	var r0 []Category
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context) ([]Category, error)); ok {
-		return rf(ctx)
+	if rf, ok := ret.Get(0).(func(context.Context, uint) ([]Category, error)); ok {
+		return rf(ctx, orgID)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context) []Category); ok {
-		r0 = rf(ctx)
+	if rf, ok := ret.Get(0).(func(context.Context, uint) []Category); ok {
+		r0 = rf(ctx, orgID)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]Category)
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context) error); ok {
-		r1 = rf(ctx)
+	if rf, ok := ret.Get(1).(func(context.Context, uint) error); ok {
+		r1 = rf(ctx, orgID)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -482,13 +482,14 @@ type MockRepository_ListCategories_Call struct {
 
 // ListCategories is a helper method to define mock.On call
 //   - ctx context.Context
-func (_e *MockRepository_Expecter) ListCategories(ctx interface{}) *MockRepository_ListCategories_Call {
-	return &MockRepository_ListCategories_Call{Call: _e.mock.On("ListCategories", ctx)}
+//   - orgID uint
+func (_e *MockRepository_Expecter) ListCategories(ctx interface{}, orgID interface{}) *MockRepository_ListCategories_Call {
+	return &MockRepository_ListCategories_Call{Call: _e.mock.On("ListCategories", ctx, orgID)}
 }
 
-func (_c *MockRepository_ListCategories_Call) Run(run func(ctx context.Context)) *MockRepository_ListCategories_Call {
+func (_c *MockRepository_ListCategories_Call) Run(run func(ctx context.Context, orgID uint)) *MockRepository_ListCategories_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context))
+		run(args[0].(context.Context), args[1].(uint))
 	})
 	return _c
 }
@@ -498,7 +499,7 @@ func (_c *MockRepository_ListCategories_Call) Return(_a0 []Category, _a1 error) 
 	return _c
 }
 
-func (_c *MockRepository_ListCategories_Call) RunAndReturn(run func(context.Context) ([]Category, error)) *MockRepository_ListCategories_Call {
+func (_c *MockRepository_ListCategories_Call) RunAndReturn(run func(context.Context, uint) ([]Category, error)) *MockRepository_ListCategories_Call {
 	_c.Call.Return(run)
 	return _c
 }

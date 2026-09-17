@@ -10,7 +10,10 @@ type Repository interface {
 	CreateProduct(ctx context.Context, in CreateProductRequest) (*Product, error)
 	UpdateProduct(ctx context.Context, id uint, in UpdateProductRequest) (*Product, error)
 	DeleteProduct(ctx context.Context, id uint) error
-	ListCategories(ctx context.Context) ([]Category, error)
+	// ListCategories backs `GET /categories`, scoped to the authenticated
+	// caller's own organization - same reasoning as identity's
+	// org-scoped lists (e.g. ListBranches).
+	ListCategories(ctx context.Context, orgID uint) ([]Category, error)
 	// CreateCategory backs Service.CreateCategory. Plain insert - GORM sets
 	// the row's ID on the pointer it's given. Mapping the request/orgID into
 	// a Category happens in the service, not here.

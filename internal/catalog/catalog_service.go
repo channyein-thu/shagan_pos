@@ -10,7 +10,7 @@ type Interface interface {
 	CreateProduct(ctx context.Context, in CreateProductRequest) (*Product, error)
 	UpdateProduct(ctx context.Context, id uint, in UpdateProductRequest) (*Product, error)
 	DeleteProduct(ctx context.Context, id uint) error
-	ListCategories(ctx context.Context) ([]Category, error)
+	ListCategories(ctx context.Context, orgID uint) ([]Category, error)
 	CreateCategory(ctx context.Context, orgID uint, in CreateCategoryRequest) (*Category, error)
 	UpdateCategory(ctx context.Context, id uint, in UpdateCategoryRequest) (*Category, error)
 	DeleteCategory(ctx context.Context, id uint) error

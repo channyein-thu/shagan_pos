@@ -40,8 +40,8 @@ func (s *Service) DeleteProduct(ctx context.Context, id uint) error {
 	return s.repo.DeleteProduct(ctx, id)
 }
 
-func (s *Service) ListCategories(ctx context.Context) ([]Category, error) {
-	return s.repo.ListCategories(ctx)
+func (s *Service) ListCategories(ctx context.Context, orgID uint) ([]Category, error) {
+	return s.repo.ListCategories(ctx, orgID)
 }
 
 // CreateCategory returns common.ConflictError if org_id+name_i18n collides

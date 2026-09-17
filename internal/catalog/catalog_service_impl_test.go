@@ -20,6 +20,30 @@ func requireRestErrorStatus(t *testing.T, err error, status int) {
 	require.Equal(t, status, restErr.Status)
 }
 
+func TestService_ListCategories_DelegatesToRepository(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := NewService(repo)
+
+	want := []Category{{ID: 1, OrgID: 7, NameI18n: "Food"}, {ID: 3, OrgID: 7, NameI18n: "Drinks"}}
+	repo.EXPECT().ListCategories(mock.Anything, uint(7)).Return(want, nil).Once()
+
+	got, err := svc.ListCategories(context.Background(), 7)
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+}
+
+func TestService_ListCategories_PropagatesRepositoryError(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := NewService(repo)
+
+	wantErr := common.SystemError("db read failed")
+	repo.EXPECT().ListCategories(mock.Anything, uint(7)).Return(nil, wantErr).Once()
+
+	_, err := svc.ListCategories(context.Background(), 7)
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusInternalServerError)
+}
+
 func TestService_CreateCategory_BuildsModelAndPersists(t *testing.T) {
 	repo := NewMockRepository(t)
 	svc := NewService(repo)
