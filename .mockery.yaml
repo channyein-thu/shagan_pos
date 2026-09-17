@@ -9,3 +9,12 @@ packages:
       Repository:
         config:
           filename: "mock_identity_repository_test.go"
+  shagan_pos/internal/catalog:
+    config:
+      dir: "internal/catalog"
+      outpkg: catalog
+      inpackage: true
+    interfaces:
+      Repository:
+        config:
+          filename: "mock_catalog_repository_test.go"

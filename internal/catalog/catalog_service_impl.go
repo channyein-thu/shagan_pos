@@ -1,6 +1,10 @@
 package catalog
 
-import "context"
+import (
+	"context"
+
+	"shagan_pos/internal/common"
+)
 
 type Service struct {
 	repo Repository
@@ -40,8 +44,22 @@ func (s *Service) ListCategories(ctx context.Context) ([]Category, error) {
 	return s.repo.ListCategories(ctx)
 }
 
-func (s *Service) CreateCategory(ctx context.Context, in CreateCategoryRequest) (*Category, error) {
-	return s.repo.CreateCategory(ctx, in)
+// CreateCategory returns common.ConflictError if org_id+name_i18n collides
+// with an existing category (see the ux_categories_org_name unique index on
+// Category) - the repository just reports whatever error the database gives
+// it; deciding what that error means to the caller is the service's job.
+func (s *Service) CreateCategory(ctx context.Context, orgID uint, in CreateCategoryRequest) (*Category, error) {
+	category := Category{
+		OrgID:    orgID,
+		NameI18n: in.NameI18n,
+	}
+	if err := s.repo.CreateCategory(ctx, &category); err != nil {
+		if common.IsDuplicateError(err) {
+			return nil, common.ConflictError("a category with this name already exists")
+		}
+		return nil, err
+	}
+	return &category, nil
 }
 
 func (s *Service) UpdateCategory(ctx context.Context, id uint, in UpdateCategoryRequest) (*Category, error) {

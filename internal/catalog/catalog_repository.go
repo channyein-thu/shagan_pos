@@ -11,7 +11,10 @@ type Repository interface {
 	UpdateProduct(ctx context.Context, id uint, in UpdateProductRequest) (*Product, error)
 	DeleteProduct(ctx context.Context, id uint) error
 	ListCategories(ctx context.Context) ([]Category, error)
-	CreateCategory(ctx context.Context, in CreateCategoryRequest) (*Category, error)
+	// CreateCategory backs Service.CreateCategory. Plain insert - GORM sets
+	// the row's ID on the pointer it's given. Mapping the request/orgID into
+	// a Category happens in the service, not here.
+	CreateCategory(ctx context.Context, category *Category) error
 	UpdateCategory(ctx context.Context, id uint, in UpdateCategoryRequest) (*Category, error)
 	DeleteCategory(ctx context.Context, id uint) error
 	UploadMedia(ctx context.Context) (*ProductImage, error)

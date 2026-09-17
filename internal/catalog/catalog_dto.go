@@ -6,11 +6,11 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// CreateCategoryRequest is the request body for the endpoint that creates or updates a Category.
-// TODO: fields mirroring org/branch/staff/device ownership (e.g. OrgID, BranchID, StaffID)
-// likely belong to the authenticated session/context, not client input - review before use.
+// CreateCategoryRequest is the request body for `POST /categories`. OrgID is
+// deliberately not here - a category always belongs to the authenticated
+// caller's own organization (see middleware.OrgIDFromContext), never a
+// client-supplied org, same reasoning as identity.CreateBranchRequest.
 type CreateCategoryRequest struct {
-	OrgID    uint   `json:"org_id" binding:"required"`
 	NameI18n string `json:"name_i18n" binding:"required"`
 }
 

@@ -34,11 +34,13 @@ type Product struct {
 	UpdatedAt   time.Time       `gorm:"autoUpdateTime;not null" json:"updated_at"`
 }
 
-// Category maps to the "categories" table in the ERD.
+// Category maps to the "categories" table in the ERD. NameI18n is unique per
+// OrgID - two categories in the same org can't share a name (case-sensitive;
+// different orgs can reuse the same name freely).
 type Category struct {
 	ID       uint   `gorm:"primaryKey;autoIncrement" json:"id"`
-	OrgID    uint   `gorm:"index;not null" json:"org_id"`
-	NameI18n string `gorm:"size:255;not null" json:"name_i18n"`
+	OrgID    uint   `gorm:"index;not null;uniqueIndex:ux_categories_org_name" json:"org_id"`
+	NameI18n string `gorm:"size:255;not null;uniqueIndex:ux_categories_org_name" json:"name_i18n"`
 }
 
 // ProductImage maps to the "Product_images" table in the ERD.

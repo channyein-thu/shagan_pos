@@ -53,9 +53,12 @@ func (r *RepositoryImpl) ListCategories(ctx context.Context) ([]Category, error)
 	return nil, common.ErrNotImplemented
 }
 
-// CreateCategory backs `POST /categories`.
-func (r *RepositoryImpl) CreateCategory(ctx context.Context, in CreateCategoryRequest) (*Category, error) {
-	return nil, common.ErrNotImplemented
+// CreateCategory backs Service.CreateCategory. Plain insert - whatever error
+// the database gives back (including a unique-constraint violation on
+// ux_categories_org_name) is returned as-is; interpreting it is the
+// service's job, not this one's.
+func (r *RepositoryImpl) CreateCategory(ctx context.Context, category *Category) error {
+	return r.db.WithContext(ctx).Create(category).Error
 }
 
 // UpdateCategory backs `PATCH /categories/:id`.

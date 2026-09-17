@@ -134,12 +134,16 @@ func (a *CatalogAPI) ListCategories(c *gin.Context) {
 
 // CreateCategory handles `POST /categories`.
 func (a *CatalogAPI) CreateCategory(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
 	var in catalog.CreateCategoryRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
-	result, err := a.service.CreateCategory(c.Request.Context(), in)
+	result, err := a.service.CreateCategory(c.Request.Context(), orgID, in)
 	if err != nil {
 		common.HandleError(c, err)
 		return
