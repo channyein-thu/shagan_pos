@@ -680,6 +680,63 @@ func (_c *MockRepository_ListProducts_Call) RunAndReturn(run func(context.Contex
 	return _c
 }
 
+// ProductsExistForCategory provides a mock function with given fields: ctx, categoryID
+func (_m *MockRepository) ProductsExistForCategory(ctx context.Context, categoryID uint) (bool, error) {
+	ret := _m.Called(ctx, categoryID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ProductsExistForCategory")
+	}
+
+	var r0 bool
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, uint) (bool, error)); ok {
+		return rf(ctx, categoryID)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, uint) bool); ok {
+		r0 = rf(ctx, categoryID)
+	} else {
+		r0 = ret.Get(0).(bool)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, uint) error); ok {
+		r1 = rf(ctx, categoryID)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// MockRepository_ProductsExistForCategory_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ProductsExistForCategory'
+type MockRepository_ProductsExistForCategory_Call struct {
+	*mock.Call
+}
+
+// ProductsExistForCategory is a helper method to define mock.On call
+//   - ctx context.Context
+//   - categoryID uint
+func (_e *MockRepository_Expecter) ProductsExistForCategory(ctx interface{}, categoryID interface{}) *MockRepository_ProductsExistForCategory_Call {
+	return &MockRepository_ProductsExistForCategory_Call{Call: _e.mock.On("ProductsExistForCategory", ctx, categoryID)}
+}
+
+func (_c *MockRepository_ProductsExistForCategory_Call) Run(run func(ctx context.Context, categoryID uint)) *MockRepository_ProductsExistForCategory_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(uint))
+	})
+	return _c
+}
+
+func (_c *MockRepository_ProductsExistForCategory_Call) Return(_a0 bool, _a1 error) *MockRepository_ProductsExistForCategory_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *MockRepository_ProductsExistForCategory_Call) RunAndReturn(run func(context.Context, uint) (bool, error)) *MockRepository_ProductsExistForCategory_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // UpdateCategory provides a mock function with given fields: ctx, id, updates
 func (_m *MockRepository) UpdateCategory(ctx context.Context, id uint, updates map[string]interface{}) error {
 	ret := _m.Called(ctx, id, updates)

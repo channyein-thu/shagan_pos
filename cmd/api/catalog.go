@@ -181,12 +181,16 @@ func (a *CatalogAPI) UpdateCategory(c *gin.Context) {
 
 // DeleteCategory handles `DELETE /categories/:id`.
 func (a *CatalogAPI) DeleteCategory(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
-	if err := a.service.DeleteCategory(c.Request.Context(), uint(idVal)); err != nil {
+	if err := a.service.DeleteCategory(c.Request.Context(), orgID, uint(idVal)); err != nil {
 		common.HandleError(c, err)
 		return
 	}

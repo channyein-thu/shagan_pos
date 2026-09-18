@@ -87,9 +87,19 @@ func (r *RepositoryImpl) UpdateCategory(ctx context.Context, id uint, updates ma
 	return r.db.WithContext(ctx).Model(&Category{}).Where("id = ?", id).Updates(updates).Error
 }
 
-// DeleteCategory backs `DELETE /categories/:id`.
+// ProductsExistForCategory backs Service.DeleteCategory's
+// referential-integrity check.
+func (r *RepositoryImpl) ProductsExistForCategory(ctx context.Context, categoryID uint) (bool, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).Model(&Product{}).Where("category_id = ?", categoryID).Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// DeleteCategory backs `DELETE /categories/:id`. Hard delete.
 func (r *RepositoryImpl) DeleteCategory(ctx context.Context, id uint) error {
-	return common.ErrNotImplemented
+	return r.db.WithContext(ctx).Delete(&Category{}, id).Error
 }
 
 // UploadMedia backs `POST /media`. Upload; returns storage_key

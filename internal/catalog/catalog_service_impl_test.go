@@ -164,3 +164,45 @@ func TestService_UpdateCategory_DuplicateName_ReturnsConflict(t *testing.T) {
 	require.Error(t, err)
 	requireRestErrorStatus(t, err, http.StatusConflict)
 }
+
+func TestService_DeleteCategory_HappyPath_Deletes(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := NewService(repo)
+
+	existing := &Category{ID: 1, OrgID: 7, NameI18n: "Food"}
+	repo.EXPECT().GetCategory(mock.Anything, uint(7), uint(1)).Return(existing, nil).Once()
+	repo.EXPECT().ProductsExistForCategory(mock.Anything, uint(1)).Return(false, nil).Once()
+	repo.EXPECT().DeleteCategory(mock.Anything, uint(1)).Return(nil).Once()
+
+	err := svc.DeleteCategory(context.Background(), 7, 1)
+	require.NoError(t, err)
+}
+
+func TestService_DeleteCategory_InUseByProducts_ReturnsConflict(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := NewService(repo)
+
+	existing := &Category{ID: 1, OrgID: 7, NameI18n: "Food"}
+	repo.EXPECT().GetCategory(mock.Anything, uint(7), uint(1)).Return(existing, nil).Once()
+	repo.EXPECT().ProductsExistForCategory(mock.Anything, uint(1)).Return(true, nil).Once()
+	// DeleteCategory must never be called once a product reference is found -
+	// no .EXPECT() set up for it means the mock fails the test if it is.
+
+	err := svc.DeleteCategory(context.Background(), 7, 1)
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusConflict)
+}
+
+func TestService_DeleteCategory_PropagatesNotFound(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := NewService(repo)
+
+	wantErr := common.NotFoundError("category not found")
+	repo.EXPECT().GetCategory(mock.Anything, uint(7), uint(999)).Return(nil, wantErr).Once()
+	// Neither ProductsExistForCategory nor DeleteCategory must be called on a
+	// not-found category.
+
+	err := svc.DeleteCategory(context.Background(), 7, 999)
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusNotFound)
+}

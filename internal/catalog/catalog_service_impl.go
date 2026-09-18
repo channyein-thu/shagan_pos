@@ -89,7 +89,24 @@ func (s *Service) UpdateCategory(ctx context.Context, orgID uint, id uint, in Up
 	return s.repo.GetCategory(ctx, orgID, id)
 }
 
-func (s *Service) DeleteCategory(ctx context.Context, id uint) error {
+// DeleteCategory confirms the category exists AND belongs to orgID (same
+// not-found-not-forbidden reasoning as UpdateCategory), then blocks the
+// delete with common.ConflictError if any product still references it -
+// deleting out from under a product would leave it pointing at a category
+// that no longer exists.
+func (s *Service) DeleteCategory(ctx context.Context, orgID uint, id uint) error {
+	if _, err := s.repo.GetCategory(ctx, orgID, id); err != nil {
+		return err
+	}
+
+	inUse, err := s.repo.ProductsExistForCategory(ctx, id)
+	if err != nil {
+		return err
+	}
+	if inUse {
+		return common.ConflictError("category is still in use by one or more products")
+	}
+
 	return s.repo.DeleteCategory(ctx, id)
 }
 

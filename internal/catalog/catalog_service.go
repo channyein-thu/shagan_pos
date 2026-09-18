@@ -13,7 +13,7 @@ type Interface interface {
 	ListCategories(ctx context.Context, orgID uint) ([]Category, error)
 	CreateCategory(ctx context.Context, orgID uint, in CreateCategoryRequest) (*Category, error)
 	UpdateCategory(ctx context.Context, orgID uint, id uint, in UpdateCategoryRequest) (*Category, error)
-	DeleteCategory(ctx context.Context, id uint) error
+	DeleteCategory(ctx context.Context, orgID uint, id uint) error
 	UploadMedia(ctx context.Context) (*ProductImage, error)
 	ListCombos(ctx context.Context) ([]Combo, error)
 	CreateCombo(ctx context.Context, in CreateComboRequest) (*Combo, error)

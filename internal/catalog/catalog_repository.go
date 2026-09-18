@@ -29,6 +29,13 @@ type Repository interface {
 	// write - existence/ownership was already confirmed by a prior
 	// GetCategory call.
 	UpdateCategory(ctx context.Context, id uint, updates map[string]any) error
+	// ProductsExistForCategory backs Service.DeleteCategory's
+	// referential-integrity check - a plain existence query. Whether that
+	// should block the delete is the service's call, not this one's.
+	ProductsExistForCategory(ctx context.Context, categoryID uint) (bool, error)
+	// DeleteCategory is a hard delete - Category has no status field to
+	// deactivate instead (unlike Staff/Branch/Device). Existence/ownership was
+	// already confirmed by a prior GetCategory call.
 	DeleteCategory(ctx context.Context, id uint) error
 	UploadMedia(ctx context.Context) (*ProductImage, error)
 	ListCombos(ctx context.Context) ([]Combo, error)
