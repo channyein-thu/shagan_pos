@@ -2833,7 +2833,7 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/customers",
+              "raw": "{{baseUrl}}/api/v1/customers?search=",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -2841,9 +2841,16 @@
                 "api",
                 "v1",
                 "customers"
+              ],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "",
+                  "description": "Optional - partial, case-insensitive match on name OR phone"
+                }
               ]
             },
-            "description": "ListCustomers"
+            "description": "Org-scoped. search is optional - a case-insensitive partial match against name OR phone in one field, matching a POS lookup screen's single search box. Omit it to list every customer in the caller's org."
           }
         },
         {
@@ -2875,14 +2882,14 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{}",
+              "raw": "{\n  \"name\": \"Jane Doe\",\n  \"phone\": \"0987654321\",\n  \"tags\": [\"vip\"]\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
             },
-            "description": "Inline creation from the POS cart"
+            "description": "Inline creation from the POS cart. org_id is never accepted here - it's taken from the caller's own token. tags is optional. consent_status isn't client-settable either - every new customer starts at \"pending\"; it only changes via POST /customers/:id/consents, which writes a real CustomerConsent audit row (see that endpoint's description). phone is unique per-org, not globally - the same phone number can exist in two different orgs."
           }
         },
         {
@@ -2914,7 +2921,7 @@
                 }
               ]
             },
-            "description": "Detail + purchase history"
+            "description": "Org-scoped - returns 404 for a customer that exists but belongs to a different org, same as one that doesn't exist at all. Detail only for now - purchase history needs Sales, which doesn't exist yet."
           }
         },
         {
@@ -2947,7 +2954,7 @@
                 }
               ]
             },
-            "description": "ListCustomerConsents"
+            "description": "Org-scoped via the customer - returns 404 if :id doesn't belong to the caller's org. The full consent audit trail for this customer, oldest first."
           }
         },
         {
@@ -2987,14 +2994,14 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{}",
+              "raw": "{\n  \"status\": \"granted\",\n  \"source\": \"pos\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
             },
-            "description": "Also updates the cached customers.consent_status"
+            "description": "customer_id isn't in the body - it's the :id path param. changed_at isn't client-settable either - the server stamps it at creation, same as Device.LastSeenAt. Writes a real CustomerConsent audit row AND updates the cached customers.consent_status in one atomic transaction - a failure partway through never leaves the cache out of sync with the actual consent history. status is one of: granted, revoked, pending. source is one of: pos, online, sms, email."
           }
         }
       ]
