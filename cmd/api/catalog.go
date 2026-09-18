@@ -157,6 +157,10 @@ func (a *CatalogAPI) CreateCategory(c *gin.Context) {
 
 // UpdateCategory handles `PATCH /categories/:id`.
 func (a *CatalogAPI) UpdateCategory(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		common.HandleError(c, common.BadRequestError("invalid id"))
@@ -167,7 +171,7 @@ func (a *CatalogAPI) UpdateCategory(c *gin.Context) {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
-	result, err := a.service.UpdateCategory(c.Request.Context(), uint(idVal), in)
+	result, err := a.service.UpdateCategory(c.Request.Context(), orgID, uint(idVal), in)
 	if err != nil {
 		common.HandleError(c, err)
 		return

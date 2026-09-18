@@ -12,7 +12,7 @@ type Interface interface {
 	DeleteProduct(ctx context.Context, id uint) error
 	ListCategories(ctx context.Context, orgID uint) ([]Category, error)
 	CreateCategory(ctx context.Context, orgID uint, in CreateCategoryRequest) (*Category, error)
-	UpdateCategory(ctx context.Context, id uint, in UpdateCategoryRequest) (*Category, error)
+	UpdateCategory(ctx context.Context, orgID uint, id uint, in UpdateCategoryRequest) (*Category, error)
 	DeleteCategory(ctx context.Context, id uint) error
 	UploadMedia(ctx context.Context) (*ProductImage, error)
 	ListCombos(ctx context.Context) ([]Combo, error)

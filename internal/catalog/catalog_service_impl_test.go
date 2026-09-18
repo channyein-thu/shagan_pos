@@ -98,3 +98,69 @@ func TestService_CreateCategory_DuplicateName_ReturnsConflict(t *testing.T) {
 	errors.As(err, &restErr)
 	require.Equal(t, "a category with this name already exists", restErr.Message)
 }
+
+func TestService_UpdateCategory_HappyPath_UpdatesAndReturns(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := NewService(repo)
+
+	existing := &Category{ID: 1, OrgID: 7, NameI18n: "Food"}
+	updated := &Category{ID: 1, OrgID: 7, NameI18n: "Groceries"}
+	name := "Groceries"
+	in := UpdateCategoryRequest{NameI18n: &name}
+
+	repo.EXPECT().GetCategory(mock.Anything, uint(7), uint(1)).Return(existing, nil).Once()
+	repo.EXPECT().UpdateCategory(mock.Anything, uint(1), map[string]any{"name_i18n": "Groceries"}).Return(nil).Once()
+	repo.EXPECT().GetCategory(mock.Anything, uint(7), uint(1)).Return(updated, nil).Once()
+
+	got, err := svc.UpdateCategory(context.Background(), 7, 1, in)
+	require.NoError(t, err)
+	require.Same(t, updated, got)
+}
+
+func TestService_UpdateCategory_NoFieldsProvided_SkipsWrite(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := NewService(repo)
+
+	existing := &Category{ID: 1, OrgID: 7, NameI18n: "Food"}
+	in := UpdateCategoryRequest{}
+
+	repo.EXPECT().GetCategory(mock.Anything, uint(7), uint(1)).Return(existing, nil).Twice()
+	// UpdateCategory must never be called - no .EXPECT() set up for it means
+	// the mock fails the test if it is.
+
+	got, err := svc.UpdateCategory(context.Background(), 7, 1, in)
+	require.NoError(t, err)
+	require.Same(t, existing, got)
+}
+
+func TestService_UpdateCategory_PropagatesNotFound(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := NewService(repo)
+
+	wantErr := common.NotFoundError("category not found")
+	repo.EXPECT().GetCategory(mock.Anything, uint(7), uint(999)).Return(nil, wantErr).Once()
+	// UpdateCategory must never be called on a not-found category.
+
+	_, err := svc.UpdateCategory(context.Background(), 7, 999, UpdateCategoryRequest{})
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusNotFound)
+}
+
+func TestService_UpdateCategory_DuplicateName_ReturnsConflict(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := NewService(repo)
+
+	existing := &Category{ID: 1, OrgID: 7, NameI18n: "Food"}
+	name := "Drinks"
+	in := UpdateCategoryRequest{NameI18n: &name}
+
+	repo.EXPECT().GetCategory(mock.Anything, uint(7), uint(1)).Return(existing, nil).Once()
+	repo.EXPECT().
+		UpdateCategory(mock.Anything, uint(1), map[string]any{"name_i18n": "Drinks"}).
+		Return(&pgconn.PgError{Code: "23505"}).
+		Once()
+
+	_, err := svc.UpdateCategory(context.Background(), 7, 1, in)
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusConflict)
+}

@@ -41,11 +41,11 @@ type CreateProductRequest struct {
 	Modifier    string          `json:"modifier" binding:"required"`
 }
 
-// UpdateCategoryRequest is the request body for the endpoint that creates or updates a Category.
-// TODO: fields mirroring org/branch/staff/device ownership (e.g. OrgID, BranchID, StaffID)
-// likely belong to the authenticated session/context, not client input - review before use.
+// UpdateCategoryRequest is the request body for `PATCH /categories/:id`.
+// OrgID is deliberately not here - a category can never be reassigned to a
+// different organization via a client update, same reasoning as
+// identity.UpdateBranchRequest.
 type UpdateCategoryRequest struct {
-	OrgID    *uint   `json:"org_id" binding:"omitempty"`
 	NameI18n *string `json:"name_i18n" binding:"omitempty"`
 }
 

@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"context"
+	"errors"
 
 	"gorm.io/gorm"
 
@@ -65,9 +66,25 @@ func (r *RepositoryImpl) CreateCategory(ctx context.Context, category *Category)
 	return r.db.WithContext(ctx).Create(category).Error
 }
 
-// UpdateCategory backs `PATCH /categories/:id`.
-func (r *RepositoryImpl) UpdateCategory(ctx context.Context, id uint, in UpdateCategoryRequest) (*Category, error) {
-	return nil, common.ErrNotImplemented
+// GetCategory backs Service.UpdateCategory's existence/ownership check.
+func (r *RepositoryImpl) GetCategory(ctx context.Context, orgID uint, id uint) (*Category, error) {
+	var category Category
+	err := r.db.WithContext(ctx).Where("id = ? AND org_id = ?", id, orgID).First(&category).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, common.NotFoundError("category not found")
+		}
+		return nil, err
+	}
+	return &category, nil
+}
+
+// UpdateCategory backs `PATCH /categories/:id`. Plain write - updates is
+// already decided by the service; whatever error the database gives back
+// (including a unique-constraint violation on ux_categories_org_name) is
+// returned as-is, same reasoning as CreateCategory.
+func (r *RepositoryImpl) UpdateCategory(ctx context.Context, id uint, updates map[string]any) error {
+	return r.db.WithContext(ctx).Model(&Category{}).Where("id = ?", id).Updates(updates).Error
 }
 
 // DeleteCategory backs `DELETE /categories/:id`.

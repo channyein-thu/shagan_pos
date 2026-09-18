@@ -18,7 +18,17 @@ type Repository interface {
 	// the row's ID on the pointer it's given. Mapping the request/orgID into
 	// a Category happens in the service, not here.
 	CreateCategory(ctx context.Context, category *Category) error
-	UpdateCategory(ctx context.Context, id uint, in UpdateCategoryRequest) (*Category, error)
+	// GetCategory backs Service.UpdateCategory's existence/ownership check.
+	// Scoped to orgID - returns common.NotFoundError for a category that
+	// exists but belongs to a different org, same as one that doesn't exist
+	// at all, so a caller can never distinguish "not mine" from "doesn't
+	// exist" by probing IDs (same reasoning as identity's GetBranch).
+	GetCategory(ctx context.Context, orgID uint, id uint) (*Category, error)
+	// UpdateCategory applies updates (already decided by the service - which
+	// fields changed, in what shape) to the category identified by id. Plain
+	// write - existence/ownership was already confirmed by a prior
+	// GetCategory call.
+	UpdateCategory(ctx context.Context, id uint, updates map[string]any) error
 	DeleteCategory(ctx context.Context, id uint) error
 	UploadMedia(ctx context.Context) (*ProductImage, error)
 	ListCombos(ctx context.Context) ([]Combo, error)

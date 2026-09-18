@@ -62,8 +62,31 @@ func (s *Service) CreateCategory(ctx context.Context, orgID uint, in CreateCateg
 	return &category, nil
 }
 
-func (s *Service) UpdateCategory(ctx context.Context, id uint, in UpdateCategoryRequest) (*Category, error) {
-	return s.repo.UpdateCategory(ctx, id, in)
+// UpdateCategory confirms the category exists AND belongs to orgID before
+// touching anything (same not-found-not-forbidden reasoning as
+// identity.UpdateBranch), decides which fields actually changed, and returns
+// common.ConflictError if the new name collides with another category in the
+// same org.
+func (s *Service) UpdateCategory(ctx context.Context, orgID uint, id uint, in UpdateCategoryRequest) (*Category, error) {
+	if _, err := s.repo.GetCategory(ctx, orgID, id); err != nil {
+		return nil, err
+	}
+
+	updates := map[string]any{}
+	if in.NameI18n != nil {
+		updates["name_i18n"] = *in.NameI18n
+	}
+
+	if len(updates) > 0 {
+		if err := s.repo.UpdateCategory(ctx, id, updates); err != nil {
+			if common.IsDuplicateError(err) {
+				return nil, common.ConflictError("a category with this name already exists")
+			}
+			return nil, err
+		}
+	}
+
+	return s.repo.GetCategory(ctx, orgID, id)
 }
 
 func (s *Service) DeleteCategory(ctx context.Context, id uint) error {
