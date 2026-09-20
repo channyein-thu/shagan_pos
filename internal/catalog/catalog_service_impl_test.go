@@ -266,12 +266,17 @@ func TestService_ListProducts_OrgWide_DelegatesToRepository(t *testing.T) {
 	store := NewMockStorage(t)
 	svc := NewService(repo, branches, fakeTransactioner{}, store)
 
-	want := []Product{{ID: 1, OrgID: 7, BranchID: 1}, {ID: 2, OrgID: 7, BranchID: 2}}
-	repo.EXPECT().ListProducts(mock.Anything, uint(7), (*uint)(nil)).Return(want, nil).Once()
+	products := []Product{{ID: 1, OrgID: 7, BranchID: 1}, {ID: 2, OrgID: 7, BranchID: 2}}
+	repo.EXPECT().ListProducts(mock.Anything, uint(7), (*uint)(nil)).Return(products, nil).Once()
+	repo.EXPECT().ListProductImagesByProductIDs(mock.Anything, []uint{1, 2}).Return(nil, nil).Once()
 
 	got, err := svc.ListProducts(context.Background(), 7, nil)
 	require.NoError(t, err)
-	require.Equal(t, want, got)
+	require.Len(t, got, 2)
+	require.Equal(t, uint(1), got[0].ID)
+	require.Empty(t, got[0].Images)
+	require.Equal(t, uint(2), got[1].ID)
+	require.Empty(t, got[1].Images)
 }
 
 func TestService_ListProducts_ScopedToCallerBranch_DelegatesToRepository(t *testing.T) {
@@ -281,12 +286,56 @@ func TestService_ListProducts_ScopedToCallerBranch_DelegatesToRepository(t *test
 	svc := NewService(repo, branches, fakeTransactioner{}, store)
 
 	branchID := uint(5)
-	want := []Product{{ID: 1, OrgID: 7, BranchID: 5}}
-	repo.EXPECT().ListProducts(mock.Anything, uint(7), &branchID).Return(want, nil).Once()
+	products := []Product{{ID: 1, OrgID: 7, BranchID: 5}}
+	repo.EXPECT().ListProducts(mock.Anything, uint(7), &branchID).Return(products, nil).Once()
+	repo.EXPECT().ListProductImagesByProductIDs(mock.Anything, []uint{1}).Return(nil, nil).Once()
 
 	got, err := svc.ListProducts(context.Background(), 7, &branchID)
 	require.NoError(t, err)
-	require.Equal(t, want, got)
+	require.Len(t, got, 1)
+	require.Equal(t, uint(1), got[0].ID)
+}
+
+func TestService_ListProducts_AttachesImagesWithPresignedURLs(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	products := []Product{{ID: 1, OrgID: 7, BranchID: 1}}
+	images := []ProductImage{{ID: 10, ProductID: 1, StorageKey: "products/1/photo.png", Width: 2, Height: 3}}
+	repo.EXPECT().ListProducts(mock.Anything, uint(7), (*uint)(nil)).Return(products, nil).Once()
+	repo.EXPECT().ListProductImagesByProductIDs(mock.Anything, []uint{1}).Return(images, nil).Once()
+	store.EXPECT().
+		PresignedURL(mock.Anything, "products/1/photo.png", DefaultImageURLTTL).
+		Return("https://minio.local/signed/photo.png", nil).
+		Once()
+
+	got, err := svc.ListProducts(context.Background(), 7, nil)
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	require.Len(t, got[0].Images, 1)
+	require.Equal(t, ProductImageResult{ID: 10, URL: "https://minio.local/signed/photo.png", Width: 2, Height: 3}, got[0].Images[0])
+}
+
+func TestService_ListProducts_PresignedURLFails_ReturnsSystemError(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	products := []Product{{ID: 1, OrgID: 7, BranchID: 1}}
+	images := []ProductImage{{ID: 10, ProductID: 1, StorageKey: "products/1/photo.png"}}
+	repo.EXPECT().ListProducts(mock.Anything, uint(7), (*uint)(nil)).Return(products, nil).Once()
+	repo.EXPECT().ListProductImagesByProductIDs(mock.Anything, []uint{1}).Return(images, nil).Once()
+	store.EXPECT().
+		PresignedURL(mock.Anything, "products/1/photo.png", DefaultImageURLTTL).
+		Return("", errors.New("storage unavailable")).
+		Once()
+
+	_, err := svc.ListProducts(context.Background(), 7, nil)
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusInternalServerError)
 }
 
 func TestService_ListProducts_PropagatesRepositoryError(t *testing.T) {
@@ -297,6 +346,9 @@ func TestService_ListProducts_PropagatesRepositoryError(t *testing.T) {
 
 	wantErr := common.SystemError("db read failed")
 	repo.EXPECT().ListProducts(mock.Anything, uint(7), (*uint)(nil)).Return(nil, wantErr).Once()
+	// ListProductImagesByProductIDs must never be called once the product
+	// list itself fails - no .EXPECT() set up for it means the mock fails
+	// the test if it is.
 
 	_, err := svc.ListProducts(context.Background(), 7, nil)
 	require.Error(t, err)
@@ -311,10 +363,34 @@ func TestService_GetProduct_DelegatesToRepository(t *testing.T) {
 
 	want := &Product{ID: 1, OrgID: 7, BranchID: 5}
 	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(want, nil).Once()
+	repo.EXPECT().ListProductImagesByProductIDs(mock.Anything, []uint{1}).Return(nil, nil).Once()
 
 	got, err := svc.GetProduct(context.Background(), 7, 1)
 	require.NoError(t, err)
-	require.Same(t, want, got)
+	require.Equal(t, uint(1), got.ID)
+	require.Equal(t, uint(7), got.OrgID)
+	require.Empty(t, got.Images)
+}
+
+func TestService_GetProduct_AttachesImagesWithPresignedURLs(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	want := &Product{ID: 1, OrgID: 7, BranchID: 5}
+	images := []ProductImage{{ID: 10, ProductID: 1, StorageKey: "products/1/photo.png", Width: 2, Height: 3}}
+	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(want, nil).Once()
+	repo.EXPECT().ListProductImagesByProductIDs(mock.Anything, []uint{1}).Return(images, nil).Once()
+	store.EXPECT().
+		PresignedURL(mock.Anything, "products/1/photo.png", DefaultImageURLTTL).
+		Return("https://minio.local/signed/photo.png", nil).
+		Once()
+
+	got, err := svc.GetProduct(context.Background(), 7, 1)
+	require.NoError(t, err)
+	require.Len(t, got.Images, 1)
+	require.Equal(t, "https://minio.local/signed/photo.png", got.Images[0].URL)
 }
 
 func TestService_GetProduct_PropagatesNotFound(t *testing.T) {

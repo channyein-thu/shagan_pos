@@ -85,3 +85,24 @@ type UpdateProductRequest struct {
 	IsActive   *bool            `json:"is_active" binding:"omitempty"`
 	Modifier   *string          `json:"modifier" binding:"omitempty"`
 }
+
+// ProductImageResult is one image attached to a product, as returned by
+// ListProducts/GetProduct. URL is a temporary signed link generated on each
+// request (see Service.DefaultImageURLTTL) - StorageKey itself isn't
+// directly usable by a client, since the bucket is private.
+type ProductImageResult struct {
+	ID     uint   `json:"id"`
+	URL    string `json:"url"`
+	Width  int    `json:"width"`
+	Height int    `json:"height"`
+}
+
+// ProductResult is what ListProducts/GetProduct actually return - the
+// Product row plus its images. Product has no Go-level "has many images"
+// relation (see the TODO on Product) - this is a response-shaping type
+// only, assembled by the service, not a second way of modeling the same
+// relationship at the database layer.
+type ProductResult struct {
+	Product
+	Images []ProductImageResult `json:"images"`
+}

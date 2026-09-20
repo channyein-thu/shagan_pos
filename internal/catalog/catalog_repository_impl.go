@@ -65,6 +65,16 @@ func (r *RepositoryImpl) CreateProductImage(db *gorm.DB, image *ProductImage) er
 	return db.Create(image).Error
 }
 
+// ListProductImagesByProductIDs backs Service.ListProducts/GetProduct's
+// image lookup.
+func (r *RepositoryImpl) ListProductImagesByProductIDs(ctx context.Context, productIDs []uint) ([]ProductImage, error) {
+	var images []ProductImage
+	if err := r.db.WithContext(ctx).Where("product_id IN (?)", productIDs).Find(&images).Error; err != nil {
+		return nil, err
+	}
+	return images, nil
+}
+
 // UpdateProduct backs `PATCH /products/:id`.
 func (r *RepositoryImpl) UpdateProduct(ctx context.Context, id uint, in UpdateProductRequest) (*Product, error) {
 	return nil, common.ErrNotImplemented

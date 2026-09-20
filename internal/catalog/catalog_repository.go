@@ -35,6 +35,11 @@ type Repository interface {
 	// insert, same db-is-either-plain-or-in-flight-transaction reasoning as
 	// CreateProduct above.
 	CreateProductImage(db *gorm.DB, image *ProductImage) error
+	// ListProductImagesByProductIDs backs Service.ListProducts/GetProduct's
+	// image lookup - a plain query, no business decision about which
+	// products the caller is allowed to see (that's already been decided by
+	// the ListProducts/GetProduct call that produced productIDs).
+	ListProductImagesByProductIDs(ctx context.Context, productIDs []uint) ([]ProductImage, error)
 	UpdateProduct(ctx context.Context, id uint, in UpdateProductRequest) (*Product, error)
 	DeleteProduct(ctx context.Context, id uint) error
 	// ListCategories backs `GET /categories`, scoped to the authenticated

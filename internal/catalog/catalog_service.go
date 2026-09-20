@@ -17,8 +17,11 @@ type BranchLookup interface {
 
 // Interface defines the catalog domain's use cases.
 type Interface interface {
-	ListProducts(ctx context.Context, orgID uint, branchID *uint) ([]Product, error)
-	GetProduct(ctx context.Context, orgID uint, id uint) (*Product, error)
+	// ListProducts/GetProduct return ProductResult, not bare Product - each
+	// result's Images carry a temporary signed URL, not just a StorageKey,
+	// since the bucket is private and a raw key isn't usable by a client.
+	ListProducts(ctx context.Context, orgID uint, branchID *uint) ([]ProductResult, error)
+	GetProduct(ctx context.Context, orgID uint, id uint) (*ProductResult, error)
 	GetProductByBarcode(ctx context.Context, code string) (*Product, error)
 	// CreateProduct requires exactly one image at creation time - a product
 	// without one should never exist (see Service.CreateProduct). file must

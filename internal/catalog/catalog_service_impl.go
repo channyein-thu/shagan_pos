@@ -8,6 +8,7 @@ import (
 	_ "image/jpeg" // registers JPEG decoding with image.DecodeConfig
 	_ "image/png"  // registers PNG decoding with image.DecodeConfig
 	"io"
+	"time"
 
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
@@ -15,6 +16,11 @@ import (
 	"shagan_pos/internal/common"
 	"shagan_pos/internal/storage"
 )
+
+// DefaultImageURLTTL is how long a presigned product-image URL stays valid -
+// long enough for a client to load the image, short enough that a
+// leaked/cached link doesn't work forever.
+const DefaultImageURLTTL = 15 * time.Minute
 
 // validateProductMoney enforces the business rules decimal.Decimal can't get
 // from struct tags (see CreateProductRequest's doc): Price must be positive,
@@ -50,12 +56,69 @@ func NewService(repo Repository, branches BranchLookup, db common.Transactioner,
 
 var _ Interface = (*Service)(nil)
 
-func (s *Service) ListProducts(ctx context.Context, orgID uint, branchID *uint) ([]Product, error) {
-	return s.repo.ListProducts(ctx, orgID, branchID)
+func (s *Service) ListProducts(ctx context.Context, orgID uint, branchID *uint) ([]ProductResult, error) {
+	products, err := s.repo.ListProducts(ctx, orgID, branchID)
+	if err != nil {
+		return nil, err
+	}
+	return s.attachImages(ctx, products)
 }
 
-func (s *Service) GetProduct(ctx context.Context, orgID uint, id uint) (*Product, error) {
-	return s.repo.GetProduct(ctx, orgID, id)
+func (s *Service) GetProduct(ctx context.Context, orgID uint, id uint) (*ProductResult, error) {
+	product, err := s.repo.GetProduct(ctx, orgID, id)
+	if err != nil {
+		return nil, err
+	}
+	results, err := s.attachImages(ctx, []Product{*product})
+	if err != nil {
+		return nil, err
+	}
+	return &results[0], nil
+}
+
+// attachImages assembles each product's ProductImageResult list - fetching
+// every image row for the given products in one query, then generating a
+// temporary signed URL per image (see DefaultImageURLTTL), since StorageKey
+// alone isn't usable by a client (the bucket is private).
+func (s *Service) attachImages(ctx context.Context, products []Product) ([]ProductResult, error) {
+	results := make([]ProductResult, len(products))
+	if len(products) == 0 {
+		return results, nil
+	}
+
+	ids := make([]uint, len(products))
+	for i, p := range products {
+		ids[i] = p.ID
+	}
+
+	images, err := s.repo.ListProductImagesByProductIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+
+	byProduct := make(map[uint][]ProductImage, len(products))
+	for _, img := range images {
+		byProduct[img.ProductID] = append(byProduct[img.ProductID], img)
+	}
+
+	for i, p := range products {
+		imgResults := make([]ProductImageResult, 0, len(byProduct[p.ID]))
+		for _, img := range byProduct[p.ID] {
+			url, err := s.storage.PresignedURL(ctx, img.StorageKey, DefaultImageURLTTL)
+			if err != nil {
+				return nil, common.SystemError("failed to generate image URL")
+			}
+			imgResults = append(imgResults, ProductImageResult{
+				ID:     img.ID,
+				URL:    url,
+				Width:  img.Width,
+				Height: img.Height,
+			})
+		}
+		results[i] = ProductResult{Product: p, Images: imgResults}
+	}
+
+	return results, nil
 }
 
 func (s *Service) GetProductByBarcode(ctx context.Context, code string) (*Product, error) {

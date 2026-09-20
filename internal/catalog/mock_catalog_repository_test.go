@@ -659,6 +659,65 @@ func (_c *MockRepository_ListCombos_Call) RunAndReturn(run func(context.Context)
 	return _c
 }
 
+// ListProductImagesByProductIDs provides a mock function with given fields: ctx, productIDs
+func (_m *MockRepository) ListProductImagesByProductIDs(ctx context.Context, productIDs []uint) ([]ProductImage, error) {
+	ret := _m.Called(ctx, productIDs)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListProductImagesByProductIDs")
+	}
+
+	var r0 []ProductImage
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, []uint) ([]ProductImage, error)); ok {
+		return rf(ctx, productIDs)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, []uint) []ProductImage); ok {
+		r0 = rf(ctx, productIDs)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]ProductImage)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, []uint) error); ok {
+		r1 = rf(ctx, productIDs)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// MockRepository_ListProductImagesByProductIDs_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListProductImagesByProductIDs'
+type MockRepository_ListProductImagesByProductIDs_Call struct {
+	*mock.Call
+}
+
+// ListProductImagesByProductIDs is a helper method to define mock.On call
+//   - ctx context.Context
+//   - productIDs []uint
+func (_e *MockRepository_Expecter) ListProductImagesByProductIDs(ctx interface{}, productIDs interface{}) *MockRepository_ListProductImagesByProductIDs_Call {
+	return &MockRepository_ListProductImagesByProductIDs_Call{Call: _e.mock.On("ListProductImagesByProductIDs", ctx, productIDs)}
+}
+
+func (_c *MockRepository_ListProductImagesByProductIDs_Call) Run(run func(ctx context.Context, productIDs []uint)) *MockRepository_ListProductImagesByProductIDs_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].([]uint))
+	})
+	return _c
+}
+
+func (_c *MockRepository_ListProductImagesByProductIDs_Call) Return(_a0 []ProductImage, _a1 error) *MockRepository_ListProductImagesByProductIDs_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *MockRepository_ListProductImagesByProductIDs_Call) RunAndReturn(run func(context.Context, []uint) ([]ProductImage, error)) *MockRepository_ListProductImagesByProductIDs_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // ListProducts provides a mock function with given fields: ctx, orgID, branchID
 func (_m *MockRepository) ListProducts(ctx context.Context, orgID uint, branchID *uint) ([]Product, error) {
 	ret := _m.Called(ctx, orgID, branchID)
