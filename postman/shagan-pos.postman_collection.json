@@ -1635,11 +1635,6 @@
                 "key": "Authorization",
                 "value": "Bearer {{token}}",
                 "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
               }
             ],
             "url": {
@@ -1654,15 +1649,66 @@
               ]
             },
             "body": {
-              "mode": "raw",
-              "raw": "{}",
-              "options": {
-                "raw": {
-                  "language": "json"
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "branch_id",
+                  "value": "1",
+                  "type": "text"
+                },
+                {
+                  "key": "category_id",
+                  "value": "1",
+                  "type": "text"
+                },
+                {
+                  "key": "name",
+                  "value": "Iced Coffee",
+                  "type": "text"
+                },
+                {
+                  "key": "barcode",
+                  "value": "8850001234567",
+                  "type": "text"
+                },
+                {
+                  "key": "price",
+                  "value": "3.50",
+                  "type": "text"
+                },
+                {
+                  "key": "discount",
+                  "value": "0.50",
+                  "type": "text"
+                },
+                {
+                  "key": "tax",
+                  "value": "0.20",
+                  "type": "text"
+                },
+                {
+                  "key": "threshold",
+                  "value": "10",
+                  "type": "text"
+                },
+                {
+                  "key": "is_active",
+                  "value": "true",
+                  "type": "text"
+                },
+                {
+                  "key": "modifier",
+                  "value": "",
+                  "type": "text"
+                },
+                {
+                  "key": "image",
+                  "type": "file",
+                  "src": []
                 }
-              }
+              ]
             },
-            "description": "CreateProduct"
+            "description": "Multipart upload: every product field as a form field, plus \"image\" (required product photo - attach it yourself, no default file is set). branch_id/category_id must belong to your own org. modifier is optional - leave blank for null."
           }
         },
         {
