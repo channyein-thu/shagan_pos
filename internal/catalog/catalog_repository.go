@@ -1,13 +1,29 @@
 package catalog
 
-import "context"
+import (
+	"context"
+
+	"gorm.io/gorm"
+)
 
 // Repository defines the catalog domain's persistence operations.
 type Repository interface {
 	ListProducts(ctx context.Context) ([]Product, error)
 	GetProduct(ctx context.Context, id uint) (*Product, error)
 	GetProductByBarcode(ctx context.Context, code string) (*Product, error)
-	CreateProduct(ctx context.Context, in CreateProductRequest) (*Product, error)
+	// CreateProduct backs Service.CreateProduct's first step. Plain insert -
+	// GORM sets the row's ID on the pointer it's given. Mapping the
+	// request/orgID into a Product, and validating it, happens in the
+	// service, not here. db is either the repository's normal connection or
+	// an in-flight transaction handed down by the caller -
+	// Service.CreateProduct runs this and CreateProductImage inside one
+	// db.Transaction, since a product row without its required image should
+	// never exist.
+	CreateProduct(db *gorm.DB, product *Product) error
+	// CreateProductImage backs Service.CreateProduct's second step. Plain
+	// insert, same db-is-either-plain-or-in-flight-transaction reasoning as
+	// CreateProduct above.
+	CreateProductImage(db *gorm.DB, image *ProductImage) error
 	UpdateProduct(ctx context.Context, id uint, in UpdateProductRequest) (*Product, error)
 	DeleteProduct(ctx context.Context, id uint) error
 	// ListCategories backs `GET /categories`, scoped to the authenticated

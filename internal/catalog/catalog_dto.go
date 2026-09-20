@@ -24,21 +24,31 @@ type CreateComboRequest struct {
 	ExpiresAt time.Time       `json:"expires_at" binding:"required"`
 }
 
-// CreateProductRequest is the request body for the endpoint that creates or updates a Product.
-// TODO: fields mirroring org/branch/staff/device ownership (e.g. OrgID, BranchID, StaffID)
-// likely belong to the authenticated session/context, not client input - review before use.
+// CreateProductRequest is the request body for `POST /products`. OrgID is
+// deliberately not here - same reasoning as CreateCategoryRequest. BranchID
+// is a legitimate client choice (an org can have several branches, so the
+// caller picks which one, same as identity.CreateStaffRequest) - the service
+// verifies it actually belongs to the caller's own org before using it.
+// Price, Discount, and Tax carry no binding tag: decimal.Decimal is a
+// struct, so go-playground/validator's `required` is a no-op on it and can't
+// do numeric comparisons without a custom type registration -
+// Service.CreateProduct enforces the real rules (Price > 0, Discount/Tax >=
+// 0, Discount <= Price). IsActive also carries no `required` tag
+// deliberately - required on a bool rejects its zero value, which would make
+// false unrepresentable.
 type CreateProductRequest struct {
-	OrgID       uint            `json:"org_id" binding:"required"`
-	BranchScope BranchScope     `json:"branch_scope" binding:"required"`
-	CategoryID  uint            `json:"category_id" binding:"required"`
-	Name        string          `json:"name" binding:"required"`
-	Barcode     string          `json:"barcode" binding:"required"`
-	Price       decimal.Decimal `json:"price" binding:"required"`
-	Discount    decimal.Decimal `json:"discount" binding:"required"`
-	Tax         decimal.Decimal `json:"tax" binding:"required"`
-	Threshold   int             `json:"threshold" binding:"required"`
-	IsActive    bool            `json:"is_active" binding:"required"`
-	Modifier    string          `json:"modifier" binding:"required"`
+	BranchID   uint            `json:"branch_id" binding:"required"`
+	CategoryID uint            `json:"category_id" binding:"required"`
+	Name       string          `json:"name" binding:"required"`
+	Barcode    string          `json:"barcode" binding:"required"`
+	Price      decimal.Decimal `json:"price"`
+	Discount   decimal.Decimal `json:"discount"`
+	Tax        decimal.Decimal `json:"tax"`
+	Threshold  int             `json:"threshold" binding:"required"`
+	IsActive   bool            `json:"is_active"`
+	// Modifier is optional and genuinely nullable - nil means no modifier at
+	// all (stored as SQL NULL), not an empty string.
+	Modifier *string `json:"modifier" binding:"omitempty"`
 }
 
 // UpdateCategoryRequest is the request body for `PATCH /categories/:id`.
@@ -63,15 +73,15 @@ type UpdateComboRequest struct {
 // TODO: fields mirroring org/branch/staff/device ownership (e.g. OrgID, BranchID, StaffID)
 // likely belong to the authenticated session/context, not client input - review before use.
 type UpdateProductRequest struct {
-	OrgID       *uint            `json:"org_id" binding:"omitempty"`
-	BranchScope *BranchScope     `json:"branch_scope" binding:"omitempty"`
-	CategoryID  *uint            `json:"category_id" binding:"omitempty"`
-	Name        *string          `json:"name" binding:"omitempty"`
-	Barcode     *string          `json:"barcode" binding:"omitempty"`
-	Price       *decimal.Decimal `json:"price" binding:"omitempty"`
-	Discount    *decimal.Decimal `json:"discount" binding:"omitempty"`
-	Tax         *decimal.Decimal `json:"tax" binding:"omitempty"`
-	Threshold   *int             `json:"threshold" binding:"omitempty"`
-	IsActive    *bool            `json:"is_active" binding:"omitempty"`
-	Modifier    *string          `json:"modifier" binding:"omitempty"`
+	OrgID      *uint            `json:"org_id" binding:"omitempty"`
+	BranchID   *uint            `json:"branch_id" binding:"omitempty"`
+	CategoryID *uint            `json:"category_id" binding:"omitempty"`
+	Name       *string          `json:"name" binding:"omitempty"`
+	Barcode    *string          `json:"barcode" binding:"omitempty"`
+	Price      *decimal.Decimal `json:"price" binding:"omitempty"`
+	Discount   *decimal.Decimal `json:"discount" binding:"omitempty"`
+	Tax        *decimal.Decimal `json:"tax" binding:"omitempty"`
+	Threshold  *int             `json:"threshold" binding:"omitempty"`
+	IsActive   *bool            `json:"is_active" binding:"omitempty"`
+	Modifier   *string          `json:"modifier" binding:"omitempty"`
 }

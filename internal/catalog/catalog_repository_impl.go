@@ -34,9 +34,17 @@ func (r *RepositoryImpl) GetProductByBarcode(ctx context.Context, code string) (
 	return nil, common.ErrNotImplemented
 }
 
-// CreateProduct backs `POST /products`.
-func (r *RepositoryImpl) CreateProduct(ctx context.Context, in CreateProductRequest) (*Product, error) {
-	return nil, common.ErrNotImplemented
+// CreateProduct backs Service.CreateProduct's first step. Plain insert -
+// whatever error the database gives back (including a unique-constraint
+// violation on ux_products_branch_barcode) is returned as-is; interpreting
+// it is the service's job, same reasoning as CreateCategory.
+func (r *RepositoryImpl) CreateProduct(db *gorm.DB, product *Product) error {
+	return db.Create(product).Error
+}
+
+// CreateProductImage backs Service.CreateProduct's second step. Plain insert.
+func (r *RepositoryImpl) CreateProductImage(db *gorm.DB, image *ProductImage) error {
+	return db.Create(image).Error
 }
 
 // UpdateProduct backs `PATCH /products/:id`.

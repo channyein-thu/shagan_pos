@@ -5,18 +5,21 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 
 	"shagan_pos/internal/catalog"
 	"shagan_pos/internal/common"
+	"shagan_pos/internal/identity"
+	"shagan_pos/internal/storage"
 )
 
 type CatalogAPI struct {
 	service catalog.Interface
 }
 
-func NewCatalogAPI(db *gorm.DB) *CatalogAPI {
-	return &CatalogAPI{service: catalog.NewService(catalog.NewRepository(db))}
+func NewCatalogAPI(db *gorm.DB, store storage.Storage) *CatalogAPI {
+	return &CatalogAPI{service: catalog.NewService(catalog.NewRepository(db), identity.NewRepository(db), db, store)}
 }
 
 func (a *CatalogAPI) RegisterRoutes(rg *gin.RouterGroup) {
@@ -73,14 +76,100 @@ func (a *CatalogAPI) GetProductByBarcode(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// CreateProduct handles `POST /products`.
+// CreateProduct handles `POST /products`. Multipart form: every product
+// field as a form field (branch_id, category_id, name, barcode, price,
+// discount, tax, threshold, is_active, and optional modifier) plus "image"
+// (the required product photo) - a product can't be created without one, so
+// this isn't a
+// JSON endpoint like the other catalog creates.
 func (a *CatalogAPI) CreateProduct(c *gin.Context) {
-	var in catalog.CreateProductRequest
-	if err := c.ShouldBindJSON(&in); err != nil {
-		common.HandleError(c, common.BadRequestError(err.Error()))
+	orgID, ok := requireOrgID(c)
+	if !ok {
 		return
 	}
-	result, err := a.service.CreateProduct(c.Request.Context(), in)
+
+	branchID, err := strconv.ParseUint(c.PostForm("branch_id"), 10, 64)
+	if err != nil {
+		common.HandleError(c, common.BadRequestError("invalid branch_id"))
+		return
+	}
+	categoryID, err := strconv.ParseUint(c.PostForm("category_id"), 10, 64)
+	if err != nil {
+		common.HandleError(c, common.BadRequestError("invalid category_id"))
+		return
+	}
+	name := c.PostForm("name")
+	if name == "" {
+		common.HandleError(c, common.BadRequestError("name is required"))
+		return
+	}
+	barcode := c.PostForm("barcode")
+	if barcode == "" {
+		common.HandleError(c, common.BadRequestError("barcode is required"))
+		return
+	}
+	price, err := decimal.NewFromString(c.PostForm("price"))
+	if err != nil {
+		common.HandleError(c, common.BadRequestError("invalid price"))
+		return
+	}
+	discount, err := decimal.NewFromString(c.DefaultPostForm("discount", "0"))
+	if err != nil {
+		common.HandleError(c, common.BadRequestError("invalid discount"))
+		return
+	}
+	tax, err := decimal.NewFromString(c.DefaultPostForm("tax", "0"))
+	if err != nil {
+		common.HandleError(c, common.BadRequestError("invalid tax"))
+		return
+	}
+	threshold, err := strconv.Atoi(c.PostForm("threshold"))
+	if err != nil {
+		common.HandleError(c, common.BadRequestError("invalid threshold"))
+		return
+	}
+	isActive, _ := strconv.ParseBool(c.DefaultPostForm("is_active", "false"))
+	// modifier is optional and genuinely nullable - an omitted or empty form
+	// field means nil, not an empty string.
+	var modifier *string
+	if v := c.PostForm("modifier"); v != "" {
+		modifier = &v
+	}
+
+	fileHeader, err := c.FormFile("image")
+	if err != nil {
+		common.HandleError(c, common.BadRequestError("image is required"))
+		return
+	}
+	file, err := fileHeader.Open()
+	if err != nil {
+		common.HandleError(c, common.BadRequestError("could not read image"))
+		return
+	}
+	defer file.Close()
+
+	in := catalog.CreateProductRequest{
+		BranchID:   uint(branchID),
+		CategoryID: uint(categoryID),
+		Name:       name,
+		Barcode:    barcode,
+		Price:      price,
+		Discount:   discount,
+		Tax:        tax,
+		Threshold:  threshold,
+		IsActive:   isActive,
+		Modifier:   modifier,
+	}
+
+	result, err := a.service.CreateProduct(
+		c.Request.Context(),
+		orgID,
+		in,
+		file,
+		fileHeader.Size,
+		fileHeader.Header.Get("Content-Type"),
+		fileHeader.Filename,
+	)
 	if err != nil {
 		common.HandleError(c, err)
 		return
