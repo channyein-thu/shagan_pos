@@ -54,8 +54,8 @@ func (s *Service) ListProducts(ctx context.Context, orgID uint, branchID *uint) 
 	return s.repo.ListProducts(ctx, orgID, branchID)
 }
 
-func (s *Service) GetProduct(ctx context.Context, id uint) (*Product, error) {
-	return s.repo.GetProduct(ctx, id)
+func (s *Service) GetProduct(ctx context.Context, orgID uint, id uint) (*Product, error) {
+	return s.repo.GetProduct(ctx, orgID, id)
 }
 
 func (s *Service) GetProductByBarcode(ctx context.Context, code string) (*Product, error) {

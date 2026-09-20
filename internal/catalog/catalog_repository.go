@@ -14,7 +14,13 @@ type Repository interface {
 	// caller's own branch (from a pos-device token), never a client-supplied
 	// ID, same reasoning as identity.ListStaff.
 	ListProducts(ctx context.Context, orgID uint, branchID *uint) ([]Product, error)
-	GetProduct(ctx context.Context, id uint) (*Product, error)
+	// GetProduct backs `GET /products/:id`. Scoped to orgID - returns
+	// common.NotFoundError for a product that exists but belongs to a
+	// different org, same as one that doesn't exist at all, so a caller can
+	// never distinguish "not mine" from "doesn't exist" by probing IDs (same
+	// reasoning as identity's GetBranch/GetStaff). Not further restricted to
+	// the caller's own branch - same as identity.GetStaff.
+	GetProduct(ctx context.Context, orgID uint, id uint) (*Product, error)
 	GetProductByBarcode(ctx context.Context, code string) (*Product, error)
 	// CreateProduct backs Service.CreateProduct's first step. Plain insert -
 	// GORM sets the row's ID on the pointer it's given. Mapping the

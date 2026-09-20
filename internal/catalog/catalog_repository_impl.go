@@ -34,9 +34,17 @@ func (r *RepositoryImpl) ListProducts(ctx context.Context, orgID uint, branchID 
 	return products, nil
 }
 
-// GetProduct backs `GET /products/:id`.
-func (r *RepositoryImpl) GetProduct(ctx context.Context, id uint) (*Product, error) {
-	return nil, common.ErrNotImplemented
+// GetProduct backs `GET /products/:id`, scoped to orgID.
+func (r *RepositoryImpl) GetProduct(ctx context.Context, orgID uint, id uint) (*Product, error) {
+	var product Product
+	err := r.db.WithContext(ctx).Where("id = ? AND org_id = ?", id, orgID).First(&product).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, common.NotFoundError("product not found")
+		}
+		return nil, err
+	}
+	return &product, nil
 }
 
 // GetProductByBarcode backs `GET /products/barcode/:code`. Exact-match scan lookup

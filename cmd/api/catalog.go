@@ -63,12 +63,16 @@ func (a *CatalogAPI) ListProducts(c *gin.Context) {
 
 // GetProduct handles `GET /products/:id`.
 func (a *CatalogAPI) GetProduct(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
-	result, err := a.service.GetProduct(c.Request.Context(), uint(idVal))
+	result, err := a.service.GetProduct(c.Request.Context(), orgID, uint(idVal))
 	if err != nil {
 		common.HandleError(c, err)
 		return

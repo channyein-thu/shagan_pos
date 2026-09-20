@@ -303,6 +303,34 @@ func TestService_ListProducts_PropagatesRepositoryError(t *testing.T) {
 	requireRestErrorStatus(t, err, http.StatusInternalServerError)
 }
 
+func TestService_GetProduct_DelegatesToRepository(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	want := &Product{ID: 1, OrgID: 7, BranchID: 5}
+	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(want, nil).Once()
+
+	got, err := svc.GetProduct(context.Background(), 7, 1)
+	require.NoError(t, err)
+	require.Same(t, want, got)
+}
+
+func TestService_GetProduct_PropagatesNotFound(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	wantErr := common.NotFoundError("product not found")
+	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(999)).Return(nil, wantErr).Once()
+
+	_, err := svc.GetProduct(context.Background(), 7, 999)
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusNotFound)
+}
+
 func validCreateProductRequest() CreateProductRequest {
 	modifier := "none"
 	return CreateProductRequest{

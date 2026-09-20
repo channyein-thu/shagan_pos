@@ -423,9 +423,9 @@ func (_c *MockRepository_GetCategory_Call) RunAndReturn(run func(context.Context
 	return _c
 }
 
-// GetProduct provides a mock function with given fields: ctx, id
-func (_m *MockRepository) GetProduct(ctx context.Context, id uint) (*Product, error) {
-	ret := _m.Called(ctx, id)
+// GetProduct provides a mock function with given fields: ctx, orgID, id
+func (_m *MockRepository) GetProduct(ctx context.Context, orgID uint, id uint) (*Product, error) {
+	ret := _m.Called(ctx, orgID, id)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetProduct")
@@ -433,19 +433,19 @@ func (_m *MockRepository) GetProduct(ctx context.Context, id uint) (*Product, er
 
 	var r0 *Product
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, uint) (*Product, error)); ok {
-		return rf(ctx, id)
+	if rf, ok := ret.Get(0).(func(context.Context, uint, uint) (*Product, error)); ok {
+		return rf(ctx, orgID, id)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, uint) *Product); ok {
-		r0 = rf(ctx, id)
+	if rf, ok := ret.Get(0).(func(context.Context, uint, uint) *Product); ok {
+		r0 = rf(ctx, orgID, id)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(*Product)
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, uint) error); ok {
-		r1 = rf(ctx, id)
+	if rf, ok := ret.Get(1).(func(context.Context, uint, uint) error); ok {
+		r1 = rf(ctx, orgID, id)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -460,14 +460,15 @@ type MockRepository_GetProduct_Call struct {
 
 // GetProduct is a helper method to define mock.On call
 //   - ctx context.Context
+//   - orgID uint
 //   - id uint
-func (_e *MockRepository_Expecter) GetProduct(ctx interface{}, id interface{}) *MockRepository_GetProduct_Call {
-	return &MockRepository_GetProduct_Call{Call: _e.mock.On("GetProduct", ctx, id)}
+func (_e *MockRepository_Expecter) GetProduct(ctx interface{}, orgID interface{}, id interface{}) *MockRepository_GetProduct_Call {
+	return &MockRepository_GetProduct_Call{Call: _e.mock.On("GetProduct", ctx, orgID, id)}
 }
 
-func (_c *MockRepository_GetProduct_Call) Run(run func(ctx context.Context, id uint)) *MockRepository_GetProduct_Call {
+func (_c *MockRepository_GetProduct_Call) Run(run func(ctx context.Context, orgID uint, id uint)) *MockRepository_GetProduct_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(uint))
+		run(args[0].(context.Context), args[1].(uint), args[2].(uint))
 	})
 	return _c
 }
@@ -477,7 +478,7 @@ func (_c *MockRepository_GetProduct_Call) Return(_a0 *Product, _a1 error) *MockR
 	return _c
 }
 
-func (_c *MockRepository_GetProduct_Call) RunAndReturn(run func(context.Context, uint) (*Product, error)) *MockRepository_GetProduct_Call {
+func (_c *MockRepository_GetProduct_Call) RunAndReturn(run func(context.Context, uint, uint) (*Product, error)) *MockRepository_GetProduct_Call {
 	_c.Call.Return(run)
 	return _c
 }
