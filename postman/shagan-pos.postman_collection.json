@@ -1558,7 +1558,7 @@
                 "products"
               ]
             },
-            "description": "List/search/filter"
+            "description": "Lists products in the caller's org. If the caller's token carries a branch (a pos device), results are restricted to that branch automatically - owner/service_center tokens see every branch. No query params - the scope comes from the token, not something the client can override."
           }
         },
         {

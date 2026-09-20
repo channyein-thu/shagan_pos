@@ -11,6 +11,7 @@ import (
 	"shagan_pos/internal/catalog"
 	"shagan_pos/internal/common"
 	"shagan_pos/internal/identity"
+	"shagan_pos/internal/middleware"
 	"shagan_pos/internal/storage"
 )
 
@@ -40,9 +41,19 @@ func (a *CatalogAPI) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.DELETE("/combos/:id", a.DeleteCombo)
 }
 
-// ListProducts handles `GET /products`. List/search/filter
+// ListProducts handles `GET /products`. Restricted to the caller's own
+// branch when the caller's token carries one (a pos device) - org-wide for
+// owner/service_center, same reasoning as identity.ListStaff.
 func (a *CatalogAPI) ListProducts(c *gin.Context) {
-	result, err := a.service.ListProducts(c.Request.Context())
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	var branchID *uint
+	if bID, ok := middleware.BranchIDFromContext(c); ok {
+		branchID = &bID
+	}
+	result, err := a.service.ListProducts(c.Request.Context(), orgID, branchID)
 	if err != nil {
 		common.HandleError(c, err)
 		return

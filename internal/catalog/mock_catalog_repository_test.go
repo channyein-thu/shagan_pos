@@ -658,9 +658,9 @@ func (_c *MockRepository_ListCombos_Call) RunAndReturn(run func(context.Context)
 	return _c
 }
 
-// ListProducts provides a mock function with given fields: ctx
-func (_m *MockRepository) ListProducts(ctx context.Context) ([]Product, error) {
-	ret := _m.Called(ctx)
+// ListProducts provides a mock function with given fields: ctx, orgID, branchID
+func (_m *MockRepository) ListProducts(ctx context.Context, orgID uint, branchID *uint) ([]Product, error) {
+	ret := _m.Called(ctx, orgID, branchID)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ListProducts")
@@ -668,19 +668,19 @@ func (_m *MockRepository) ListProducts(ctx context.Context) ([]Product, error) {
 
 	var r0 []Product
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context) ([]Product, error)); ok {
-		return rf(ctx)
+	if rf, ok := ret.Get(0).(func(context.Context, uint, *uint) ([]Product, error)); ok {
+		return rf(ctx, orgID, branchID)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context) []Product); ok {
-		r0 = rf(ctx)
+	if rf, ok := ret.Get(0).(func(context.Context, uint, *uint) []Product); ok {
+		r0 = rf(ctx, orgID, branchID)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]Product)
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context) error); ok {
-		r1 = rf(ctx)
+	if rf, ok := ret.Get(1).(func(context.Context, uint, *uint) error); ok {
+		r1 = rf(ctx, orgID, branchID)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -695,13 +695,15 @@ type MockRepository_ListProducts_Call struct {
 
 // ListProducts is a helper method to define mock.On call
 //   - ctx context.Context
-func (_e *MockRepository_Expecter) ListProducts(ctx interface{}) *MockRepository_ListProducts_Call {
-	return &MockRepository_ListProducts_Call{Call: _e.mock.On("ListProducts", ctx)}
+//   - orgID uint
+//   - branchID *uint
+func (_e *MockRepository_Expecter) ListProducts(ctx interface{}, orgID interface{}, branchID interface{}) *MockRepository_ListProducts_Call {
+	return &MockRepository_ListProducts_Call{Call: _e.mock.On("ListProducts", ctx, orgID, branchID)}
 }
 
-func (_c *MockRepository_ListProducts_Call) Run(run func(ctx context.Context)) *MockRepository_ListProducts_Call {
+func (_c *MockRepository_ListProducts_Call) Run(run func(ctx context.Context, orgID uint, branchID *uint)) *MockRepository_ListProducts_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context))
+		run(args[0].(context.Context), args[1].(uint), args[2].(*uint))
 	})
 	return _c
 }
@@ -711,7 +713,7 @@ func (_c *MockRepository_ListProducts_Call) Return(_a0 []Product, _a1 error) *Mo
 	return _c
 }
 
-func (_c *MockRepository_ListProducts_Call) RunAndReturn(run func(context.Context) ([]Product, error)) *MockRepository_ListProducts_Call {
+func (_c *MockRepository_ListProducts_Call) RunAndReturn(run func(context.Context, uint, *uint) ([]Product, error)) *MockRepository_ListProducts_Call {
 	_c.Call.Return(run)
 	return _c
 }

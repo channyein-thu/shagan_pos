@@ -8,7 +8,12 @@ import (
 
 // Repository defines the catalog domain's persistence operations.
 type Repository interface {
-	ListProducts(ctx context.Context) ([]Product, error)
+	// ListProducts backs `GET /products`, scoped to the authenticated
+	// caller's own organization - same reasoning as identity's org-scoped
+	// lists. branchID additionally restricts to one branch when set - the
+	// caller's own branch (from a pos-device token), never a client-supplied
+	// ID, same reasoning as identity.ListStaff.
+	ListProducts(ctx context.Context, orgID uint, branchID *uint) ([]Product, error)
 	GetProduct(ctx context.Context, id uint) (*Product, error)
 	GetProductByBarcode(ctx context.Context, code string) (*Product, error)
 	// CreateProduct backs Service.CreateProduct's first step. Plain insert -

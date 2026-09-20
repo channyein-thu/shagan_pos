@@ -50,8 +50,8 @@ func NewService(repo Repository, branches BranchLookup, db common.Transactioner,
 
 var _ Interface = (*Service)(nil)
 
-func (s *Service) ListProducts(ctx context.Context) ([]Product, error) {
-	return s.repo.ListProducts(ctx)
+func (s *Service) ListProducts(ctx context.Context, orgID uint, branchID *uint) ([]Product, error) {
+	return s.repo.ListProducts(ctx, orgID, branchID)
 }
 
 func (s *Service) GetProduct(ctx context.Context, id uint) (*Product, error) {

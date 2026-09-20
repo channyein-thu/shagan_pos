@@ -260,6 +260,49 @@ func TestService_DeleteCategory_PropagatesNotFound(t *testing.T) {
 	requireRestErrorStatus(t, err, http.StatusNotFound)
 }
 
+func TestService_ListProducts_OrgWide_DelegatesToRepository(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	want := []Product{{ID: 1, OrgID: 7, BranchID: 1}, {ID: 2, OrgID: 7, BranchID: 2}}
+	repo.EXPECT().ListProducts(mock.Anything, uint(7), (*uint)(nil)).Return(want, nil).Once()
+
+	got, err := svc.ListProducts(context.Background(), 7, nil)
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+}
+
+func TestService_ListProducts_ScopedToCallerBranch_DelegatesToRepository(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	branchID := uint(5)
+	want := []Product{{ID: 1, OrgID: 7, BranchID: 5}}
+	repo.EXPECT().ListProducts(mock.Anything, uint(7), &branchID).Return(want, nil).Once()
+
+	got, err := svc.ListProducts(context.Background(), 7, &branchID)
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+}
+
+func TestService_ListProducts_PropagatesRepositoryError(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	wantErr := common.SystemError("db read failed")
+	repo.EXPECT().ListProducts(mock.Anything, uint(7), (*uint)(nil)).Return(nil, wantErr).Once()
+
+	_, err := svc.ListProducts(context.Background(), 7, nil)
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusInternalServerError)
+}
+
 func validCreateProductRequest() CreateProductRequest {
 	modifier := "none"
 	return CreateProductRequest{

@@ -19,9 +19,19 @@ func NewRepository(db *gorm.DB) Repository {
 
 var _ Repository = (*RepositoryImpl)(nil)
 
-// ListProducts backs `GET /products`. List/search/filter
-func (r *RepositoryImpl) ListProducts(ctx context.Context) ([]Product, error) {
-	return nil, common.ErrNotImplemented
+// ListProducts backs `GET /products`, scoped to orgID (Product carries its
+// own OrgID directly, so no join through branches is needed, unlike
+// identity.ListStaff).
+func (r *RepositoryImpl) ListProducts(ctx context.Context, orgID uint, branchID *uint) ([]Product, error) {
+	var products []Product
+	q := r.db.WithContext(ctx).Where("org_id = ?", orgID)
+	if branchID != nil {
+		q = q.Where("branch_id = ?", *branchID)
+	}
+	if err := q.Find(&products).Error; err != nil {
+		return nil, err
+	}
+	return products, nil
 }
 
 // GetProduct backs `GET /products/:id`.
