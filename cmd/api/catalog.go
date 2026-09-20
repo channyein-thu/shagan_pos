@@ -80,10 +80,31 @@ func (a *CatalogAPI) GetProduct(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// GetProductByBarcode handles `GET /products/barcode/:code`. Exact-match scan lookup
+// GetProductByBarcode handles `GET /products/barcode/:code`. Exact-match
+// scan lookup, e.g. for a checkout scan. A barcode is only unique per branch
+// (not per org), so a branch is always required to resolve it unambiguously:
+// a pos-device token supplies its own branch automatically (same as
+// ListProducts); an owner/service_center token must pass ?branch_id=.
 func (a *CatalogAPI) GetProductByBarcode(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+
+	var branchID uint
+	if bID, ok := middleware.BranchIDFromContext(c); ok {
+		branchID = bID
+	} else {
+		v, err := strconv.ParseUint(c.Query("branch_id"), 10, 64)
+		if err != nil {
+			common.HandleError(c, common.BadRequestError("branch_id is required"))
+			return
+		}
+		branchID = uint(v)
+	}
+
 	code := c.Param("code")
-	result, err := a.service.GetProductByBarcode(c.Request.Context(), code)
+	result, err := a.service.GetProductByBarcode(c.Request.Context(), orgID, branchID, code)
 	if err != nil {
 		common.HandleError(c, err)
 		return

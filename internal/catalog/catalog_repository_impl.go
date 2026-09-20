@@ -47,9 +47,20 @@ func (r *RepositoryImpl) GetProduct(ctx context.Context, orgID uint, id uint) (*
 	return &product, nil
 }
 
-// GetProductByBarcode backs `GET /products/barcode/:code`. Exact-match scan lookup
-func (r *RepositoryImpl) GetProductByBarcode(ctx context.Context, code string) (*Product, error) {
-	return nil, common.ErrNotImplemented
+// GetProductByBarcode backs `GET /products/barcode/:code`. Exact-match
+// lookup, scoped to both orgID and branchID (see the interface doc).
+func (r *RepositoryImpl) GetProductByBarcode(ctx context.Context, orgID uint, branchID uint, code string) (*Product, error) {
+	var product Product
+	err := r.db.WithContext(ctx).
+		Where("barcode = ? AND org_id = ? AND branch_id = ?", code, orgID, branchID).
+		First(&product).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, common.NotFoundError("product not found")
+		}
+		return nil, err
+	}
+	return &product, nil
 }
 
 // CreateProduct backs Service.CreateProduct's first step. Plain insert -

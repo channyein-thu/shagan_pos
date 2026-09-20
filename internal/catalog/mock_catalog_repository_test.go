@@ -483,9 +483,9 @@ func (_c *MockRepository_GetProduct_Call) RunAndReturn(run func(context.Context,
 	return _c
 }
 
-// GetProductByBarcode provides a mock function with given fields: ctx, code
-func (_m *MockRepository) GetProductByBarcode(ctx context.Context, code string) (*Product, error) {
-	ret := _m.Called(ctx, code)
+// GetProductByBarcode provides a mock function with given fields: ctx, orgID, branchID, code
+func (_m *MockRepository) GetProductByBarcode(ctx context.Context, orgID uint, branchID uint, code string) (*Product, error) {
+	ret := _m.Called(ctx, orgID, branchID, code)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetProductByBarcode")
@@ -493,19 +493,19 @@ func (_m *MockRepository) GetProductByBarcode(ctx context.Context, code string) 
 
 	var r0 *Product
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, string) (*Product, error)); ok {
-		return rf(ctx, code)
+	if rf, ok := ret.Get(0).(func(context.Context, uint, uint, string) (*Product, error)); ok {
+		return rf(ctx, orgID, branchID, code)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, string) *Product); ok {
-		r0 = rf(ctx, code)
+	if rf, ok := ret.Get(0).(func(context.Context, uint, uint, string) *Product); ok {
+		r0 = rf(ctx, orgID, branchID, code)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(*Product)
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, string) error); ok {
-		r1 = rf(ctx, code)
+	if rf, ok := ret.Get(1).(func(context.Context, uint, uint, string) error); ok {
+		r1 = rf(ctx, orgID, branchID, code)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -520,14 +520,16 @@ type MockRepository_GetProductByBarcode_Call struct {
 
 // GetProductByBarcode is a helper method to define mock.On call
 //   - ctx context.Context
+//   - orgID uint
+//   - branchID uint
 //   - code string
-func (_e *MockRepository_Expecter) GetProductByBarcode(ctx interface{}, code interface{}) *MockRepository_GetProductByBarcode_Call {
-	return &MockRepository_GetProductByBarcode_Call{Call: _e.mock.On("GetProductByBarcode", ctx, code)}
+func (_e *MockRepository_Expecter) GetProductByBarcode(ctx interface{}, orgID interface{}, branchID interface{}, code interface{}) *MockRepository_GetProductByBarcode_Call {
+	return &MockRepository_GetProductByBarcode_Call{Call: _e.mock.On("GetProductByBarcode", ctx, orgID, branchID, code)}
 }
 
-func (_c *MockRepository_GetProductByBarcode_Call) Run(run func(ctx context.Context, code string)) *MockRepository_GetProductByBarcode_Call {
+func (_c *MockRepository_GetProductByBarcode_Call) Run(run func(ctx context.Context, orgID uint, branchID uint, code string)) *MockRepository_GetProductByBarcode_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(string))
+		run(args[0].(context.Context), args[1].(uint), args[2].(uint), args[3].(string))
 	})
 	return _c
 }
@@ -537,7 +539,7 @@ func (_c *MockRepository_GetProductByBarcode_Call) Return(_a0 *Product, _a1 erro
 	return _c
 }
 
-func (_c *MockRepository_GetProductByBarcode_Call) RunAndReturn(run func(context.Context, string) (*Product, error)) *MockRepository_GetProductByBarcode_Call {
+func (_c *MockRepository_GetProductByBarcode_Call) RunAndReturn(run func(context.Context, uint, uint, string) (*Product, error)) *MockRepository_GetProductByBarcode_Call {
 	_c.Call.Return(run)
 	return _c
 }

@@ -1605,7 +1605,7 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/products/barcode/:code",
+              "raw": "{{baseUrl}}/api/v1/products/barcode/:code?branch_id=1",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1619,11 +1619,19 @@
               "variable": [
                 {
                   "key": "code",
-                  "value": "sample"
+                  "value": "8850001234567"
+                }
+              ],
+              "query": [
+                {
+                  "key": "branch_id",
+                  "value": "1",
+                  "disabled": true,
+                  "description": "Required only for an owner/service_center token (no branch on the token). Ignored for a pos-device token, which always uses its own branch."
                 }
               ]
             },
-            "description": "Exact-match scan lookup"
+            "description": "Exact-match barcode lookup, scoped to the caller's org and branch - returns the product plus its \"images\" array (see ListProducts), same presigned-URL/15-minute-TTL reasoning. Barcode is only unique per branch (not per org), so a branch is always required: a pos-device token supplies its own branch automatically; an owner/service_center token must pass ?branch_id= (enable the disabled query param below and set it to a real branch id in that org)."
           }
         },
         {

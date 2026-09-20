@@ -21,7 +21,12 @@ type Repository interface {
 	// reasoning as identity's GetBranch/GetStaff). Not further restricted to
 	// the caller's own branch - same as identity.GetStaff.
 	GetProduct(ctx context.Context, orgID uint, id uint) (*Product, error)
-	GetProductByBarcode(ctx context.Context, code string) (*Product, error)
+	// GetProductByBarcode backs `GET /products/barcode/:code`. Scoped to both
+	// orgID and branchID - Barcode is only unique per branch
+	// (ux_products_branch_barcode), not per org, so without a branch a
+	// barcode could match more than one product across an org's branches.
+	// Same not-found-not-forbidden reasoning as GetProduct.
+	GetProductByBarcode(ctx context.Context, orgID uint, branchID uint, code string) (*Product, error)
 	// CreateProduct backs Service.CreateProduct's first step. Plain insert -
 	// GORM sets the row's ID on the pointer it's given. Mapping the
 	// request/orgID into a Product, and validating it, happens in the

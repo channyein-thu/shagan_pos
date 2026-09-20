@@ -407,6 +407,58 @@ func TestService_GetProduct_PropagatesNotFound(t *testing.T) {
 	requireRestErrorStatus(t, err, http.StatusNotFound)
 }
 
+func TestService_GetProductByBarcode_DelegatesToRepository(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	want := &Product{ID: 1, OrgID: 7, BranchID: 5, Barcode: "8850001234567"}
+	repo.EXPECT().GetProductByBarcode(mock.Anything, uint(7), uint(5), "8850001234567").Return(want, nil).Once()
+	repo.EXPECT().ListProductImagesByProductIDs(mock.Anything, []uint{1}).Return(nil, nil).Once()
+
+	got, err := svc.GetProductByBarcode(context.Background(), 7, 5, "8850001234567")
+	require.NoError(t, err)
+	require.Equal(t, uint(1), got.ID)
+	require.Equal(t, "8850001234567", got.Barcode)
+	require.Empty(t, got.Images)
+}
+
+func TestService_GetProductByBarcode_AttachesImagesWithPresignedURLs(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	want := &Product{ID: 1, OrgID: 7, BranchID: 5, Barcode: "8850001234567"}
+	images := []ProductImage{{ID: 10, ProductID: 1, StorageKey: "products/1/photo.png", Width: 2, Height: 3}}
+	repo.EXPECT().GetProductByBarcode(mock.Anything, uint(7), uint(5), "8850001234567").Return(want, nil).Once()
+	repo.EXPECT().ListProductImagesByProductIDs(mock.Anything, []uint{1}).Return(images, nil).Once()
+	store.EXPECT().
+		PresignedURL(mock.Anything, "products/1/photo.png", DefaultImageURLTTL).
+		Return("https://minio.local/signed/photo.png", nil).
+		Once()
+
+	got, err := svc.GetProductByBarcode(context.Background(), 7, 5, "8850001234567")
+	require.NoError(t, err)
+	require.Len(t, got.Images, 1)
+	require.Equal(t, "https://minio.local/signed/photo.png", got.Images[0].URL)
+}
+
+func TestService_GetProductByBarcode_PropagatesNotFound(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	wantErr := common.NotFoundError("product not found")
+	repo.EXPECT().GetProductByBarcode(mock.Anything, uint(7), uint(5), "no-such-code").Return(nil, wantErr).Once()
+
+	_, err := svc.GetProductByBarcode(context.Background(), 7, 5, "no-such-code")
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusNotFound)
+}
+
 func validCreateProductRequest() CreateProductRequest {
 	modifier := "none"
 	return CreateProductRequest{

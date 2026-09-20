@@ -22,7 +22,11 @@ type Interface interface {
 	// since the bucket is private and a raw key isn't usable by a client.
 	ListProducts(ctx context.Context, orgID uint, branchID *uint) ([]ProductResult, error)
 	GetProduct(ctx context.Context, orgID uint, id uint) (*ProductResult, error)
-	GetProductByBarcode(ctx context.Context, code string) (*Product, error)
+	// GetProductByBarcode requires a branchID for the same reason as the
+	// repository method it calls - a barcode is only unique per branch, so
+	// resolving one org-wide could be ambiguous. Returns ProductResult, same
+	// reasoning as GetProduct.
+	GetProductByBarcode(ctx context.Context, orgID uint, branchID uint, code string) (*ProductResult, error)
 	// CreateProduct requires exactly one image at creation time - a product
 	// without one should never exist (see Service.CreateProduct). file must
 	// support Seek: its header gets read once to decode Width/Height, then

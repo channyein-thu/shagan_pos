@@ -121,8 +121,16 @@ func (s *Service) attachImages(ctx context.Context, products []Product) ([]Produ
 	return results, nil
 }
 
-func (s *Service) GetProductByBarcode(ctx context.Context, code string) (*Product, error) {
-	return s.repo.GetProductByBarcode(ctx, code)
+func (s *Service) GetProductByBarcode(ctx context.Context, orgID uint, branchID uint, code string) (*ProductResult, error) {
+	product, err := s.repo.GetProductByBarcode(ctx, orgID, branchID, code)
+	if err != nil {
+		return nil, err
+	}
+	results, err := s.attachImages(ctx, []Product{*product})
+	if err != nil {
+		return nil, err
+	}
+	return &results[0], nil
 }
 
 // CreateProduct confirms in.BranchID and in.CategoryID both belong to orgID
