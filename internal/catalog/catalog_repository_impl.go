@@ -154,9 +154,13 @@ func (r *RepositoryImpl) UploadMedia(ctx context.Context) (*ProductImage, error)
 	return nil, common.ErrNotImplemented
 }
 
-// ListCombos backs `GET /combos`.
-func (r *RepositoryImpl) ListCombos(ctx context.Context) ([]Combo, error) {
-	return nil, common.ErrNotImplemented
+// ListCombos backs `GET /combos`, scoped to orgID.
+func (r *RepositoryImpl) ListCombos(ctx context.Context, orgID uint) ([]Combo, error) {
+	var combos []Combo
+	if err := r.db.WithContext(ctx).Where("org_id = ?", orgID).Find(&combos).Error; err != nil {
+		return nil, err
+	}
+	return combos, nil
 }
 
 // CreateCombo backs Service.CreateCombo's first step. Plain insert.

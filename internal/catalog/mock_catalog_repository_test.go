@@ -685,9 +685,9 @@ func (_c *MockRepository_ListCategories_Call) RunAndReturn(run func(context.Cont
 	return _c
 }
 
-// ListCombos provides a mock function with given fields: ctx
-func (_m *MockRepository) ListCombos(ctx context.Context) ([]Combo, error) {
-	ret := _m.Called(ctx)
+// ListCombos provides a mock function with given fields: ctx, orgID
+func (_m *MockRepository) ListCombos(ctx context.Context, orgID uint) ([]Combo, error) {
+	ret := _m.Called(ctx, orgID)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ListCombos")
@@ -695,19 +695,19 @@ func (_m *MockRepository) ListCombos(ctx context.Context) ([]Combo, error) {
 
 	var r0 []Combo
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context) ([]Combo, error)); ok {
-		return rf(ctx)
+	if rf, ok := ret.Get(0).(func(context.Context, uint) ([]Combo, error)); ok {
+		return rf(ctx, orgID)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context) []Combo); ok {
-		r0 = rf(ctx)
+	if rf, ok := ret.Get(0).(func(context.Context, uint) []Combo); ok {
+		r0 = rf(ctx, orgID)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]Combo)
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context) error); ok {
-		r1 = rf(ctx)
+	if rf, ok := ret.Get(1).(func(context.Context, uint) error); ok {
+		r1 = rf(ctx, orgID)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -722,13 +722,14 @@ type MockRepository_ListCombos_Call struct {
 
 // ListCombos is a helper method to define mock.On call
 //   - ctx context.Context
-func (_e *MockRepository_Expecter) ListCombos(ctx interface{}) *MockRepository_ListCombos_Call {
-	return &MockRepository_ListCombos_Call{Call: _e.mock.On("ListCombos", ctx)}
+//   - orgID uint
+func (_e *MockRepository_Expecter) ListCombos(ctx interface{}, orgID interface{}) *MockRepository_ListCombos_Call {
+	return &MockRepository_ListCombos_Call{Call: _e.mock.On("ListCombos", ctx, orgID)}
 }
 
-func (_c *MockRepository_ListCombos_Call) Run(run func(ctx context.Context)) *MockRepository_ListCombos_Call {
+func (_c *MockRepository_ListCombos_Call) Run(run func(ctx context.Context, orgID uint)) *MockRepository_ListCombos_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context))
+		run(args[0].(context.Context), args[1].(uint))
 	})
 	return _c
 }
@@ -738,7 +739,7 @@ func (_c *MockRepository_ListCombos_Call) Return(_a0 []Combo, _a1 error) *MockRe
 	return _c
 }
 
-func (_c *MockRepository_ListCombos_Call) RunAndReturn(run func(context.Context) ([]Combo, error)) *MockRepository_ListCombos_Call {
+func (_c *MockRepository_ListCombos_Call) RunAndReturn(run func(context.Context, uint) ([]Combo, error)) *MockRepository_ListCombos_Call {
 	_c.Call.Return(run)
 	return _c
 }

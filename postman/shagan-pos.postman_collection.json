@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "bf6945e6-51bb-45f1-931e-9146796a5919",
+    "_postman_id": "5daeaee9-ed70-43f0-888e-ae8c9a84a0e2",
     "name": "Shagan POS API",
     "description": "Generated from the API Endpoint Inventory doc. Every non-health route currently returns 501 until implemented.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
@@ -1688,18 +1688,16 @@
                 "header": [
                   {
                     "key": "Authorization",
-                    "value": "Bearer {{token}}",
-                    "type": "text"
+                    "value": "Bearer {{token}}"
                   },
                   {
                     "key": "Content-Type",
-                    "value": "application/json",
-                    "type": "text"
+                    "value": "application/json"
                   }
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{}",
+                  "raw": "{\n    \"name_i18n\": \"Drinks\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -1722,18 +1720,16 @@
                 "header": [
                   {
                     "key": "Authorization",
-                    "value": "Bearer {{token}}",
-                    "type": "text"
+                    "value": "Bearer {{token}}"
                   },
                   {
                     "key": "Content-Type",
-                    "value": "application/json",
-                    "type": "text"
+                    "value": "application/json"
                   }
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{}",
+                  "raw": "\n    {\n        \"name_i18n\": \"Drinks\"\n    }",
                   "options": {
                     "raw": {
                       "language": "json"

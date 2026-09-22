@@ -78,6 +78,34 @@ func TestService_ListCategories_PropagatesRepositoryError(t *testing.T) {
 	requireRestErrorStatus(t, err, http.StatusInternalServerError)
 }
 
+func TestService_ListCombos_DelegatesToRepository(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	want := []Combo{{ID: 1, OrgID: 7, Name: "Breakfast Combo"}, {ID: 2, OrgID: 7, Name: "Lunch Combo"}}
+	repo.EXPECT().ListCombos(mock.Anything, uint(7)).Return(want, nil).Once()
+
+	got, err := svc.ListCombos(context.Background(), 7)
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+}
+
+func TestService_ListCombos_PropagatesRepositoryError(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	wantErr := common.SystemError("db read failed")
+	repo.EXPECT().ListCombos(mock.Anything, uint(7)).Return(nil, wantErr).Once()
+
+	_, err := svc.ListCombos(context.Background(), 7)
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusInternalServerError)
+}
+
 func TestService_CreateCategory_BuildsModelAndPersists(t *testing.T) {
 	repo := NewMockRepository(t)
 	branches := NewMockBranchLookup(t)

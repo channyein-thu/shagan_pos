@@ -337,7 +337,11 @@ func (a *CatalogAPI) UploadMedia(c *gin.Context) {
 
 // ListCombos handles `GET /combos`.
 func (a *CatalogAPI) ListCombos(c *gin.Context) {
-	result, err := a.service.ListCombos(c.Request.Context())
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	result, err := a.service.ListCombos(c.Request.Context(), orgID)
 	if err != nil {
 		common.HandleError(c, err)
 		return

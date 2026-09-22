@@ -75,7 +75,10 @@ type Repository interface {
 	// already confirmed by a prior GetCategory call.
 	DeleteCategory(ctx context.Context, id uint) error
 	UploadMedia(ctx context.Context) (*ProductImage, error)
-	ListCombos(ctx context.Context) ([]Combo, error)
+	// ListCombos backs `GET /combos`, scoped to the authenticated caller's
+	// own organization - same reasoning as identity's org-scoped lists
+	// (e.g. ListBranches).
+	ListCombos(ctx context.Context, orgID uint) ([]Combo, error)
 	// CreateCombo backs Service.CreateCombo's first step. Plain insert -
 	// GORM sets the row's ID on the pointer it's given. Mapping the
 	// request/orgID into a Combo, and validating it, happens in the

@@ -301,8 +301,8 @@ func (s *Service) UploadMedia(ctx context.Context) (*ProductImage, error) {
 	return s.repo.UploadMedia(ctx)
 }
 
-func (s *Service) ListCombos(ctx context.Context) ([]Combo, error) {
-	return s.repo.ListCombos(ctx)
+func (s *Service) ListCombos(ctx context.Context, orgID uint) ([]Combo, error) {
+	return s.repo.ListCombos(ctx, orgID)
 }
 
 // CreateCombo enforces that Price is actually positive, ExpiresAt is
