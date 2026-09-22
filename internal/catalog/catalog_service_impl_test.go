@@ -9,6 +9,7 @@ import (
 	"image/png"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/shopspring/decimal"
@@ -746,5 +747,256 @@ func TestService_CreateProduct_ImageRowFails_CleansUpUploadedObject(t *testing.T
 	store.EXPECT().Delete(mock.Anything, "products/1/photo.png").Return(nil).Once()
 
 	_, err := svc.CreateProduct(context.Background(), 7, validCreateProductRequest(), bytes.NewReader(imgBytes), int64(len(imgBytes)), "image/png", "photo.png")
+	require.ErrorIs(t, err, dbErr)
+}
+
+func validCreateComboRequest() CreateComboRequest {
+	return CreateComboRequest{
+		Name:      "Breakfast Combo",
+		Price:     decimal.NewFromFloat(5.00),
+		ExpiresAt: time.Now().Add(24 * time.Hour),
+		Items: []CreateComboItemRequest{
+			{ProductID: 1, Qty: 1},
+			{ProductID: 2, Qty: 2},
+		},
+	}
+}
+
+func TestService_CreateCombo_HappyPath_NoImage_CreatesComboAndItems(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&Product{ID: 1, OrgID: 7}, nil).Once()
+	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(2)).Return(&Product{ID: 2, OrgID: 7}, nil).Once()
+	repo.EXPECT().
+		CreateCombo(mock.Anything, mock.MatchedBy(func(c *Combo) bool {
+			return c.OrgID == 7 && c.Name == "Breakfast Combo"
+		})).
+		Run(func(_ *gorm.DB, c *Combo) { c.ID = 9 }).
+		Return(nil).
+		Once()
+	repo.EXPECT().
+		CreateComboItems(mock.Anything, mock.MatchedBy(func(items []ComboItem) bool {
+			return len(items) == 2 &&
+				items[0].ComboID == 9 && items[0].ProductID == 1 && items[0].Qty == 1 &&
+				items[1].ComboID == 9 && items[1].ProductID == 2 && items[1].Qty == 2
+		})).
+		Return(nil).
+		Once()
+	// storage.Upload/CreateComboImage must never be called - no image in
+	// this request.
+
+	got, err := svc.CreateCombo(context.Background(), 7, validCreateComboRequest(), nil, 0, "", "")
+	require.NoError(t, err)
+	require.Equal(t, uint(9), got.ID)
+	require.Equal(t, uint(7), got.OrgID)
+}
+
+func TestService_CreateCombo_HappyPath_WithImage_CreatesComboItemsAndImage(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	imgBytes := testProductImageBytes(t, 2, 3)
+	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&Product{ID: 1, OrgID: 7}, nil).Once()
+	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(2)).Return(&Product{ID: 2, OrgID: 7}, nil).Once()
+	repo.EXPECT().
+		CreateCombo(mock.Anything, mock.Anything).
+		Run(func(_ *gorm.DB, c *Combo) { c.ID = 9 }).
+		Return(nil).
+		Once()
+	repo.EXPECT().CreateComboItems(mock.Anything, mock.Anything).Return(nil).Once()
+	store.EXPECT().
+		Upload(mock.Anything, "combos/9/photo.png", mock.Anything, int64(len(imgBytes)), "image/png").
+		Return(nil).
+		Once()
+	repo.EXPECT().
+		CreateComboImage(mock.Anything, mock.MatchedBy(func(img *ComboImage) bool {
+			return img.ComboID == 9 && img.StorageKey == "combos/9/photo.png" && img.Width == 2 && img.Height == 3
+		})).
+		Return(nil).
+		Once()
+
+	got, err := svc.CreateCombo(context.Background(), 7, validCreateComboRequest(), bytes.NewReader(imgBytes), int64(len(imgBytes)), "image/png", "photo.png")
+	require.NoError(t, err)
+	require.Equal(t, uint(9), got.ID)
+}
+
+func TestService_CreateCombo_InvalidImage_ReturnsBadRequest(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&Product{ID: 1, OrgID: 7}, nil).Once()
+	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(2)).Return(&Product{ID: 2, OrgID: 7}, nil).Once()
+	// CreateCombo must never be called - not a decodable image.
+
+	notAnImage := bytes.NewReader([]byte("this is not an image"))
+	_, err := svc.CreateCombo(context.Background(), 7, validCreateComboRequest(), notAnImage, int64(notAnImage.Len()), "image/png", "photo.png")
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusBadRequest)
+}
+
+func TestService_CreateCombo_ImageUploadFails_RollsBackCombo(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	imgBytes := testProductImageBytes(t, 2, 3)
+	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&Product{ID: 1, OrgID: 7}, nil).Once()
+	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(2)).Return(&Product{ID: 2, OrgID: 7}, nil).Once()
+	repo.EXPECT().
+		CreateCombo(mock.Anything, mock.Anything).
+		Run(func(_ *gorm.DB, c *Combo) { c.ID = 9 }).
+		Return(nil).
+		Once()
+	repo.EXPECT().CreateComboItems(mock.Anything, mock.Anything).Return(nil).Once()
+	store.EXPECT().
+		Upload(mock.Anything, "combos/9/photo.png", mock.Anything, int64(len(imgBytes)), "image/png").
+		Return(errors.New("storage unavailable")).
+		Once()
+	// CreateComboImage must never be called once the upload itself fails.
+
+	_, err := svc.CreateCombo(context.Background(), 7, validCreateComboRequest(), bytes.NewReader(imgBytes), int64(len(imgBytes)), "image/png", "photo.png")
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusInternalServerError)
+}
+
+func TestService_CreateCombo_ImageRowFails_CleansUpUploadedObject(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	imgBytes := testProductImageBytes(t, 2, 3)
+	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&Product{ID: 1, OrgID: 7}, nil).Once()
+	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(2)).Return(&Product{ID: 2, OrgID: 7}, nil).Once()
+	repo.EXPECT().
+		CreateCombo(mock.Anything, mock.Anything).
+		Run(func(_ *gorm.DB, c *Combo) { c.ID = 9 }).
+		Return(nil).
+		Once()
+	repo.EXPECT().CreateComboItems(mock.Anything, mock.Anything).Return(nil).Once()
+	store.EXPECT().
+		Upload(mock.Anything, "combos/9/photo.png", mock.Anything, int64(len(imgBytes)), "image/png").
+		Return(nil).
+		Once()
+	dbErr := errors.New("db write failed")
+	repo.EXPECT().CreateComboImage(mock.Anything, mock.Anything).Return(dbErr).Once()
+	// the now-orphaned object (no ComboImage row references it) must be
+	// cleaned up - see Service.CreateCombo's comment on why a SQL
+	// transaction rollback alone can't undo the storage upload.
+	store.EXPECT().Delete(mock.Anything, "combos/9/photo.png").Return(nil).Once()
+
+	_, err := svc.CreateCombo(context.Background(), 7, validCreateComboRequest(), bytes.NewReader(imgBytes), int64(len(imgBytes)), "image/png", "photo.png")
+	require.ErrorIs(t, err, dbErr)
+}
+
+func TestService_CreateCombo_PriceNotPositive_RejectsBeforeTouchingRepository(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	// Neither GetProduct nor CreateCombo must be called - price fails
+	// validation first.
+
+	in := validCreateComboRequest()
+	in.Price = decimal.Zero
+
+	_, err := svc.CreateCombo(context.Background(), 7, in, nil, 0, "", "")
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusBadRequest)
+}
+
+func TestService_CreateCombo_ExpiresAtNotInFuture_RejectsBeforeTouchingRepository(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	in := validCreateComboRequest()
+	in.ExpiresAt = time.Now().Add(-1 * time.Hour)
+
+	_, err := svc.CreateCombo(context.Background(), 7, in, nil, 0, "", "")
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusBadRequest)
+}
+
+func TestService_CreateCombo_DuplicateProductID_RejectsBeforeTouchingRepository(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	// GetProduct/CreateCombo must never be called - the duplicate is caught
+	// before any ownership check.
+
+	in := validCreateComboRequest()
+	in.Items = []CreateComboItemRequest{{ProductID: 1, Qty: 1}, {ProductID: 1, Qty: 2}}
+
+	_, err := svc.CreateCombo(context.Background(), 7, in, nil, 0, "", "")
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusBadRequest)
+}
+
+func TestService_CreateCombo_ItemProductNotInOrg_PropagatesNotFound(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&Product{ID: 1, OrgID: 7}, nil).Once()
+	wantErr := common.NotFoundError("product not found")
+	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(2)).Return(nil, wantErr).Once()
+	// CreateCombo must never be called for a product that isn't ours - no
+	// .EXPECT() set up for it means the mock fails the test if it is.
+
+	_, err := svc.CreateCombo(context.Background(), 7, validCreateComboRequest(), nil, 0, "", "")
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusNotFound)
+}
+
+func TestService_CreateCombo_UnexpectedRepositoryError_PropagatesAsIs(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&Product{ID: 1, OrgID: 7}, nil).Once()
+	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(2)).Return(&Product{ID: 2, OrgID: 7}, nil).Once()
+	dbErr := errors.New("connection refused")
+	repo.EXPECT().CreateCombo(mock.Anything, mock.Anything).Return(dbErr).Once()
+	// CreateComboItems must never be called once the combo insert itself
+	// fails.
+
+	_, err := svc.CreateCombo(context.Background(), 7, validCreateComboRequest(), nil, 0, "", "")
+	require.ErrorIs(t, err, dbErr)
+}
+
+func TestService_CreateCombo_ComboItemsInsertFails_PropagatesAsIs(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&Product{ID: 1, OrgID: 7}, nil).Once()
+	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(2)).Return(&Product{ID: 2, OrgID: 7}, nil).Once()
+	repo.EXPECT().
+		CreateCombo(mock.Anything, mock.Anything).
+		Run(func(_ *gorm.DB, c *Combo) { c.ID = 9 }).
+		Return(nil).
+		Once()
+	dbErr := errors.New("db write failed")
+	repo.EXPECT().CreateComboItems(mock.Anything, mock.Anything).Return(dbErr).Once()
+	// storage.Upload must never be called once the items insert itself
+	// fails.
+
+	_, err := svc.CreateCombo(context.Background(), 7, validCreateComboRequest(), nil, 0, "", "")
 	require.ErrorIs(t, err, dbErr)
 }

@@ -305,8 +305,105 @@ func (s *Service) ListCombos(ctx context.Context) ([]Combo, error) {
 	return s.repo.ListCombos(ctx)
 }
 
-func (s *Service) CreateCombo(ctx context.Context, in CreateComboRequest) (*Combo, error) {
-	return s.repo.CreateCombo(ctx, in)
+// CreateCombo enforces that Price is actually positive, ExpiresAt is
+// actually in the future (decimal.Decimal/time.Time zero-value struct tags
+// can't do either - see CreateComboRequest's doc), and no ProductID repeats
+// across in.Items, confirms every item's ProductID belongs to orgID, then
+// creates the Combo, its ComboItems, and (if file is non-nil) its
+// ComboImage together as one atomic unit of work - same reasoning as
+// CreateProduct/ProductImage, except the image itself is optional here.
+func (s *Service) CreateCombo(ctx context.Context, orgID uint, in CreateComboRequest, file io.ReadSeeker, fileSize int64, contentType, filename string) (*Combo, error) {
+	if !in.Price.IsPositive() {
+		return nil, common.BadRequestError("price must be greater than zero")
+	}
+	if !in.ExpiresAt.After(time.Now()) {
+		return nil, common.BadRequestError("expires_at must be in the future")
+	}
+
+	seen := make(map[uint]struct{}, len(in.Items))
+	for _, item := range in.Items {
+		if _, dup := seen[item.ProductID]; dup {
+			return nil, common.BadRequestError("duplicate product_id in items")
+		}
+		seen[item.ProductID] = struct{}{}
+	}
+
+	for _, item := range in.Items {
+		if _, err := s.repo.GetProduct(ctx, orgID, item.ProductID); err != nil {
+			return nil, err
+		}
+	}
+
+	var cfg image.Config
+	if file != nil {
+		var err error
+		// image.DecodeConfig only reads the header (not the full pixel
+		// data) to get Width/Height, but it still consumes bytes from file -
+		// rewind before the full content gets uploaded below.
+		cfg, _, err = image.DecodeConfig(file)
+		if err != nil {
+			return nil, common.BadRequestError("uploaded file is not a valid image")
+		}
+		if _, err := file.Seek(0, io.SeekStart); err != nil {
+			return nil, common.SystemError("failed to rewind uploaded image")
+		}
+	}
+
+	var result *Combo
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		combo := Combo{
+			OrgID:     orgID,
+			Name:      in.Name,
+			Price:     in.Price,
+			ExpiresAt: in.ExpiresAt,
+		}
+		if err := s.repo.CreateCombo(tx, &combo); err != nil {
+			return err
+		}
+
+		items := make([]ComboItem, len(in.Items))
+		for i, item := range in.Items {
+			items[i] = ComboItem{ComboID: combo.ID, ProductID: item.ProductID, Qty: item.Qty}
+		}
+		if err := s.repo.CreateComboItems(tx, items); err != nil {
+			return err
+		}
+
+		if file == nil {
+			result = &combo
+			return nil
+		}
+
+		// keyed by the new combo's ID, so it's only known once the row
+		// above exists.
+		key := fmt.Sprintf("combos/%d/%s", combo.ID, filename)
+		if err := s.storage.Upload(ctx, key, file, fileSize, contentType); err != nil {
+			return common.SystemError("failed to upload combo image")
+		}
+
+		comboImage := ComboImage{
+			ComboID:    combo.ID,
+			StorageKey: key,
+			Width:      cfg.Width,
+			Height:     cfg.Height,
+		}
+		if err := s.repo.CreateComboImage(tx, &comboImage); err != nil {
+			// same reasoning as CreateProduct's cleanup: the DB write
+			// failing rolls back the SQL rows, but can't undo the object
+			// storage upload above, so clean it up here to avoid leaving an
+			// orphaned object with no row referencing it.
+			_ = s.storage.Delete(ctx, key)
+			return err
+		}
+
+		result = &combo
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
 }
 
 func (s *Service) UpdateCombo(ctx context.Context, id uint, in UpdateComboRequest) (*Combo, error) {

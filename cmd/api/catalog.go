@@ -1,8 +1,11 @@
 package api
 
 import (
+	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
@@ -342,14 +345,78 @@ func (a *CatalogAPI) ListCombos(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// CreateCombo handles `POST /combos`.
+// CreateCombo handles `POST /combos`. Multipart form: name, price,
+// expires_at, and items (a JSON-encoded array of {"product_id","qty"}
+// objects) as form fields, plus an optional "image" file - unlike
+// CreateProduct, a combo can exist without one.
 func (a *CatalogAPI) CreateCombo(c *gin.Context) {
-	var in catalog.CreateComboRequest
-	if err := c.ShouldBindJSON(&in); err != nil {
-		common.HandleError(c, common.BadRequestError(err.Error()))
+	orgID, ok := requireOrgID(c)
+	if !ok {
 		return
 	}
-	result, err := a.service.CreateCombo(c.Request.Context(), in)
+
+	name := c.PostForm("name")
+	if name == "" {
+		common.HandleError(c, common.BadRequestError("name is required"))
+		return
+	}
+	price, err := decimal.NewFromString(c.PostForm("price"))
+	if err != nil {
+		common.HandleError(c, common.BadRequestError("invalid price"))
+		return
+	}
+	expiresAt, err := time.Parse(time.RFC3339, c.PostForm("expires_at"))
+	if err != nil {
+		common.HandleError(c, common.BadRequestError("invalid expires_at"))
+		return
+	}
+
+	var items []catalog.CreateComboItemRequest
+	if err := json.Unmarshal([]byte(c.PostForm("items")), &items); err != nil {
+		common.HandleError(c, common.BadRequestError("invalid items"))
+		return
+	}
+	if len(items) == 0 {
+		common.HandleError(c, common.BadRequestError("items must have at least one entry"))
+		return
+	}
+	for _, item := range items {
+		if item.ProductID == 0 {
+			common.HandleError(c, common.BadRequestError("product_id is required for every item"))
+			return
+		}
+		if item.Qty < 1 {
+			common.HandleError(c, common.BadRequestError("qty must be at least 1 for every item"))
+			return
+		}
+	}
+
+	in := catalog.CreateComboRequest{
+		Name:      name,
+		Price:     price,
+		ExpiresAt: expiresAt,
+		Items:     items,
+	}
+
+	// image is optional, unlike CreateProduct's - only read it when the
+	// caller actually attached one.
+	var file io.ReadSeeker
+	var fileSize int64
+	var contentType, filename string
+	if fileHeader, err := c.FormFile("image"); err == nil {
+		f, err := fileHeader.Open()
+		if err != nil {
+			common.HandleError(c, common.BadRequestError("could not read image"))
+			return
+		}
+		defer f.Close()
+		file = f
+		fileSize = fileHeader.Size
+		contentType = fileHeader.Header.Get("Content-Type")
+		filename = fileHeader.Filename
+	}
+
+	result, err := a.service.CreateCombo(c.Request.Context(), orgID, in, file, fileSize, contentType, filename)
 	if err != nil {
 		common.HandleError(c, err)
 		return

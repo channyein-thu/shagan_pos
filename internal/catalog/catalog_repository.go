@@ -76,7 +76,24 @@ type Repository interface {
 	DeleteCategory(ctx context.Context, id uint) error
 	UploadMedia(ctx context.Context) (*ProductImage, error)
 	ListCombos(ctx context.Context) ([]Combo, error)
-	CreateCombo(ctx context.Context, in CreateComboRequest) (*Combo, error)
+	// CreateCombo backs Service.CreateCombo's first step. Plain insert -
+	// GORM sets the row's ID on the pointer it's given. Mapping the
+	// request/orgID into a Combo, and validating it, happens in the
+	// service, not here. db is either the repository's normal connection or
+	// an in-flight transaction handed down by the caller -
+	// Service.CreateCombo runs this and CreateComboItems inside one
+	// db.Transaction, since a combo without any bundled products should
+	// never exist (same reasoning as Product/ProductImage).
+	CreateCombo(db *gorm.DB, combo *Combo) error
+	// CreateComboItems backs Service.CreateCombo's second step. Plain
+	// slice-insert, same db-is-either-plain-or-in-flight-transaction
+	// reasoning as CreateCombo above.
+	CreateComboItems(db *gorm.DB, items []ComboItem) error
+	// CreateComboImage backs Service.CreateCombo's optional third step -
+	// only called when the request actually included an image. Plain
+	// insert, same db-is-either-plain-or-in-flight-transaction reasoning as
+	// CreateCombo above.
+	CreateComboImage(db *gorm.DB, image *ComboImage) error
 	UpdateCombo(ctx context.Context, id uint, in UpdateComboRequest) (*Combo, error)
 	DeleteCombo(ctx context.Context, id uint) error
 }

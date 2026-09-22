@@ -14,14 +14,32 @@ type CreateCategoryRequest struct {
 	NameI18n string `json:"name_i18n" binding:"required"`
 }
 
-// CreateComboRequest is the request body for the endpoint that creates or updates a Combo.
-// TODO: fields mirroring org/branch/staff/device ownership (e.g. OrgID, BranchID, StaffID)
-// likely belong to the authenticated session/context, not client input - review before use.
+// CreateComboRequest is the request body for `POST /combos`. Bound from a
+// multipart form, not JSON - `image` is an optional file field alongside
+// these (see cmd/api.CatalogAPI.CreateCombo), so the struct binding tags
+// below are never actually evaluated (same situation as
+// CreateProductRequest already is); they document the shape only. OrgID is
+// deliberately not here - same reasoning as CreateCategoryRequest. Price
+// carries no binding tag - same reasoning as CreateProductRequest's Price:
+// decimal.Decimal's zero value only catches an omitted field, not an
+// explicit "price": 0, so Service.CreateCombo validates it's actually
+// positive. Items must contain at least one entry with no duplicate
+// ProductID - a combo bundles at least one product, and listing the same
+// product twice makes no sense; the handler/service enforce this manually
+// (see the same not-a-JSON-bind reasoning above). Each ProductID's
+// ownership is checked against orgID by the service, same reasoning as
+// CreateProduct's branch/category ownership checks.
 type CreateComboRequest struct {
-	OrgID     uint            `json:"org_id" binding:"required"`
-	Name      string          `json:"name" binding:"required"`
-	Price     decimal.Decimal `json:"price" binding:"required"`
-	ExpiresAt time.Time       `json:"expires_at" binding:"required"`
+	Name      string                   `json:"name" binding:"required"`
+	Price     decimal.Decimal          `json:"price"`
+	ExpiresAt time.Time                `json:"expires_at" binding:"required"`
+	Items     []CreateComboItemRequest `json:"items" binding:"required,min=1,unique=ProductID,dive"`
+}
+
+// CreateComboItemRequest is one bundled product within CreateComboRequest.
+type CreateComboItemRequest struct {
+	ProductID uint `json:"product_id" binding:"required"`
+	Qty       int  `json:"qty" binding:"min=1"`
 }
 
 // CreateProductRequest is the request body for `POST /products`. OrgID is

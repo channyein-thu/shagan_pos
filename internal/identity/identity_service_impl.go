@@ -17,7 +17,7 @@ import (
 
 const (
 	// DefaultAccessTokenTTL is how long an issued access token stays valid.
-	DefaultAccessTokenTTL = 15 * time.Minute
+	DefaultAccessTokenTTL = 60 * time.Minute
 	// DefaultRefreshTokenTTL is how long a session's refresh token stays valid.
 	DefaultRefreshTokenTTL = 30 * 24 * time.Hour
 	// DefaultStaffPINTokenTTL is how long a staff-PIN session token stays

@@ -69,34 +69,22 @@ func (_c *MockRepository_CreateCategory_Call) RunAndReturn(run func(context.Cont
 	return _c
 }
 
-// CreateCombo provides a mock function with given fields: ctx, in
-func (_m *MockRepository) CreateCombo(ctx context.Context, in CreateComboRequest) (*Combo, error) {
-	ret := _m.Called(ctx, in)
+// CreateCombo provides a mock function with given fields: db, combo
+func (_m *MockRepository) CreateCombo(db *gorm.DB, combo *Combo) error {
+	ret := _m.Called(db, combo)
 
 	if len(ret) == 0 {
 		panic("no return value specified for CreateCombo")
 	}
 
-	var r0 *Combo
-	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, CreateComboRequest) (*Combo, error)); ok {
-		return rf(ctx, in)
-	}
-	if rf, ok := ret.Get(0).(func(context.Context, CreateComboRequest) *Combo); ok {
-		r0 = rf(ctx, in)
+	var r0 error
+	if rf, ok := ret.Get(0).(func(*gorm.DB, *Combo) error); ok {
+		r0 = rf(db, combo)
 	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*Combo)
-		}
+		r0 = ret.Error(0)
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, CreateComboRequest) error); ok {
-		r1 = rf(ctx, in)
-	} else {
-		r1 = ret.Error(1)
-	}
-
-	return r0, r1
+	return r0
 }
 
 // MockRepository_CreateCombo_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CreateCombo'
@@ -105,25 +93,119 @@ type MockRepository_CreateCombo_Call struct {
 }
 
 // CreateCombo is a helper method to define mock.On call
-//   - ctx context.Context
-//   - in CreateComboRequest
-func (_e *MockRepository_Expecter) CreateCombo(ctx interface{}, in interface{}) *MockRepository_CreateCombo_Call {
-	return &MockRepository_CreateCombo_Call{Call: _e.mock.On("CreateCombo", ctx, in)}
+//   - db *gorm.DB
+//   - combo *Combo
+func (_e *MockRepository_Expecter) CreateCombo(db interface{}, combo interface{}) *MockRepository_CreateCombo_Call {
+	return &MockRepository_CreateCombo_Call{Call: _e.mock.On("CreateCombo", db, combo)}
 }
 
-func (_c *MockRepository_CreateCombo_Call) Run(run func(ctx context.Context, in CreateComboRequest)) *MockRepository_CreateCombo_Call {
+func (_c *MockRepository_CreateCombo_Call) Run(run func(db *gorm.DB, combo *Combo)) *MockRepository_CreateCombo_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(CreateComboRequest))
+		run(args[0].(*gorm.DB), args[1].(*Combo))
 	})
 	return _c
 }
 
-func (_c *MockRepository_CreateCombo_Call) Return(_a0 *Combo, _a1 error) *MockRepository_CreateCombo_Call {
-	_c.Call.Return(_a0, _a1)
+func (_c *MockRepository_CreateCombo_Call) Return(_a0 error) *MockRepository_CreateCombo_Call {
+	_c.Call.Return(_a0)
 	return _c
 }
 
-func (_c *MockRepository_CreateCombo_Call) RunAndReturn(run func(context.Context, CreateComboRequest) (*Combo, error)) *MockRepository_CreateCombo_Call {
+func (_c *MockRepository_CreateCombo_Call) RunAndReturn(run func(*gorm.DB, *Combo) error) *MockRepository_CreateCombo_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// CreateComboImage provides a mock function with given fields: db, image
+func (_m *MockRepository) CreateComboImage(db *gorm.DB, image *ComboImage) error {
+	ret := _m.Called(db, image)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CreateComboImage")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(*gorm.DB, *ComboImage) error); ok {
+		r0 = rf(db, image)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// MockRepository_CreateComboImage_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CreateComboImage'
+type MockRepository_CreateComboImage_Call struct {
+	*mock.Call
+}
+
+// CreateComboImage is a helper method to define mock.On call
+//   - db *gorm.DB
+//   - image *ComboImage
+func (_e *MockRepository_Expecter) CreateComboImage(db interface{}, image interface{}) *MockRepository_CreateComboImage_Call {
+	return &MockRepository_CreateComboImage_Call{Call: _e.mock.On("CreateComboImage", db, image)}
+}
+
+func (_c *MockRepository_CreateComboImage_Call) Run(run func(db *gorm.DB, image *ComboImage)) *MockRepository_CreateComboImage_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(*gorm.DB), args[1].(*ComboImage))
+	})
+	return _c
+}
+
+func (_c *MockRepository_CreateComboImage_Call) Return(_a0 error) *MockRepository_CreateComboImage_Call {
+	_c.Call.Return(_a0)
+	return _c
+}
+
+func (_c *MockRepository_CreateComboImage_Call) RunAndReturn(run func(*gorm.DB, *ComboImage) error) *MockRepository_CreateComboImage_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// CreateComboItems provides a mock function with given fields: db, items
+func (_m *MockRepository) CreateComboItems(db *gorm.DB, items []ComboItem) error {
+	ret := _m.Called(db, items)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CreateComboItems")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(*gorm.DB, []ComboItem) error); ok {
+		r0 = rf(db, items)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// MockRepository_CreateComboItems_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CreateComboItems'
+type MockRepository_CreateComboItems_Call struct {
+	*mock.Call
+}
+
+// CreateComboItems is a helper method to define mock.On call
+//   - db *gorm.DB
+//   - items []ComboItem
+func (_e *MockRepository_Expecter) CreateComboItems(db interface{}, items interface{}) *MockRepository_CreateComboItems_Call {
+	return &MockRepository_CreateComboItems_Call{Call: _e.mock.On("CreateComboItems", db, items)}
+}
+
+func (_c *MockRepository_CreateComboItems_Call) Run(run func(db *gorm.DB, items []ComboItem)) *MockRepository_CreateComboItems_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(*gorm.DB), args[1].([]ComboItem))
+	})
+	return _c
+}
+
+func (_c *MockRepository_CreateComboItems_Call) Return(_a0 error) *MockRepository_CreateComboItems_Call {
+	_c.Call.Return(_a0)
+	return _c
+}
+
+func (_c *MockRepository_CreateComboItems_Call) RunAndReturn(run func(*gorm.DB, []ComboItem) error) *MockRepository_CreateComboItems_Call {
 	_c.Call.Return(run)
 	return _c
 }

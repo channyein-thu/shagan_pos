@@ -39,12 +39,8 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/health",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "health"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
             },
             "description": "Liveness + DB ping"
           }
@@ -56,12 +52,8 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/healthz",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "healthz"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["healthz"]
             },
             "description": "Liveness + DB ping (alias)"
           }
@@ -92,13 +84,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/internal/accounts",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "internal",
-                "accounts"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["internal", "accounts"]
             },
             "body": {
               "mode": "raw",
@@ -133,14 +120,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/internal/accounts/pos",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "internal",
-                "accounts",
-                "pos"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["internal", "accounts", "pos"]
             },
             "body": {
               "mode": "raw",
@@ -175,13 +156,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/internal/branches",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "internal",
-                "branches"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["internal", "branches"]
             },
             "body": {
               "mode": "raw",
@@ -216,13 +192,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/internal/devices",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "internal",
-                "devices"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["internal", "devices"]
             },
             "body": {
               "mode": "raw",
@@ -254,15 +225,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/auth/login",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "auth",
-                "login"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "login"]
             },
             "description": "Owner email+password login",
             "auth": {
@@ -270,7 +234,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"owner@example.com\",\n  \"password\": \"changeme123\"\n}",
+              "raw": "{\n  \"email\": \"owner@example.com\",\n  \"password\": \"changeme\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -307,15 +271,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/auth/refresh",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "auth",
-                "refresh"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "refresh"]
             },
             "description": "RefreshSession",
             "auth": {
@@ -365,15 +322,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/auth/logout",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "auth",
-                "logout"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "logout"]
             },
             "description": "Revokes refresh token",
             "body": {
@@ -400,14 +350,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/me",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "me"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "me"]
             },
             "description": "Caller's identity + roles/permissions"
           }
@@ -430,14 +374,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/me",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "me"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "me"]
             },
             "body": {
               "mode": "raw",
@@ -469,17 +407,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/staff/:id/manager-pin/verify",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "staff",
-                ":id",
-                "manager-pin",
-                "verify"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "staff", ":id", "manager-pin", "verify"],
               "variable": [
                 {
                   "key": "id",
@@ -531,17 +460,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/staff/:id/pin/verify",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "staff",
-                ":id",
-                "pin",
-                "verify"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "staff", ":id", "pin", "verify"],
               "variable": [
                 {
                   "key": "id",
@@ -593,14 +513,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/devices",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "devices"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "devices"]
             },
             "body": {
               "mode": "raw",
@@ -627,14 +541,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/devices",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "devices"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "devices"]
             },
             "description": "ListDevices"
           }
@@ -657,15 +565,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/devices/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "devices",
-                ":id"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "devices", ":id"],
               "variable": [
                 {
                   "key": "id",
@@ -698,14 +599,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/branches",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "branches"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "branches"]
             },
             "description": "ListBranches"
           }
@@ -728,14 +623,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/branches",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "branches"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "branches"]
             },
             "body": {
               "mode": "raw",
@@ -762,15 +651,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/branches/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "branches",
-                ":id"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "branches", ":id"],
               "variable": [
                 {
                   "key": "id",
@@ -799,15 +681,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/branches/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "branches",
-                ":id"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "branches", ":id"],
               "variable": [
                 {
                   "key": "id",
@@ -840,16 +715,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/branches/:id/staff",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "branches",
-                ":id",
-                "staff"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "branches", ":id", "staff"],
               "variable": [
                 {
                   "key": "id",
@@ -873,16 +740,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/branches/:id/managers?permission=approve_void",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "branches",
-                ":id",
-                "managers"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "branches", ":id", "managers"],
               "query": [
                 {
                   "key": "permission",
@@ -912,14 +771,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/staff",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "staff"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "staff"]
             },
             "description": "ListStaff"
           }
@@ -942,14 +795,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/staff",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "staff"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "staff"]
             },
             "body": {
               "mode": "raw",
@@ -976,15 +823,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/staff/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "staff",
-                ":id"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "staff", ":id"],
               "variable": [
                 {
                   "key": "id",
@@ -1013,15 +853,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/staff/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "staff",
-                ":id"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "staff", ":id"],
               "variable": [
                 {
                   "key": "id",
@@ -1054,14 +887,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/roles",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "roles"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "roles"]
             },
             "description": "ListRoles"
           }
@@ -1079,14 +906,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/permissions",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "permissions"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "permissions"]
             },
             "description": "ListPermissions"
           }
@@ -1104,16 +925,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/roles/:id/permissions",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "roles",
-                ":id",
-                "permissions"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "roles", ":id", "permissions"],
               "variable": [
                 {
                   "key": "id",
@@ -1147,14 +960,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/shifts",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "shifts"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "shifts"]
             },
             "body": {
               "mode": "raw",
@@ -1181,15 +988,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/shifts/current",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "shifts",
-                "current"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "shifts", "current"]
             },
             "description": "GetCurrentShift"
           }
@@ -1207,15 +1007,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/shifts/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "shifts",
-                ":id"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "shifts", ":id"],
               "variable": [
                 {
                   "key": "id",
@@ -1239,16 +1032,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/shifts/:id/close",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "shifts",
-                ":id",
-                "close"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "shifts", ":id", "close"],
               "variable": [
                 {
                   "key": "id",
@@ -1272,16 +1057,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/shifts/:id/summary",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "shifts",
-                ":id",
-                "summary"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "shifts", ":id", "summary"],
               "variable": [
                 {
                   "key": "id",
@@ -1305,16 +1082,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/shifts/:id/reconciliations",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "shifts",
-                ":id",
-                "reconciliations"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "shifts", ":id", "reconciliations"],
               "variable": [
                 {
                   "key": "id",
@@ -1343,14 +1112,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/drawer-events",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "drawer-events"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "drawer-events"]
             },
             "body": {
               "mode": "raw",
@@ -1377,14 +1140,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/drawer-events",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "drawer-events"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "drawer-events"]
             },
             "description": "ListDrawerEvents"
           }
@@ -1402,14 +1159,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/expenses",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "expenses"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "expenses"]
             },
             "description": "ListExpenses"
           }
@@ -1432,14 +1183,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/expenses",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "expenses"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "expenses"]
             },
             "body": {
               "mode": "raw",
@@ -1471,15 +1216,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/expenses/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "expenses",
-                ":id"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "expenses", ":id"],
               "variable": [
                 {
                   "key": "id",
@@ -1512,15 +1250,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/expenses/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "expenses",
-                ":id"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "expenses", ":id"],
               "variable": [
                 {
                   "key": "id",
@@ -1549,14 +1280,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/products",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "products"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "products"]
             },
             "description": "Lists products in the caller's org. If the caller's token carries a branch (a pos device), results are restricted to that branch automatically - owner/service_center tokens see every branch. No query params - the scope comes from the token, not something the client can override."
           }
@@ -1574,15 +1299,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/products/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "products",
-                ":id"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "products", ":id"],
               "variable": [
                 {
                   "key": "id",
@@ -1606,16 +1324,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/products/barcode/:code?branch_id=1",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "products",
-                "barcode",
-                ":code"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "products", "barcode", ":code"],
               "variable": [
                 {
                   "key": "code",
@@ -1647,14 +1357,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/products",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "products"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "products"]
             },
             "body": {
               "mode": "formdata",
@@ -1737,15 +1441,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/products/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "products",
-                ":id"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "products", ":id"],
               "variable": [
                 {
                   "key": "id",
@@ -1778,15 +1475,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/products/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "products",
-                ":id"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "products", ":id"],
               "variable": [
                 {
                   "key": "id",
@@ -1810,14 +1500,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/categories",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "categories"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "categories"]
             },
             "description": "ListCategories"
           }
@@ -1840,14 +1524,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/categories",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "categories"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "categories"]
             },
             "body": {
               "mode": "raw",
@@ -1879,15 +1557,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/categories/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "categories",
-                ":id"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "categories", ":id"],
               "variable": [
                 {
                   "key": "id",
@@ -1920,15 +1591,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/categories/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "categories",
-                ":id"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "categories", ":id"],
               "variable": [
                 {
                   "key": "id",
@@ -1952,14 +1616,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/media",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "media"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "media"]
             },
             "description": "Upload; returns storage_key"
           }
@@ -1977,14 +1635,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/combos",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "combos"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "combos"]
             },
             "description": "ListCombos"
           }
@@ -1998,34 +1650,44 @@
                 "key": "Authorization",
                 "value": "Bearer {{token}}",
                 "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
               }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/combos",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "combos"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "combos"]
             },
             "body": {
-              "mode": "raw",
-              "raw": "{}",
-              "options": {
-                "raw": {
-                  "language": "json"
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "name",
+                  "value": "Breakfast Combo",
+                  "type": "text"
+                },
+                {
+                  "key": "price",
+                  "value": "5.00",
+                  "type": "text"
+                },
+                {
+                  "key": "expires_at",
+                  "value": "2026-12-31T00:00:00Z",
+                  "type": "text"
+                },
+                {
+                  "key": "items",
+                  "value": "[{\"product_id\": 1, \"qty\": 1}, {\"product_id\": 2, \"qty\": 2}]",
+                  "type": "text"
+                },
+                {
+                  "key": "image",
+                  "type": "file",
+                  "src": []
                 }
-              }
+              ]
             },
-            "description": "CreateCombo"
+            "description": "Multipart upload: name, price, expires_at (RFC3339), and items (a JSON-encoded array of {\"product_id\",\"qty\"} objects) as form fields, plus an optional \"image\" file - unlike CreateProduct, a combo can be created without one (leave the file field empty to skip it). price must be > 0, expires_at must be in the future, and items must have at least one entry with no duplicate product_id - each product_id must already exist in your org (create products first via CreateProduct)."
           }
         },
         {
@@ -2046,15 +1708,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/combos/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "combos",
-                ":id"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "combos", ":id"],
               "variable": [
                 {
                   "key": "id",
@@ -2087,15 +1742,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/combos/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "combos",
-                ":id"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "combos", ":id"],
               "variable": [
                 {
                   "key": "id",
@@ -2124,14 +1772,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/stock-levels",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "stock-levels"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "stock-levels"]
             },
             "description": "Filter by product/branch"
           }
@@ -2149,15 +1791,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/inventory/low-stock",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "inventory",
-                "low-stock"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "low-stock"]
             },
             "description": "ListLowStock"
           }
@@ -2175,15 +1810,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/inventory/ledger",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "inventory",
-                "ledger"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "ledger"]
             },
             "description": "Read-only - never written directly by a client"
           }
@@ -2206,15 +1834,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/inventory/adjustments",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "inventory",
-                "adjustments"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "adjustments"]
             },
             "body": {
               "mode": "raw",
@@ -2241,14 +1862,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/stock-transfers",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "stock-transfers"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "stock-transfers"]
             },
             "description": "ListStockTransfers"
           }
@@ -2271,14 +1886,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/stock-transfers",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "stock-transfers"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "stock-transfers"]
             },
             "body": {
               "mode": "raw",
@@ -2310,15 +1919,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/stock-transfers/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "stock-transfers",
-                ":id"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "stock-transfers", ":id"],
               "variable": [
                 {
                   "key": "id",
@@ -2361,14 +1963,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/sales",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "sales"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "sales"]
             },
             "body": {
               "mode": "raw",
@@ -2395,14 +1991,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/sales",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "sales"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "sales"]
             },
             "description": "ListSales"
           }
@@ -2420,15 +2010,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/sales/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "sales",
-                ":id"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "sales", ":id"],
               "variable": [
                 {
                   "key": "id",
@@ -2452,16 +2035,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/sales/:id/receipt",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "sales",
-                ":id",
-                "receipt"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "sales", ":id", "receipt"],
               "variable": [
                 {
                   "key": "id",
@@ -2485,16 +2060,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/sales/:id/reprint",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "sales",
-                ":id",
-                "reprint"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "sales", ":id", "reprint"],
               "variable": [
                 {
                   "key": "id",
@@ -2523,14 +2090,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/held-sales",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "held-sales"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "held-sales"]
             },
             "body": {
               "mode": "raw",
@@ -2557,14 +2118,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/held-sales",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "held-sales"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "held-sales"]
             },
             "description": "ListHeldSales"
           }
@@ -2582,15 +2137,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/held-sales/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "held-sales",
-                ":id"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "held-sales", ":id"],
               "variable": [
                 {
                   "key": "id",
@@ -2624,16 +2172,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/sales/:id/void",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "sales",
-                ":id",
-                "void"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "sales", ":id", "void"],
               "variable": [
                 {
                   "key": "id",
@@ -2666,14 +2206,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/voids",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "voids"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "voids"]
             },
             "description": "ListVoids"
           }
@@ -2696,14 +2230,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/returns",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "returns"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "returns"]
             },
             "body": {
               "mode": "raw",
@@ -2730,14 +2258,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/returns",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "returns"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "returns"]
             },
             "description": "ListReturns"
           }
@@ -2755,15 +2277,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/returns/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "returns",
-                ":id"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "returns", ":id"],
               "variable": [
                 {
                   "key": "id",
@@ -2792,14 +2307,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/exchanges",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "exchanges"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "exchanges"]
             },
             "body": {
               "mode": "raw",
@@ -2826,14 +2335,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/exchanges",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "exchanges"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "exchanges"]
             },
             "description": "ListExchanges"
           }
@@ -2851,15 +2354,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/exchanges/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "exchanges",
-                ":id"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "exchanges", ":id"],
               "variable": [
                 {
                   "key": "id",
@@ -2888,14 +2384,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/customers",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "customers"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "customers"]
             },
             "description": "ListCustomers"
           }
@@ -2918,14 +2408,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/customers",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "customers"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "customers"]
             },
             "body": {
               "mode": "raw",
@@ -2952,15 +2436,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/customers/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "customers",
-                ":id"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "customers", ":id"],
               "variable": [
                 {
                   "key": "id",
@@ -2984,16 +2461,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/customers/:id/consents",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "customers",
-                ":id",
-                "consents"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "customers", ":id", "consents"],
               "variable": [
                 {
                   "key": "id",
@@ -3022,16 +2491,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/customers/:id/consents",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "customers",
-                ":id",
-                "consents"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "customers", ":id", "consents"],
               "variable": [
                 {
                   "key": "id",
@@ -3069,14 +2530,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/suppliers",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "suppliers"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "suppliers"]
             },
             "description": "ListSuppliers"
           }
@@ -3099,14 +2554,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/suppliers",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "suppliers"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "suppliers"]
             },
             "body": {
               "mode": "raw",
@@ -3138,15 +2587,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/suppliers/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "suppliers",
-                ":id"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "suppliers", ":id"],
               "variable": [
                 {
                   "key": "id",
@@ -3179,15 +2621,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/suppliers/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "suppliers",
-                ":id"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "suppliers", ":id"],
               "variable": [
                 {
                   "key": "id",
@@ -3211,14 +2646,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/purchase-orders",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "purchase-orders"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "purchase-orders"]
             },
             "description": "ListPurchaseOrders"
           }
@@ -3241,14 +2670,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/purchase-orders",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "purchase-orders"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "purchase-orders"]
             },
             "body": {
               "mode": "raw",
@@ -3275,15 +2698,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/purchase-orders/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "purchase-orders",
-                ":id"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "purchase-orders", ":id"],
               "variable": [
                 {
                   "key": "id",
@@ -3312,15 +2728,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/purchase-orders/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "purchase-orders",
-                ":id"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "purchase-orders", ":id"],
               "variable": [
                 {
                   "key": "id",
@@ -3358,16 +2767,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/purchase-orders/:id/receipts",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "purchase-orders",
-                ":id",
-                "receipts"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "purchase-orders", ":id", "receipts"],
               "variable": [
                 {
                   "key": "id",
@@ -3405,14 +2806,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/receipt-settings",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "receipt-settings"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "receipt-settings"]
             },
             "description": "Needed for the edit form's pre-fill / live preview"
           }
@@ -3435,14 +2830,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/receipt-settings",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "receipt-settings"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "receipt-settings"]
             },
             "body": {
               "mode": "raw",
@@ -3469,15 +2858,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/printers/test",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "printers",
-                "test"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "printers", "test"]
             },
             "description": "No table; renders a test payload"
           }
@@ -3495,16 +2877,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/branches/:id/payment-qr-codes",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "branches",
-                ":id",
-                "payment-qr-codes"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "branches", ":id", "payment-qr-codes"],
               "variable": [
                 {
                   "key": "id",
@@ -3543,16 +2917,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/branches/:id/payment-qr-codes",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "branches",
-                ":id",
-                "payment-qr-codes"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "branches", ":id", "payment-qr-codes"],
               "variable": [
                 {
                   "key": "id",
@@ -3575,9 +2941,7 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/branches/:id/payment-qr-codes/:qrId",
-              "host": [
-                "{{baseUrl}}"
-              ],
+              "host": ["{{baseUrl}}"],
               "path": [
                 "api",
                 "v1",
@@ -3617,14 +2981,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/audit-log",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "audit-log"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "audit-log"]
             },
             "description": "Read-only; written via mutation hooks, not a public POST"
           }
@@ -3647,15 +3005,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/sync/catalog",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "sync",
-                "catalog"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "sync", "catalog"]
             },
             "description": "Snapshot + ETag for offline caching (products/categories/combos)"
           }
@@ -3673,15 +3024,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/sync/sales",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "sync",
-                "sales"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "sync", "sales"]
             },
             "description": "Queued-sale ingest, idempotent"
           }
@@ -3699,15 +3043,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/sync/flush",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "sync",
-                "flush"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "sync", "flush"]
             },
             "description": "FlushSync"
           }
@@ -3725,15 +3062,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/sync/status",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "sync",
-                "status"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "sync", "status"]
             },
             "description": "GetSyncStatus"
           }
@@ -3751,15 +3081,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/sync/conflicts",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "sync",
-                "conflicts"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "sync", "conflicts"]
             },
             "description": "ListSyncConflicts"
           }
@@ -3777,17 +3100,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/sync/conflicts/:id/resolve",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "sync",
-                "conflicts",
-                ":id",
-                "resolve"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "sync", "conflicts", ":id", "resolve"],
               "variable": [
                 {
                   "key": "id",
@@ -3816,15 +3130,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/reports/home-summary",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "reports",
-                "home-summary"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "reports", "home-summary"]
             },
             "description": "GetHomeSummary"
           }
@@ -3842,15 +3149,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/reports/stock-overview",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "reports",
-                "stock-overview"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "reports", "stock-overview"]
             },
             "description": "GetStockOverview"
           }
@@ -3868,15 +3168,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/reports/today",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "reports",
-                "today"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "reports", "today"]
             },
             "description": "GetTodayReport"
           }
@@ -3894,15 +3187,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/reports/revenue-trend",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "reports",
-                "revenue-trend"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "reports", "revenue-trend"]
             },
             "description": "GetRevenueTrend"
           }
@@ -3920,15 +3206,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/reports/sales-summary",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "reports",
-                "sales-summary"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "reports", "sales-summary"]
             },
             "description": "GetSalesSummary"
           }
@@ -3946,15 +3225,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/reports/sales-trend",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "reports",
-                "sales-trend"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "reports", "sales-trend"]
             },
             "description": "GetSalesTrend"
           }
@@ -3972,15 +3244,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/reports/payment-methods",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "reports",
-                "payment-methods"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "reports", "payment-methods"]
             },
             "description": "GetPaymentMethodsReport"
           }
@@ -3998,15 +3263,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/reports/transactions",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "reports",
-                "transactions"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "reports", "transactions"]
             },
             "description": "GetTransactionsReport"
           }
@@ -4024,15 +3282,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/reports/product-sales",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "reports",
-                "product-sales"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "reports", "product-sales"]
             },
             "description": "GetProductSalesReport"
           }
@@ -4050,15 +3301,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/reports/top-products",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "reports",
-                "top-products"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "reports", "top-products"]
             },
             "description": "GetTopProducts"
           }
@@ -4076,15 +3320,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/reports/export",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "reports",
-                "export"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "reports", "export"]
             },
             "description": "DEFER per the cut list"
           }

@@ -65,3 +65,14 @@ type ComboItem struct {
 	ComboID   uint `gorm:"index;not null" json:"combo_id"`
 	Qty       int  `gorm:"not null" json:"qty"`
 }
+
+// ComboImage is a combo's image - the ERD doesn't define this table, but a
+// combo can optionally carry one image at creation time, same shape as
+// ProductImage.
+type ComboImage struct {
+	ID         uint   `gorm:"primaryKey;autoIncrement" json:"id"`
+	ComboID    uint   `gorm:"index;not null" json:"combo_id"`
+	StorageKey string `gorm:"size:500;not null" json:"storage_key"`
+	Width      int    `gorm:"not null" json:"width"`
+	Height     int    `gorm:"not null" json:"height"`
+}

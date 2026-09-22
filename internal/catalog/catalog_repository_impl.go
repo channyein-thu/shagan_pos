@@ -159,9 +159,21 @@ func (r *RepositoryImpl) ListCombos(ctx context.Context) ([]Combo, error) {
 	return nil, common.ErrNotImplemented
 }
 
-// CreateCombo backs `POST /combos`.
-func (r *RepositoryImpl) CreateCombo(ctx context.Context, in CreateComboRequest) (*Combo, error) {
-	return nil, common.ErrNotImplemented
+// CreateCombo backs Service.CreateCombo's first step. Plain insert.
+func (r *RepositoryImpl) CreateCombo(db *gorm.DB, combo *Combo) error {
+	return db.Create(combo).Error
+}
+
+// CreateComboItems backs Service.CreateCombo's second step. Plain
+// slice-insert.
+func (r *RepositoryImpl) CreateComboItems(db *gorm.DB, items []ComboItem) error {
+	return db.Create(&items).Error
+}
+
+// CreateComboImage backs Service.CreateCombo's optional image step. Plain
+// insert.
+func (r *RepositoryImpl) CreateComboImage(db *gorm.DB, image *ComboImage) error {
+	return db.Create(image).Error
 }
 
 // UpdateCombo backs `PATCH /combos/:id`.

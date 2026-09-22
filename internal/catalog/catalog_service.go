@@ -40,7 +40,14 @@ type Interface interface {
 	DeleteCategory(ctx context.Context, orgID uint, id uint) error
 	UploadMedia(ctx context.Context) (*ProductImage, error)
 	ListCombos(ctx context.Context) ([]Combo, error)
-	CreateCombo(ctx context.Context, in CreateComboRequest) (*Combo, error)
+	// CreateCombo requires at least one item (see CreateComboRequest) - a
+	// combo without any bundled products should never exist. Each item's
+	// ProductID must belong to orgID (not-found-not-forbidden, same as
+	// CreateProduct's branch/category ownership checks). Unlike
+	// CreateProduct, file is optional - pass nil (with fileSize 0 and empty
+	// contentType/filename) when the request didn't include an image; a
+	// combo can exist without one.
+	CreateCombo(ctx context.Context, orgID uint, in CreateComboRequest, file io.ReadSeeker, fileSize int64, contentType, filename string) (*Combo, error)
 	UpdateCombo(ctx context.Context, id uint, in UpdateComboRequest) (*Combo, error)
 	DeleteCombo(ctx context.Context, id uint) error
 }
