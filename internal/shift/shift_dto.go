@@ -6,9 +6,16 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// CreateDrawerEventRequest is the request body for the endpoint that creates or updates a DrawerEvent.
-// TODO: fields mirroring org/branch/staff/device ownership (e.g. OrgID, BranchID, StaffID)
-// likely belong to the authenticated session/context, not client input - review before use.
+// AccessScope carries tenant boundaries derived from the signed access token.
+// BranchID is set for branch-bound POS accounts and nil for org-wide accounts.
+type AccessScope struct {
+	OrgID    uint
+	BranchID *uint
+}
+
+// CreateDrawerEventRequest records why an authenticated branch opened the
+// drawer. Shift ownership is checked against AccessScope; StaffID is checked
+// against the shift's branch before persistence.
 type CreateDrawerEventRequest struct {
 	ShiftID uint   `json:"shift_id" binding:"required"`
 	StaffID uint   `json:"staff_id" binding:"required"`
@@ -16,11 +23,11 @@ type CreateDrawerEventRequest struct {
 	SaleID  *uint  `json:"sale_id"`
 }
 
-// CreateExpenseRequest is the request body for the endpoint that creates or updates a Expense.
-// TODO: fields mirroring org/branch/staff/device ownership (e.g. OrgID, BranchID, StaffID)
-// likely belong to the authenticated session/context, not client input - review before use.
+// CreateExpenseRequest records a branch expense. A branch-bound POS caller's
+// BranchID is derived from its signed access token by the API; org-wide callers
+// may submit a branch, which the repository still verifies belongs to the org.
 type CreateExpenseRequest struct {
-	BranchID  uint            `json:"branch_id" binding:"required"`
+	BranchID  uint            `json:"branch_id"`
 	Date      time.Time       `json:"date" binding:"required"`
 	Category  string          `json:"category" binding:"required"`
 	Amount    decimal.Decimal `json:"amount" binding:"required"`
