@@ -235,6 +235,282 @@
             },
             "description": "Shagan-team-only. Protected by X-Internal-Key (INTERNAL_API_KEY). Registers a Device on branch_id without needing an authenticated owner session - branch_id must already belong to org_id, otherwise returns 404 (not 403 - same not-found-not-forbidden reasoning as the authenticated device/branch endpoints)."
           }
+        },
+        {
+          "name": "ListOrganizations - GET /internal/organizations",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Internal-Key",
+                "value": "{{internalKey}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/internal/organizations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "organizations"
+              ]
+            },
+            "description": "Shagan-team-only. Every organization, no filter - there's no tenant JWT to scope this from."
+          }
+        },
+        {
+          "name": "UpdateOrganizationStatus - PATCH /internal/organizations/:id/status",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-Internal-Key",
+                "value": "{{internalKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/internal/organizations/:id/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "organizations",
+                ":id",
+                "status"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"suspended\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Shagan-team-only. Suspends or reactivates a whole tenant - status is \"active\" or \"suspended\". A suspended org blocks Login/RefreshSession for every one of its users (owner, service_center, and pos alike), not just individually-suspended pos accounts."
+          }
+        },
+        {
+          "name": "ListBranchesInternal - GET /internal/branches",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Internal-Key",
+                "value": "{{internalKey}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/internal/branches?org_id=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "branches"
+              ],
+              "query": [
+                {
+                  "key": "org_id",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Shagan-team-only. Reuses the same logic as the tenant-facing GET /branches, with org_id (required query param) instead of a JWT."
+          }
+        },
+        {
+          "name": "ListDevicesInternal - GET /internal/devices",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Internal-Key",
+                "value": "{{internalKey}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/internal/devices?org_id=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "devices"
+              ],
+              "query": [
+                {
+                  "key": "org_id",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Shagan-team-only. Reuses the same logic as the tenant-facing GET /devices, with org_id (required query param) instead of a JWT."
+          }
+        },
+        {
+          "name": "ListPosAccounts - GET /internal/accounts/pos",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Internal-Key",
+                "value": "{{internalKey}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/internal/accounts/pos?org_id=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "accounts",
+                "pos"
+              ],
+              "query": [
+                {
+                  "key": "org_id",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Shagan-team-only. Every pos-type login in the given org (required query param)."
+          }
+        },
+        {
+          "name": "UpdatePosAccountStatus - PATCH /internal/accounts/pos/:id/status",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-Internal-Key",
+                "value": "{{internalKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/internal/accounts/pos/:id/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "accounts",
+                "pos",
+                ":id",
+                "status"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"suspended\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Shagan-team-only. Suspends or reactivates a single pos-terminal login, independent of the underlying Device's own status - status is \"active\" or \"suspended\". Returns 404 if :id isn't a pos-type account (this endpoint can't be used to disable an owner/service_center login)."
+          }
+        },
+        {
+          "name": "ResetPosAccountPassword - POST /internal/accounts/pos/:id/reset-password",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Internal-Key",
+                "value": "{{internalKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/internal/accounts/pos/:id/reset-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "accounts",
+                "pos",
+                ":id",
+                "reset-password"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"password\": \"a-brand-new-password\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Shagan-team-only. Resets a pos-terminal login's password - password is plaintext, hashed server-side before it's persisted. Returns 404 if :id isn't a pos-type account."
+          }
         }
       ]
     },

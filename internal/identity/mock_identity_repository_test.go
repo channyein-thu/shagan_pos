@@ -479,6 +479,65 @@ func (_c *MockRepository_GetBranch_Call) RunAndReturn(run func(context.Context, 
 	return _c
 }
 
+// GetOrganization provides a mock function with given fields: ctx, id
+func (_m *MockRepository) GetOrganization(ctx context.Context, id uint) (*Organization, error) {
+	ret := _m.Called(ctx, id)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetOrganization")
+	}
+
+	var r0 *Organization
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, uint) (*Organization, error)); ok {
+		return rf(ctx, id)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, uint) *Organization); ok {
+		r0 = rf(ctx, id)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*Organization)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, uint) error); ok {
+		r1 = rf(ctx, id)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// MockRepository_GetOrganization_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetOrganization'
+type MockRepository_GetOrganization_Call struct {
+	*mock.Call
+}
+
+// GetOrganization is a helper method to define mock.On call
+//   - ctx context.Context
+//   - id uint
+func (_e *MockRepository_Expecter) GetOrganization(ctx interface{}, id interface{}) *MockRepository_GetOrganization_Call {
+	return &MockRepository_GetOrganization_Call{Call: _e.mock.On("GetOrganization", ctx, id)}
+}
+
+func (_c *MockRepository_GetOrganization_Call) Run(run func(ctx context.Context, id uint)) *MockRepository_GetOrganization_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(uint))
+	})
+	return _c
+}
+
+func (_c *MockRepository_GetOrganization_Call) Return(_a0 *Organization, _a1 error) *MockRepository_GetOrganization_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *MockRepository_GetOrganization_Call) RunAndReturn(run func(context.Context, uint) (*Organization, error)) *MockRepository_GetOrganization_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetSessionByRefreshHash provides a mock function with given fields: ctx, refreshHash
 func (_m *MockRepository) GetSessionByRefreshHash(ctx context.Context, refreshHash string) (*Session, error) {
 	ret := _m.Called(ctx, refreshHash)
@@ -955,6 +1014,64 @@ func (_c *MockRepository_ListDevices_Call) RunAndReturn(run func(context.Context
 	return _c
 }
 
+// ListOrganizations provides a mock function with given fields: ctx
+func (_m *MockRepository) ListOrganizations(ctx context.Context) ([]Organization, error) {
+	ret := _m.Called(ctx)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListOrganizations")
+	}
+
+	var r0 []Organization
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context) ([]Organization, error)); ok {
+		return rf(ctx)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context) []Organization); ok {
+		r0 = rf(ctx)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]Organization)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context) error); ok {
+		r1 = rf(ctx)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// MockRepository_ListOrganizations_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListOrganizations'
+type MockRepository_ListOrganizations_Call struct {
+	*mock.Call
+}
+
+// ListOrganizations is a helper method to define mock.On call
+//   - ctx context.Context
+func (_e *MockRepository_Expecter) ListOrganizations(ctx interface{}) *MockRepository_ListOrganizations_Call {
+	return &MockRepository_ListOrganizations_Call{Call: _e.mock.On("ListOrganizations", ctx)}
+}
+
+func (_c *MockRepository_ListOrganizations_Call) Run(run func(ctx context.Context)) *MockRepository_ListOrganizations_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context))
+	})
+	return _c
+}
+
+func (_c *MockRepository_ListOrganizations_Call) Return(_a0 []Organization, _a1 error) *MockRepository_ListOrganizations_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *MockRepository_ListOrganizations_Call) RunAndReturn(run func(context.Context) ([]Organization, error)) *MockRepository_ListOrganizations_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // ListPermissions provides a mock function with given fields: ctx
 func (_m *MockRepository) ListPermissions(ctx context.Context) ([]Permission, error) {
 	ret := _m.Called(ctx)
@@ -1009,6 +1126,65 @@ func (_c *MockRepository_ListPermissions_Call) Return(_a0 []Permission, _a1 erro
 }
 
 func (_c *MockRepository_ListPermissions_Call) RunAndReturn(run func(context.Context) ([]Permission, error)) *MockRepository_ListPermissions_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ListPosAccounts provides a mock function with given fields: ctx, orgID
+func (_m *MockRepository) ListPosAccounts(ctx context.Context, orgID uint) ([]User, error) {
+	ret := _m.Called(ctx, orgID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListPosAccounts")
+	}
+
+	var r0 []User
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, uint) ([]User, error)); ok {
+		return rf(ctx, orgID)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, uint) []User); ok {
+		r0 = rf(ctx, orgID)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]User)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, uint) error); ok {
+		r1 = rf(ctx, orgID)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// MockRepository_ListPosAccounts_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListPosAccounts'
+type MockRepository_ListPosAccounts_Call struct {
+	*mock.Call
+}
+
+// ListPosAccounts is a helper method to define mock.On call
+//   - ctx context.Context
+//   - orgID uint
+func (_e *MockRepository_Expecter) ListPosAccounts(ctx interface{}, orgID interface{}) *MockRepository_ListPosAccounts_Call {
+	return &MockRepository_ListPosAccounts_Call{Call: _e.mock.On("ListPosAccounts", ctx, orgID)}
+}
+
+func (_c *MockRepository_ListPosAccounts_Call) Run(run func(ctx context.Context, orgID uint)) *MockRepository_ListPosAccounts_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(uint))
+	})
+	return _c
+}
+
+func (_c *MockRepository_ListPosAccounts_Call) Return(_a0 []User, _a1 error) *MockRepository_ListPosAccounts_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *MockRepository_ListPosAccounts_Call) RunAndReturn(run func(context.Context, uint) ([]User, error)) *MockRepository_ListPosAccounts_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -1186,6 +1362,54 @@ func (_c *MockRepository_ListStaff_Call) Return(_a0 []Staff, _a1 error) *MockRep
 }
 
 func (_c *MockRepository_ListStaff_Call) RunAndReturn(run func(context.Context, uint, *uint) ([]Staff, error)) *MockRepository_ListStaff_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ResetPosAccountPassword provides a mock function with given fields: ctx, id, credentialHash
+func (_m *MockRepository) ResetPosAccountPassword(ctx context.Context, id uint, credentialHash string) error {
+	ret := _m.Called(ctx, id, credentialHash)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ResetPosAccountPassword")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, uint, string) error); ok {
+		r0 = rf(ctx, id, credentialHash)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// MockRepository_ResetPosAccountPassword_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ResetPosAccountPassword'
+type MockRepository_ResetPosAccountPassword_Call struct {
+	*mock.Call
+}
+
+// ResetPosAccountPassword is a helper method to define mock.On call
+//   - ctx context.Context
+//   - id uint
+//   - credentialHash string
+func (_e *MockRepository_Expecter) ResetPosAccountPassword(ctx interface{}, id interface{}, credentialHash interface{}) *MockRepository_ResetPosAccountPassword_Call {
+	return &MockRepository_ResetPosAccountPassword_Call{Call: _e.mock.On("ResetPosAccountPassword", ctx, id, credentialHash)}
+}
+
+func (_c *MockRepository_ResetPosAccountPassword_Call) Run(run func(ctx context.Context, id uint, credentialHash string)) *MockRepository_ResetPosAccountPassword_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(uint), args[2].(string))
+	})
+	return _c
+}
+
+func (_c *MockRepository_ResetPosAccountPassword_Call) Return(_a0 error) *MockRepository_ResetPosAccountPassword_Call {
+	_c.Call.Return(_a0)
+	return _c
+}
+
+func (_c *MockRepository_ResetPosAccountPassword_Call) RunAndReturn(run func(context.Context, uint, string) error) *MockRepository_ResetPosAccountPassword_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -1415,6 +1639,102 @@ func (_c *MockRepository_UpdateMe_Call) Return(_a0 *User, _a1 error) *MockReposi
 }
 
 func (_c *MockRepository_UpdateMe_Call) RunAndReturn(run func(context.Context, uint, UpdateMeRequest) (*User, error)) *MockRepository_UpdateMe_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// UpdateOrganizationStatus provides a mock function with given fields: ctx, id, status
+func (_m *MockRepository) UpdateOrganizationStatus(ctx context.Context, id uint, status OrganizationStatus) error {
+	ret := _m.Called(ctx, id, status)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateOrganizationStatus")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, uint, OrganizationStatus) error); ok {
+		r0 = rf(ctx, id, status)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// MockRepository_UpdateOrganizationStatus_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdateOrganizationStatus'
+type MockRepository_UpdateOrganizationStatus_Call struct {
+	*mock.Call
+}
+
+// UpdateOrganizationStatus is a helper method to define mock.On call
+//   - ctx context.Context
+//   - id uint
+//   - status OrganizationStatus
+func (_e *MockRepository_Expecter) UpdateOrganizationStatus(ctx interface{}, id interface{}, status interface{}) *MockRepository_UpdateOrganizationStatus_Call {
+	return &MockRepository_UpdateOrganizationStatus_Call{Call: _e.mock.On("UpdateOrganizationStatus", ctx, id, status)}
+}
+
+func (_c *MockRepository_UpdateOrganizationStatus_Call) Run(run func(ctx context.Context, id uint, status OrganizationStatus)) *MockRepository_UpdateOrganizationStatus_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(uint), args[2].(OrganizationStatus))
+	})
+	return _c
+}
+
+func (_c *MockRepository_UpdateOrganizationStatus_Call) Return(_a0 error) *MockRepository_UpdateOrganizationStatus_Call {
+	_c.Call.Return(_a0)
+	return _c
+}
+
+func (_c *MockRepository_UpdateOrganizationStatus_Call) RunAndReturn(run func(context.Context, uint, OrganizationStatus) error) *MockRepository_UpdateOrganizationStatus_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// UpdatePosAccountStatus provides a mock function with given fields: ctx, id, status
+func (_m *MockRepository) UpdatePosAccountStatus(ctx context.Context, id uint, status UserStatus) error {
+	ret := _m.Called(ctx, id, status)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdatePosAccountStatus")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, uint, UserStatus) error); ok {
+		r0 = rf(ctx, id, status)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// MockRepository_UpdatePosAccountStatus_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdatePosAccountStatus'
+type MockRepository_UpdatePosAccountStatus_Call struct {
+	*mock.Call
+}
+
+// UpdatePosAccountStatus is a helper method to define mock.On call
+//   - ctx context.Context
+//   - id uint
+//   - status UserStatus
+func (_e *MockRepository_Expecter) UpdatePosAccountStatus(ctx interface{}, id interface{}, status interface{}) *MockRepository_UpdatePosAccountStatus_Call {
+	return &MockRepository_UpdatePosAccountStatus_Call{Call: _e.mock.On("UpdatePosAccountStatus", ctx, id, status)}
+}
+
+func (_c *MockRepository_UpdatePosAccountStatus_Call) Run(run func(ctx context.Context, id uint, status UserStatus)) *MockRepository_UpdatePosAccountStatus_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(uint), args[2].(UserStatus))
+	})
+	return _c
+}
+
+func (_c *MockRepository_UpdatePosAccountStatus_Call) Return(_a0 error) *MockRepository_UpdatePosAccountStatus_Call {
+	_c.Call.Return(_a0)
+	return _c
+}
+
+func (_c *MockRepository_UpdatePosAccountStatus_Call) RunAndReturn(run func(context.Context, uint, UserStatus) error) *MockRepository_UpdatePosAccountStatus_Call {
 	_c.Call.Return(run)
 	return _c
 }
