@@ -32,7 +32,18 @@ type Interface interface {
 	// support Seek: its header gets read once to decode Width/Height, then
 	// rewound before the full content is uploaded to object storage.
 	CreateProduct(ctx context.Context, orgID uint, in CreateProductRequest, file io.ReadSeeker, fileSize int64, contentType, filename string) (*Product, error)
-	UpdateProduct(ctx context.Context, id uint, in UpdateProductRequest) (*Product, error)
+	// UpdateProduct confirms the product exists AND belongs to orgID before
+	// touching anything (not-found-not-forbidden, same reasoning as
+	// UpdateCategory). BranchID/CategoryID, if present, are re-verified
+	// against orgID same as CreateProduct. Price/Discount/Tax are validated
+	// against the resulting combined state (existing values for any field
+	// not present in the request), not just the fields actually being
+	// changed. file is optional (nil when the request didn't include one) -
+	// when present, it entirely replaces the product's existing image: the
+	// old ProductImage row and its storage object are only removed after the
+	// new one is successfully created, same failure-cleanup reasoning as
+	// CreateProduct's image handling.
+	UpdateProduct(ctx context.Context, orgID uint, id uint, in UpdateProductRequest, file io.ReadSeeker, fileSize int64, contentType, filename string) (*Product, error)
 	DeleteProduct(ctx context.Context, id uint) error
 	ListCategories(ctx context.Context, orgID uint) ([]Category, error)
 	CreateCategory(ctx context.Context, orgID uint, in CreateCategoryRequest) (*Category, error)

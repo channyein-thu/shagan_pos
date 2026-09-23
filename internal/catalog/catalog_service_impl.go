@@ -10,6 +10,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 
@@ -219,8 +220,154 @@ func (s *Service) CreateProduct(ctx context.Context, orgID uint, in CreateProduc
 	return result, nil
 }
 
-func (s *Service) UpdateProduct(ctx context.Context, id uint, in UpdateProductRequest) (*Product, error) {
-	return s.repo.UpdateProduct(ctx, id, in)
+func (s *Service) UpdateProduct(ctx context.Context, orgID uint, id uint, in UpdateProductRequest, file io.ReadSeeker, fileSize int64, contentType, filename string) (*Product, error) {
+	product, err := s.repo.GetProduct(ctx, orgID, id)
+	if err != nil {
+		return nil, err
+	}
+
+	if in.BranchID != nil {
+		if _, err := s.branches.GetBranch(ctx, orgID, *in.BranchID); err != nil {
+			return nil, err
+		}
+	}
+	if in.CategoryID != nil {
+		if _, err := s.repo.GetCategory(ctx, orgID, *in.CategoryID); err != nil {
+			return nil, err
+		}
+	}
+
+	if in.Price != nil || in.Discount != nil || in.Tax != nil {
+		price, discount, tax := product.Price, product.Discount, product.Tax
+		if in.Price != nil {
+			price = *in.Price
+		}
+		if in.Discount != nil {
+			discount = *in.Discount
+		}
+		if in.Tax != nil {
+			tax = *in.Tax
+		}
+		if err := validateProductMoney(price, discount, tax); err != nil {
+			return nil, err
+		}
+	}
+
+	var cfg image.Config
+	if file != nil {
+		var err error
+		// image.DecodeConfig only reads the header (not the full pixel
+		// data) to get Width/Height, but it still consumes bytes from file -
+		// rewind before the full content gets uploaded below.
+		cfg, _, err = image.DecodeConfig(file)
+		if err != nil {
+			return nil, common.BadRequestError("uploaded file is not a valid image")
+		}
+		if _, err := file.Seek(0, io.SeekStart); err != nil {
+			return nil, common.SystemError("failed to rewind uploaded image")
+		}
+	}
+
+	// fetched before the transaction - only needed to clean up the old
+	// storage object after a successful commit (see below), not part of the
+	// atomic write itself.
+	var oldImages []ProductImage
+	if file != nil {
+		oldImages, err = s.repo.ListProductImagesByProductIDs(ctx, []uint{id})
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	updates := map[string]any{}
+	if in.BranchID != nil {
+		updates["branch_id"] = *in.BranchID
+	}
+	if in.CategoryID != nil {
+		updates["category_id"] = *in.CategoryID
+	}
+	if in.Name != nil {
+		updates["name"] = *in.Name
+	}
+	if in.Barcode != nil {
+		updates["barcode"] = *in.Barcode
+	}
+	if in.Price != nil {
+		updates["price"] = *in.Price
+	}
+	if in.Discount != nil {
+		updates["discount"] = *in.Discount
+	}
+	if in.Tax != nil {
+		updates["tax"] = *in.Tax
+	}
+	if in.Threshold != nil {
+		updates["threshold"] = *in.Threshold
+	}
+	if in.IsActive != nil {
+		updates["is_active"] = *in.IsActive
+	}
+	if in.Modifier != nil {
+		updates["modifier"] = *in.Modifier
+	}
+
+	var newKey string
+	if len(updates) > 0 || file != nil {
+		err := s.db.Transaction(func(tx *gorm.DB) error {
+			if len(updates) > 0 {
+				if err := s.repo.UpdateProduct(tx, id, updates); err != nil {
+					if common.IsDuplicateError(err) {
+						return common.ConflictError("a product with this barcode already exists")
+					}
+					return err
+				}
+			}
+
+			if file == nil {
+				return nil
+			}
+
+			if err := s.repo.DeleteProductImagesByProductID(tx, id); err != nil {
+				return err
+			}
+
+			// suffixed with a UUID, not just id+filename like CreateProduct -
+			// a replace can reuse the exact same filename as the image it's
+			// replacing, which would otherwise collide with (and overwrite)
+			// the old object before it's safe to remove.
+			newKey = fmt.Sprintf("products/%d/%s-%s", id, uuid.NewString(), filename)
+			if err := s.storage.Upload(ctx, newKey, file, fileSize, contentType); err != nil {
+				return common.SystemError("failed to upload product image")
+			}
+
+			productImage := ProductImage{
+				ProductID:  id,
+				StorageKey: newKey,
+				Width:      cfg.Width,
+				Height:     cfg.Height,
+			}
+			if err := s.repo.CreateProductImage(tx, &productImage); err != nil {
+				_ = s.storage.Delete(ctx, newKey)
+				return err
+			}
+
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// only remove the old object once the new one is durably committed -
+	// otherwise a failure above would leave the product with no valid image
+	// at all.
+	if file != nil {
+		for _, img := range oldImages {
+			_ = s.storage.Delete(ctx, img.StorageKey)
+		}
+	}
+
+	return s.repo.GetProduct(ctx, orgID, id)
 }
 
 func (s *Service) DeleteProduct(ctx context.Context, id uint) error {

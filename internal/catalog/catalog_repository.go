@@ -45,7 +45,21 @@ type Repository interface {
 	// products the caller is allowed to see (that's already been decided by
 	// the ListProducts/GetProduct call that produced productIDs).
 	ListProductImagesByProductIDs(ctx context.Context, productIDs []uint) ([]ProductImage, error)
-	UpdateProduct(ctx context.Context, id uint, in UpdateProductRequest) (*Product, error)
+	// UpdateProduct applies updates (already decided by the service - which
+	// fields changed, in what shape) to the product identified by id. Plain
+	// write - existence/ownership was already confirmed by a prior
+	// GetProduct call, same reasoning as UpdateCategory. Unlike
+	// UpdateCategory, db is either the repository's normal connection or an
+	// in-flight transaction handed down by the caller - Service.UpdateProduct
+	// runs this and, when the request includes a new image,
+	// DeleteProductImagesByProductID/CreateProductImage inside one
+	// db.Transaction, same reasoning as CreateProduct/CreateProductImage.
+	UpdateProduct(db *gorm.DB, id uint, updates map[string]any) error
+	// DeleteProductImagesByProductID backs Service.UpdateProduct's
+	// image-replace step - removes the product's existing image row(s)
+	// before the new one is created. Plain delete, same
+	// db-is-either-plain-or-in-flight-transaction reasoning as CreateProduct.
+	DeleteProductImagesByProductID(db *gorm.DB, productID uint) error
 	DeleteProduct(ctx context.Context, id uint) error
 	// ListCategories backs `GET /categories`, scoped to the authenticated
 	// caller's own organization - same reasoning as identity's

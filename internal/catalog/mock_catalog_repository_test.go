@@ -445,6 +445,53 @@ func (_c *MockRepository_DeleteProduct_Call) RunAndReturn(run func(context.Conte
 	return _c
 }
 
+// DeleteProductImagesByProductID provides a mock function with given fields: db, productID
+func (_m *MockRepository) DeleteProductImagesByProductID(db *gorm.DB, productID uint) error {
+	ret := _m.Called(db, productID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DeleteProductImagesByProductID")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(*gorm.DB, uint) error); ok {
+		r0 = rf(db, productID)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// MockRepository_DeleteProductImagesByProductID_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DeleteProductImagesByProductID'
+type MockRepository_DeleteProductImagesByProductID_Call struct {
+	*mock.Call
+}
+
+// DeleteProductImagesByProductID is a helper method to define mock.On call
+//   - db *gorm.DB
+//   - productID uint
+func (_e *MockRepository_Expecter) DeleteProductImagesByProductID(db interface{}, productID interface{}) *MockRepository_DeleteProductImagesByProductID_Call {
+	return &MockRepository_DeleteProductImagesByProductID_Call{Call: _e.mock.On("DeleteProductImagesByProductID", db, productID)}
+}
+
+func (_c *MockRepository_DeleteProductImagesByProductID_Call) Run(run func(db *gorm.DB, productID uint)) *MockRepository_DeleteProductImagesByProductID_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(*gorm.DB), args[1].(uint))
+	})
+	return _c
+}
+
+func (_c *MockRepository_DeleteProductImagesByProductID_Call) Return(_a0 error) *MockRepository_DeleteProductImagesByProductID_Call {
+	_c.Call.Return(_a0)
+	return _c
+}
+
+func (_c *MockRepository_DeleteProductImagesByProductID_Call) RunAndReturn(run func(*gorm.DB, uint) error) *MockRepository_DeleteProductImagesByProductID_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetCategory provides a mock function with given fields: ctx, orgID, id
 func (_m *MockRepository) GetCategory(ctx context.Context, orgID uint, id uint) (*Category, error) {
 	ret := _m.Called(ctx, orgID, id)
@@ -1028,34 +1075,22 @@ func (_c *MockRepository_UpdateCombo_Call) RunAndReturn(run func(context.Context
 	return _c
 }
 
-// UpdateProduct provides a mock function with given fields: ctx, id, in
-func (_m *MockRepository) UpdateProduct(ctx context.Context, id uint, in UpdateProductRequest) (*Product, error) {
-	ret := _m.Called(ctx, id, in)
+// UpdateProduct provides a mock function with given fields: db, id, updates
+func (_m *MockRepository) UpdateProduct(db *gorm.DB, id uint, updates map[string]interface{}) error {
+	ret := _m.Called(db, id, updates)
 
 	if len(ret) == 0 {
 		panic("no return value specified for UpdateProduct")
 	}
 
-	var r0 *Product
-	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, uint, UpdateProductRequest) (*Product, error)); ok {
-		return rf(ctx, id, in)
-	}
-	if rf, ok := ret.Get(0).(func(context.Context, uint, UpdateProductRequest) *Product); ok {
-		r0 = rf(ctx, id, in)
+	var r0 error
+	if rf, ok := ret.Get(0).(func(*gorm.DB, uint, map[string]interface{}) error); ok {
+		r0 = rf(db, id, updates)
 	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*Product)
-		}
+		r0 = ret.Error(0)
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, uint, UpdateProductRequest) error); ok {
-		r1 = rf(ctx, id, in)
-	} else {
-		r1 = ret.Error(1)
-	}
-
-	return r0, r1
+	return r0
 }
 
 // MockRepository_UpdateProduct_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdateProduct'
@@ -1064,26 +1099,26 @@ type MockRepository_UpdateProduct_Call struct {
 }
 
 // UpdateProduct is a helper method to define mock.On call
-//   - ctx context.Context
+//   - db *gorm.DB
 //   - id uint
-//   - in UpdateProductRequest
-func (_e *MockRepository_Expecter) UpdateProduct(ctx interface{}, id interface{}, in interface{}) *MockRepository_UpdateProduct_Call {
-	return &MockRepository_UpdateProduct_Call{Call: _e.mock.On("UpdateProduct", ctx, id, in)}
+//   - updates map[string]interface{}
+func (_e *MockRepository_Expecter) UpdateProduct(db interface{}, id interface{}, updates interface{}) *MockRepository_UpdateProduct_Call {
+	return &MockRepository_UpdateProduct_Call{Call: _e.mock.On("UpdateProduct", db, id, updates)}
 }
 
-func (_c *MockRepository_UpdateProduct_Call) Run(run func(ctx context.Context, id uint, in UpdateProductRequest)) *MockRepository_UpdateProduct_Call {
+func (_c *MockRepository_UpdateProduct_Call) Run(run func(db *gorm.DB, id uint, updates map[string]interface{})) *MockRepository_UpdateProduct_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(uint), args[2].(UpdateProductRequest))
+		run(args[0].(*gorm.DB), args[1].(uint), args[2].(map[string]interface{}))
 	})
 	return _c
 }
 
-func (_c *MockRepository_UpdateProduct_Call) Return(_a0 *Product, _a1 error) *MockRepository_UpdateProduct_Call {
-	_c.Call.Return(_a0, _a1)
+func (_c *MockRepository_UpdateProduct_Call) Return(_a0 error) *MockRepository_UpdateProduct_Call {
+	_c.Call.Return(_a0)
 	return _c
 }
 
-func (_c *MockRepository_UpdateProduct_Call) RunAndReturn(run func(context.Context, uint, UpdateProductRequest) (*Product, error)) *MockRepository_UpdateProduct_Call {
+func (_c *MockRepository_UpdateProduct_Call) RunAndReturn(run func(*gorm.DB, uint, map[string]interface{}) error) *MockRepository_UpdateProduct_Call {
 	_c.Call.Return(run)
 	return _c
 }

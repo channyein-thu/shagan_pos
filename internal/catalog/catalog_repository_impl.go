@@ -86,9 +86,18 @@ func (r *RepositoryImpl) ListProductImagesByProductIDs(ctx context.Context, prod
 	return images, nil
 }
 
-// UpdateProduct backs `PATCH /products/:id`.
-func (r *RepositoryImpl) UpdateProduct(ctx context.Context, id uint, in UpdateProductRequest) (*Product, error) {
-	return nil, common.ErrNotImplemented
+// UpdateProduct backs `PATCH /products/:id`. Plain write - updates is
+// already decided by the service; whatever error the database gives back
+// (including a unique-constraint violation on ux_products_branch_barcode)
+// is returned as-is, same reasoning as CreateProduct/UpdateCategory.
+func (r *RepositoryImpl) UpdateProduct(db *gorm.DB, id uint, updates map[string]any) error {
+	return db.Model(&Product{}).Where("id = ?", id).Updates(updates).Error
+}
+
+// DeleteProductImagesByProductID backs Service.UpdateProduct's
+// image-replace step. Plain delete.
+func (r *RepositoryImpl) DeleteProductImagesByProductID(db *gorm.DB, productID uint) error {
+	return db.Where("product_id = ?", productID).Delete(&ProductImage{}).Error
 }
 
 // DeleteProduct backs `DELETE /products/:id`. Soft delete only

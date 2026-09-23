@@ -216,19 +216,111 @@ func (a *CatalogAPI) CreateProduct(c *gin.Context) {
 	c.JSON(http.StatusCreated, result)
 }
 
-// UpdateProduct handles `PATCH /products/:id`.
+// UpdateProduct handles `PATCH /products/:id`. Multipart form: every field
+// is optional (send only what changed), plus an optional "image" file that
+// entirely replaces the product's existing photo - same reasoning as
+// CreateProduct's required one, except here it's optional and this is a
+// partial update. Uses GetPostForm (not PostForm) per field to tell
+// "omitted" from "sent" apart, since a plain form field can't otherwise
+// distinguish the two - see UpdateProductRequest's doc.
 func (a *CatalogAPI) UpdateProduct(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
+
 	var in catalog.UpdateProductRequest
-	if err := c.ShouldBindJSON(&in); err != nil {
-		common.HandleError(c, common.BadRequestError(err.Error()))
-		return
+	if v, ok := c.GetPostForm("branch_id"); ok {
+		branchID, err := strconv.ParseUint(v, 10, 64)
+		if err != nil {
+			common.HandleError(c, common.BadRequestError("invalid branch_id"))
+			return
+		}
+		bID := uint(branchID)
+		in.BranchID = &bID
 	}
-	result, err := a.service.UpdateProduct(c.Request.Context(), uint(idVal), in)
+	if v, ok := c.GetPostForm("category_id"); ok {
+		categoryID, err := strconv.ParseUint(v, 10, 64)
+		if err != nil {
+			common.HandleError(c, common.BadRequestError("invalid category_id"))
+			return
+		}
+		cID := uint(categoryID)
+		in.CategoryID = &cID
+	}
+	if v, ok := c.GetPostForm("name"); ok {
+		in.Name = &v
+	}
+	if v, ok := c.GetPostForm("barcode"); ok {
+		in.Barcode = &v
+	}
+	if v, ok := c.GetPostForm("price"); ok {
+		price, err := decimal.NewFromString(v)
+		if err != nil {
+			common.HandleError(c, common.BadRequestError("invalid price"))
+			return
+		}
+		in.Price = &price
+	}
+	if v, ok := c.GetPostForm("discount"); ok {
+		discount, err := decimal.NewFromString(v)
+		if err != nil {
+			common.HandleError(c, common.BadRequestError("invalid discount"))
+			return
+		}
+		in.Discount = &discount
+	}
+	if v, ok := c.GetPostForm("tax"); ok {
+		tax, err := decimal.NewFromString(v)
+		if err != nil {
+			common.HandleError(c, common.BadRequestError("invalid tax"))
+			return
+		}
+		in.Tax = &tax
+	}
+	if v, ok := c.GetPostForm("threshold"); ok {
+		threshold, err := strconv.Atoi(v)
+		if err != nil {
+			common.HandleError(c, common.BadRequestError("invalid threshold"))
+			return
+		}
+		in.Threshold = &threshold
+	}
+	if v, ok := c.GetPostForm("is_active"); ok {
+		isActive, err := strconv.ParseBool(v)
+		if err != nil {
+			common.HandleError(c, common.BadRequestError("invalid is_active"))
+			return
+		}
+		in.IsActive = &isActive
+	}
+	if v, ok := c.GetPostForm("modifier"); ok {
+		in.Modifier = &v
+	}
+
+	// image is optional - only read it when the caller actually attached one.
+	var file io.ReadSeeker
+	var fileSize int64
+	var contentType, filename string
+	if fileHeader, err := c.FormFile("image"); err == nil {
+		f, err := fileHeader.Open()
+		if err != nil {
+			common.HandleError(c, common.BadRequestError("could not read image"))
+			return
+		}
+		defer f.Close()
+		file = f
+		fileSize = fileHeader.Size
+		contentType = fileHeader.Header.Get("Content-Type")
+		filename = fileHeader.Filename
+	}
+
+	result, err := a.service.UpdateProduct(c.Request.Context(), orgID, uint(idVal), in, file, fileSize, contentType, filename)
 	if err != nil {
 		common.HandleError(c, err)
 		return

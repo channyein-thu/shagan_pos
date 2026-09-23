@@ -1458,21 +1458,27 @@
                     "key": "Authorization",
                     "value": "Bearer {{token}}",
                     "type": "text"
-                  },
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json",
-                    "type": "text"
                   }
                 ],
                 "body": {
-                  "mode": "raw",
-                  "raw": "{}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "name",
+                      "value": "Hot Coffee",
+                      "type": "text"
+                    },
+                    {
+                      "key": "price",
+                      "value": "3.75",
+                      "type": "text"
+                    },
+                    {
+                      "key": "image",
+                      "type": "file",
+                      "src": []
                     }
-                  }
+                  ]
                 },
                 "url": {
                   "raw": "{{baseUrl}}/api/v1/products/:id",
@@ -1485,7 +1491,7 @@
                     }
                   ]
                 },
-                "description": "UpdateProduct"
+                "description": "Multipart upload, scoped to the caller's org (org_id can never be reassigned via this endpoint). Every field is optional - only send what you want to change, remove any row you don't need (an unselected \"image\" file row causes a Postman bug - EISDIR - so delete it entirely rather than leaving it empty). branch_id/category_id, if sent, must belong to your own org. price/discount/tax are validated against the resulting combined state (existing values fill in for anything not sent), not just the fields in this request. image, if attached, entirely replaces the product's existing photo. modifier can't be cleared back to null via PATCH yet - omitting it just leaves it unchanged."
               },
               "response": []
             },

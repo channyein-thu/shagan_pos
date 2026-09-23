@@ -8,6 +8,7 @@ import (
 	"image"
 	"image/png"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -775,6 +776,237 @@ func TestService_CreateProduct_ImageRowFails_CleansUpUploadedObject(t *testing.T
 	store.EXPECT().Delete(mock.Anything, "products/1/photo.png").Return(nil).Once()
 
 	_, err := svc.CreateProduct(context.Background(), 7, validCreateProductRequest(), bytes.NewReader(imgBytes), int64(len(imgBytes)), "image/png", "photo.png")
+	require.ErrorIs(t, err, dbErr)
+}
+
+func TestService_UpdateProduct_HappyPath_UpdatesAndReturns(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	existing := &Product{ID: 1, OrgID: 7, BranchID: 5, Price: decimal.NewFromFloat(3.50), Discount: decimal.NewFromFloat(0.50), Tax: decimal.NewFromFloat(0.20)}
+	updated := &Product{ID: 1, OrgID: 7, BranchID: 5, Name: "Hot Coffee"}
+	name := "Hot Coffee"
+	in := UpdateProductRequest{Name: &name}
+
+	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(existing, nil).Once()
+	repo.EXPECT().UpdateProduct(mock.Anything, uint(1), map[string]any{"name": "Hot Coffee"}).Return(nil).Once()
+	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(updated, nil).Once()
+
+	got, err := svc.UpdateProduct(context.Background(), 7, 1, in, nil, 0, "", "")
+	require.NoError(t, err)
+	require.Same(t, updated, got)
+}
+
+func TestService_UpdateProduct_NoFieldsProvided_SkipsWrite(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	existing := &Product{ID: 1, OrgID: 7, BranchID: 5}
+
+	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(existing, nil).Twice()
+	// UpdateProduct must never be called - no .EXPECT() set up for it means
+	// the mock fails the test if it is.
+
+	got, err := svc.UpdateProduct(context.Background(), 7, 1, UpdateProductRequest{}, nil, 0, "", "")
+	require.NoError(t, err)
+	require.Same(t, existing, got)
+}
+
+func TestService_UpdateProduct_PropagatesNotFound(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	wantErr := common.NotFoundError("product not found")
+	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(999)).Return(nil, wantErr).Once()
+	// UpdateProduct must never be called on a not-found product.
+
+	_, err := svc.UpdateProduct(context.Background(), 7, 999, UpdateProductRequest{}, nil, 0, "", "")
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusNotFound)
+}
+
+func TestService_UpdateProduct_DuplicateBarcode_ReturnsConflict(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	existing := &Product{ID: 1, OrgID: 7, BranchID: 5}
+	barcode := "8850009999999"
+	in := UpdateProductRequest{Barcode: &barcode}
+
+	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(existing, nil).Once()
+	repo.EXPECT().
+		UpdateProduct(mock.Anything, uint(1), map[string]any{"barcode": "8850009999999"}).
+		Return(&pgconn.PgError{Code: "23505"}).
+		Once()
+
+	_, err := svc.UpdateProduct(context.Background(), 7, 1, in, nil, 0, "", "")
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusConflict)
+}
+
+func TestService_UpdateProduct_BranchNotInOrg_PropagatesNotFound(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	existing := &Product{ID: 1, OrgID: 7, BranchID: 5}
+	branchID := uint(9)
+	in := UpdateProductRequest{BranchID: &branchID}
+
+	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(existing, nil).Once()
+	wantErr := common.NotFoundError("branch not found")
+	branches.EXPECT().GetBranch(mock.Anything, uint(7), uint(9)).Return(nil, wantErr).Once()
+	// UpdateProduct must never be called for a branch that isn't ours.
+
+	_, err := svc.UpdateProduct(context.Background(), 7, 1, in, nil, 0, "", "")
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusNotFound)
+}
+
+func TestService_UpdateProduct_CategoryNotInOrg_PropagatesNotFound(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	existing := &Product{ID: 1, OrgID: 7, BranchID: 5}
+	categoryID := uint(9)
+	in := UpdateProductRequest{CategoryID: &categoryID}
+
+	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(existing, nil).Once()
+	wantErr := common.NotFoundError("category not found")
+	repo.EXPECT().GetCategory(mock.Anything, uint(7), uint(9)).Return(nil, wantErr).Once()
+	// UpdateProduct must never be called for a category that isn't ours.
+
+	_, err := svc.UpdateProduct(context.Background(), 7, 1, in, nil, 0, "", "")
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusNotFound)
+}
+
+func TestService_UpdateProduct_DiscountOnly_ValidatesAgainstExistingPrice(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	// existing Price is 3.50 - a Discount of 3.51 exceeds it, even though
+	// Price itself isn't part of this request.
+	existing := &Product{ID: 1, OrgID: 7, BranchID: 5, Price: decimal.NewFromFloat(3.50), Discount: decimal.Zero, Tax: decimal.Zero}
+	discount := decimal.NewFromFloat(3.51)
+	in := UpdateProductRequest{Discount: &discount}
+
+	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(existing, nil).Once()
+	// UpdateProduct must never be called - the combined state fails
+	// validation first.
+
+	_, err := svc.UpdateProduct(context.Background(), 7, 1, in, nil, 0, "", "")
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusBadRequest)
+}
+
+func TestService_UpdateProduct_WithImage_ReplacesOldImageAfterCommit(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	existing := &Product{ID: 1, OrgID: 7, BranchID: 5}
+	oldImages := []ProductImage{{ID: 10, ProductID: 1, StorageKey: "products/1/old-uuid-photo.png"}}
+	imgBytes := testProductImageBytes(t, 2, 3)
+
+	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(existing, nil).Once()
+	repo.EXPECT().ListProductImagesByProductIDs(mock.Anything, []uint{1}).Return(oldImages, nil).Once()
+	repo.EXPECT().DeleteProductImagesByProductID(mock.Anything, uint(1)).Return(nil).Once()
+	store.EXPECT().
+		Upload(mock.Anything, mock.MatchedBy(func(key string) bool {
+			return strings.HasPrefix(key, "products/1/") && strings.HasSuffix(key, "-new-photo.png")
+		}), mock.Anything, int64(len(imgBytes)), "image/png").
+		Return(nil).
+		Once()
+	repo.EXPECT().
+		CreateProductImage(mock.Anything, mock.MatchedBy(func(img *ProductImage) bool {
+			return img.ProductID == 1 && img.Width == 2 && img.Height == 3 && strings.HasSuffix(img.StorageKey, "-new-photo.png")
+		})).
+		Return(nil).
+		Once()
+	// the old object is only deleted after the new row is durably
+	// committed - see Service.UpdateProduct's comment.
+	store.EXPECT().Delete(mock.Anything, "products/1/old-uuid-photo.png").Return(nil).Once()
+	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&Product{ID: 1, OrgID: 7, BranchID: 5}, nil).Once()
+
+	_, err := svc.UpdateProduct(context.Background(), 7, 1, UpdateProductRequest{}, bytes.NewReader(imgBytes), int64(len(imgBytes)), "image/png", "new-photo.png")
+	require.NoError(t, err)
+}
+
+func TestService_UpdateProduct_InvalidImage_ReturnsBadRequest(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	existing := &Product{ID: 1, OrgID: 7, BranchID: 5}
+	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(existing, nil).Once()
+	// DeleteProductImagesByProductID/CreateProductImage must never be
+	// called - not a decodable image.
+
+	notAnImage := bytes.NewReader([]byte("this is not an image"))
+	_, err := svc.UpdateProduct(context.Background(), 7, 1, UpdateProductRequest{}, notAnImage, int64(notAnImage.Len()), "image/png", "photo.png")
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusBadRequest)
+}
+
+func TestService_UpdateProduct_ImageUploadFails_RollsBackFieldChangesToo(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	existing := &Product{ID: 1, OrgID: 7, BranchID: 5}
+	name := "Hot Coffee"
+	imgBytes := testProductImageBytes(t, 2, 3)
+
+	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(existing, nil).Once()
+	repo.EXPECT().ListProductImagesByProductIDs(mock.Anything, []uint{1}).Return(nil, nil).Once()
+	repo.EXPECT().UpdateProduct(mock.Anything, uint(1), map[string]any{"name": "Hot Coffee"}).Return(nil).Once()
+	repo.EXPECT().DeleteProductImagesByProductID(mock.Anything, uint(1)).Return(nil).Once()
+	store.EXPECT().Upload(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(errors.New("storage unavailable")).Once()
+	// CreateProductImage must never be called once the upload itself fails,
+	// and the name update above rolls back with the rest of the
+	// transaction - fakeTransactioner doesn't model rollback, but the real
+	// db.Transaction would never commit the name change either.
+
+	_, err := svc.UpdateProduct(context.Background(), 7, 1, UpdateProductRequest{Name: &name}, bytes.NewReader(imgBytes), int64(len(imgBytes)), "image/png", "photo.png")
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusInternalServerError)
+}
+
+func TestService_UpdateProduct_ImageRowFails_CleansUpUploadedObject(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	existing := &Product{ID: 1, OrgID: 7, BranchID: 5}
+	imgBytes := testProductImageBytes(t, 2, 3)
+
+	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(existing, nil).Once()
+	repo.EXPECT().ListProductImagesByProductIDs(mock.Anything, []uint{1}).Return(nil, nil).Once()
+	repo.EXPECT().DeleteProductImagesByProductID(mock.Anything, uint(1)).Return(nil).Once()
+	store.EXPECT().Upload(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
+	dbErr := errors.New("db write failed")
+	repo.EXPECT().CreateProductImage(mock.Anything, mock.Anything).Return(dbErr).Once()
+	store.EXPECT().Delete(mock.Anything, mock.Anything).Return(nil).Once()
+
+	_, err := svc.UpdateProduct(context.Background(), 7, 1, UpdateProductRequest{}, bytes.NewReader(imgBytes), int64(len(imgBytes)), "image/png", "photo.png")
 	require.ErrorIs(t, err, dbErr)
 }
 

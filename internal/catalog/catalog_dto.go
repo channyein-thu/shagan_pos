@@ -87,11 +87,23 @@ type UpdateComboRequest struct {
 	ExpiresAt *time.Time       `json:"expires_at" binding:"omitempty"`
 }
 
-// UpdateProductRequest is the request body for the endpoint that creates or updates a Product.
-// TODO: fields mirroring org/branch/staff/device ownership (e.g. OrgID, BranchID, StaffID)
-// likely belong to the authenticated session/context, not client input - review before use.
+// UpdateProductRequest is the request body for `PATCH /products/:id`. Bound
+// from a multipart form, not JSON - `image` is an optional file field
+// alongside these (see cmd/api.CatalogAPI.UpdateProduct), so the struct
+// binding tags below are never actually evaluated (same situation as
+// CreateProductRequest already is); they document the shape only. The
+// handler uses gin's GetPostForm (not PostForm) to tell "field omitted"
+// from "field sent" for each one, since a plain multipart form field can't
+// otherwise distinguish the two. OrgID is deliberately not here - a product
+// can never be reassigned to a different organization via a client update,
+// same reasoning as identity.UpdateBranchRequest. BranchID/CategoryID are
+// re-verified against the caller's own org by the service if present, same
+// reasoning as CreateProductRequest. Every field is a plain pointer, so
+// (like every other Update*Request in this codebase) there's no way to
+// distinguish "omitted" from "explicitly sent as null" - a nil Modifier
+// always means "leave it as-is," never "clear it back to NULL"; clearing an
+// existing Modifier isn't supported yet.
 type UpdateProductRequest struct {
-	OrgID      *uint            `json:"org_id" binding:"omitempty"`
 	BranchID   *uint            `json:"branch_id" binding:"omitempty"`
 	CategoryID *uint            `json:"category_id" binding:"omitempty"`
 	Name       *string          `json:"name" binding:"omitempty"`
