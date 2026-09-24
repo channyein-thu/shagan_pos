@@ -34,6 +34,7 @@ type CreateProductRequest struct {
 	Name        string          `json:"name" binding:"required"`
 	Barcode     string          `json:"barcode" binding:"required"`
 	Price       decimal.Decimal `json:"price" binding:"required"`
+	CostPrice   decimal.Decimal `json:"cost_price" binding:"required"`
 	Discount    decimal.Decimal `json:"discount" binding:"required"`
 	Tax         decimal.Decimal `json:"tax" binding:"required"`
 	Threshold   int             `json:"threshold" binding:"required"`
@@ -69,6 +70,7 @@ type UpdateProductRequest struct {
 	Name        *string          `json:"name" binding:"omitempty"`
 	Barcode     *string          `json:"barcode" binding:"omitempty"`
 	Price       *decimal.Decimal `json:"price" binding:"omitempty"`
+	CostPrice   *decimal.Decimal `json:"cost_price" binding:"omitempty"`
 	Discount    *decimal.Decimal `json:"discount" binding:"omitempty"`
 	Tax         *decimal.Decimal `json:"tax" binding:"omitempty"`
 	Threshold   *int             `json:"threshold" binding:"omitempty"`

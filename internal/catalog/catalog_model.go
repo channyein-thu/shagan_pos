@@ -25,13 +25,18 @@ type Product struct {
 	Name        string          `gorm:"size:255;not null" json:"name"`
 	Barcode     string          `gorm:"size:255;uniqueIndex:ux_products_org_barcode;not null" json:"barcode"`
 	Price       decimal.Decimal `gorm:"type:decimal(10,2);not null" json:"price"`
-	Discount    decimal.Decimal `gorm:"type:decimal(10,2);not null" json:"discount"`
-	Tax         decimal.Decimal `gorm:"type:decimal(10,2);not null" json:"tax"`
-	Threshold   int             `gorm:"not null" json:"threshold"`
-	IsActive    bool            `gorm:"not null" json:"is_active"`
-	Modifier    string          `gorm:"size:255;not null" json:"modifier"`
-	CreatedAt   time.Time       `gorm:"autoCreateTime;not null" json:"created_at"`
-	UpdatedAt   time.Time       `gorm:"autoUpdateTime;not null" json:"updated_at"`
+	// CostPrice is what the org paid to acquire one unit (e.g. from a
+	// purchase order) - separate from Price, which is what it sells for.
+	// This is the basis for COGS/profit reporting once the Sales domain
+	// exists; nothing reads it yet.
+	CostPrice decimal.Decimal `gorm:"type:decimal(10,2);not null;default:0" json:"cost_price"`
+	Discount  decimal.Decimal `gorm:"type:decimal(10,2);not null" json:"discount"`
+	Tax       decimal.Decimal `gorm:"type:decimal(10,2);not null" json:"tax"`
+	Threshold int             `gorm:"not null" json:"threshold"`
+	IsActive  bool            `gorm:"not null" json:"is_active"`
+	Modifier  string          `gorm:"size:255;not null" json:"modifier"`
+	CreatedAt time.Time       `gorm:"autoCreateTime;not null" json:"created_at"`
+	UpdatedAt time.Time       `gorm:"autoUpdateTime;not null" json:"updated_at"`
 }
 
 // Category maps to the "categories" table in the ERD. NameI18n is unique per
