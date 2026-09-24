@@ -18,6 +18,26 @@ packages:
       Repository:
         config:
           filename: "mock_catalog_repository_test.go"
+      BranchLookup:
+        config:
+          filename: "mock_catalog_branch_lookup_test.go"
+  shagan_pos/internal/storage:
+    # Storage is used by catalog's tests, but a mock generated inside
+    # storage/*_test.go would be invisible to catalog (Go excludes _test.go
+    # files from what an importing package can see) - generate it directly
+    # into catalog instead, same as BranchLookup. inpackage:false is needed
+    # (not inpackage:true) whenever the target outpkg differs from the
+    # interface's own source package - mockery forces the package
+    # declaration to match the source package otherwise, which produced two
+    # conflicting "package" declarations in the same directory.
+    config:
+      dir: "internal/catalog"
+      outpkg: catalog
+      inpackage: false
+    interfaces:
+      Storage:
+        config:
+          filename: "mock_storage_test.go"
   shagan_pos/internal/customer:
     config:
       dir: "internal/customer"
