@@ -93,6 +93,12 @@ type Repository interface {
 	// own organization - same reasoning as identity's org-scoped lists
 	// (e.g. ListBranches).
 	ListCombos(ctx context.Context, orgID uint) ([]Combo, error)
+	// GetCombo backs Service.UpdateCombo's existence/ownership check.
+	// Scoped to orgID - returns common.NotFoundError for a combo that
+	// exists but belongs to a different org, same as one that doesn't exist
+	// at all, so a caller can never distinguish "not mine" from "doesn't
+	// exist" by probing IDs (same reasoning as GetCategory/GetProduct).
+	GetCombo(ctx context.Context, orgID uint, id uint) (*Combo, error)
 	// CreateCombo backs Service.CreateCombo's first step. Plain insert -
 	// GORM sets the row's ID on the pointer it's given. Mapping the
 	// request/orgID into a Combo, and validating it, happens in the
@@ -111,6 +117,24 @@ type Repository interface {
 	// insert, same db-is-either-plain-or-in-flight-transaction reasoning as
 	// CreateCombo above.
 	CreateComboImage(db *gorm.DB, image *ComboImage) error
-	UpdateCombo(ctx context.Context, id uint, in UpdateComboRequest) (*Combo, error)
+	// ListComboImagesByComboID backs Service.UpdateCombo's image-replace
+	// step - a plain query, fetched before the transaction only to know
+	// what to clean up from storage after a successful commit.
+	ListComboImagesByComboID(ctx context.Context, comboID uint) ([]ComboImage, error)
+	// UpdateCombo applies updates (already decided by the service - which
+	// fields changed, in what shape) to the combo identified by id. Plain
+	// write - existence/ownership was already confirmed by a prior
+	// GetCombo call, same reasoning as UpdateCategory/UpdateProduct. db is
+	// either the repository's normal connection or an in-flight
+	// transaction handed down by the caller - Service.UpdateCombo runs
+	// this and, when the request includes a new image,
+	// DeleteComboImagesByComboID/CreateComboImage inside one
+	// db.Transaction, same reasoning as UpdateProduct.
+	UpdateCombo(db *gorm.DB, id uint, updates map[string]any) error
+	// DeleteComboImagesByComboID backs Service.UpdateCombo's image-replace
+	// step - removes the combo's existing image row(s) before the new one
+	// is created. Plain delete, same
+	// db-is-either-plain-or-in-flight-transaction reasoning as UpdateCombo.
+	DeleteComboImagesByComboID(db *gorm.DB, comboID uint) error
 	DeleteCombo(ctx context.Context, id uint) error
 }

@@ -59,6 +59,15 @@ type Interface interface {
 	// contentType/filename) when the request didn't include an image; a
 	// combo can exist without one.
 	CreateCombo(ctx context.Context, orgID uint, in CreateComboRequest, file io.ReadSeeker, fileSize int64, contentType, filename string) (*Combo, error)
-	UpdateCombo(ctx context.Context, id uint, in UpdateComboRequest) (*Combo, error)
+	// UpdateCombo confirms the combo exists AND belongs to orgID before
+	// touching anything (not-found-not-forbidden, same reasoning as
+	// UpdateCategory/UpdateProduct). Price/ExpiresAt, if present, are
+	// validated against the resulting combined state (existing values for
+	// any field not present in the request), same reasoning as
+	// UpdateProduct. file is optional (nil when the request didn't include
+	// one) - when present, it entirely replaces the combo's existing
+	// image, same failure-cleanup reasoning as UpdateProduct's image
+	// handling. Doesn't support editing Items yet.
+	UpdateCombo(ctx context.Context, orgID uint, id uint, in UpdateComboRequest, file io.ReadSeeker, fileSize int64, contentType, filename string) (*Combo, error)
 	DeleteCombo(ctx context.Context, id uint) error
 }

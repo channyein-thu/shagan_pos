@@ -1585,21 +1585,27 @@
                     "key": "Authorization",
                     "value": "Bearer {{token}}",
                     "type": "text"
-                  },
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json",
-                    "type": "text"
                   }
                 ],
                 "body": {
-                  "mode": "raw",
-                  "raw": "{}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "name",
+                      "value": "Brunch Combo",
+                      "type": "text"
+                    },
+                    {
+                      "key": "price",
+                      "value": "6.00",
+                      "type": "text"
+                    },
+                    {
+                      "key": "image",
+                      "type": "file",
+                      "src": []
                     }
-                  }
+                  ]
                 },
                 "url": {
                   "raw": "{{baseUrl}}/api/v1/combos/:id",
@@ -1612,7 +1618,7 @@
                     }
                   ]
                 },
-                "description": "UpdateCombo"
+                "description": "Multipart upload, scoped to the caller's org (org_id can never be reassigned via this endpoint). Every field is optional - only send what you want to change, remove any row you don't need (an unselected \"image\" file row causes a Postman bug - EISDIR - so delete it entirely rather than leaving it empty). price/expires_at are validated against the resulting combined state (existing values fill in for anything not sent). image, if attached, entirely replaces the combo's existing photo. Doesn't support editing items yet - only the combo's own fields and its image."
               },
               "response": []
             },
