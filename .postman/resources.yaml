@@ -1,0 +1,7 @@
+workspace:
+  id: ceae89ce-d23f-4349-8dbc-f2bd08991ac7
+cloudResources:
+  environments:
+    ../postman/environments/Shagan POS - Local.environment.yaml: 53674016-47b54ec2-1879-448d-ac77-1f35ea198ca6
+  globals:
+    ../postman/globals/workspace.globals.yaml: 28d0023c-a622-4b25-89ec-7eacfaca345b

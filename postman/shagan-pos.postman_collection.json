@@ -1,33 +1,11 @@
 {
   "info": {
+    "_postman_id": "5daeaee9-ed70-43f0-888e-ae8c9a84a0e2",
     "name": "Shagan POS API",
+    "description": "Generated from the API Endpoint Inventory doc. Every non-health route currently returns 501 until implemented.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    "description": "Generated from the API Endpoint Inventory doc. Every non-health route currently returns 501 until implemented."
+    "_exporter_id": "53674016"
   },
-  "auth": {
-    "type": "bearer",
-    "bearer": [
-      {
-        "key": "token",
-        "value": "{{token}}",
-        "type": "string"
-      }
-    ]
-  },
-  "variable": [
-    {
-      "key": "baseUrl",
-      "value": "http://localhost:8000"
-    },
-    {
-      "key": "token",
-      "value": "dev-token"
-    },
-    {
-      "key": "internalKey",
-      "value": "changeme-internal-key"
-    }
-  ],
   "item": [
     {
       "name": "Health",
@@ -39,15 +17,12 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/health",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "health"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
             },
             "description": "Liveness + DB ping"
-          }
+          },
+          "response": []
         },
         {
           "name": "HealthZ - GET /healthz",
@@ -56,15 +31,12 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/healthz",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "healthz"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["healthz"]
             },
             "description": "Liveness + DB ping (alias)"
-          }
+          },
+          "response": []
         }
       ]
     },
@@ -90,16 +62,6 @@
                 "type": "text"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/internal/accounts",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "internal",
-                "accounts"
-              ]
-            },
             "body": {
               "mode": "raw",
               "raw": "{\n  \"organization_name\": \"Sample Org\",\n  \"owner_email\": \"owner@example.com\",\n  \"owner_password\": \"changeme\",\n  \"service_center_email\": \"service-center@example.com\",\n  \"service_center_password\": \"changeme\"\n}",
@@ -109,8 +71,14 @@
                 }
               }
             },
+            "url": {
+              "raw": "{{baseUrl}}/internal/accounts",
+              "host": ["{{baseUrl}}"],
+              "path": ["internal", "accounts"]
+            },
             "description": "Shagan-team-only. Protected by X-Internal-Key (INTERNAL_API_KEY), not the regular bearer token - creates Organization + owner User + service_center User in one call. No Branch is created here; use POST /branches (as the owner) afterward, then POST /devices, then POST /internal/accounts/pos to attach a pos-type login to a device."
-          }
+          },
+          "response": []
         },
         {
           "name": "CreatePosAccount - POST /internal/accounts/pos",
@@ -131,17 +99,6 @@
                 "type": "text"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/internal/accounts/pos",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "internal",
-                "accounts",
-                "pos"
-              ]
-            },
             "body": {
               "mode": "raw",
               "raw": "{\n  \"org_id\": 1,\n  \"device_id\": 1,\n  \"email\": \"pos1@example.com\",\n  \"password\": \"changeme\"\n}",
@@ -151,8 +108,14 @@
                 }
               }
             },
+            "url": {
+              "raw": "{{baseUrl}}/internal/accounts/pos",
+              "host": ["{{baseUrl}}"],
+              "path": ["internal", "accounts", "pos"]
+            },
             "description": "Shagan-team-only. Protected by X-Internal-Key (INTERNAL_API_KEY). Attaches a new pos-type User to an existing Organization + Device - device_id must already belong to org_id, otherwise returns 404 (not 403 - same not-found-not-forbidden reasoning as branches/staff/devices)."
-          }
+          },
+          "response": []
         },
         {
           "name": "CreateBranchInternal - POST /internal/branches",
@@ -173,16 +136,6 @@
                 "type": "text"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/internal/branches",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "internal",
-                "branches"
-              ]
-            },
             "body": {
               "mode": "raw",
               "raw": "{\n  \"org_id\": 1,\n  \"name\": \"Main Branch\",\n  \"status\": \"active\",\n  \"address\": \"123 Main St\",\n  \"phone\": \"0123456789\"\n}",
@@ -192,8 +145,14 @@
                 }
               }
             },
+            "url": {
+              "raw": "{{baseUrl}}/internal/branches",
+              "host": ["{{baseUrl}}"],
+              "path": ["internal", "branches"]
+            },
             "description": "Shagan-team-only. Protected by X-Internal-Key (INTERNAL_API_KEY). Creates a Branch for org_id without needing an authenticated owner session - used right after CreateAccount, before the owner has ever logged in. Same validation/logic as the authenticated POST /branches, just with an explicit org_id instead of one read from the JWT."
-          }
+          },
+          "response": []
         },
         {
           "name": "CreateDeviceInternal - POST /internal/devices",
@@ -214,16 +173,6 @@
                 "type": "text"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/internal/devices",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "internal",
-                "devices"
-              ]
-            },
             "body": {
               "mode": "raw",
               "raw": "{\n  \"org_id\": 1,\n  \"branch_id\": 1,\n  \"name\": \"Register 1\",\n  \"status\": \"active\"\n}",
@@ -233,7 +182,14 @@
                 }
               }
             },
+            "url": {
+              "raw": "{{baseUrl}}/internal/devices",
+              "host": ["{{baseUrl}}"],
+              "path": ["internal", "devices"]
+            },
             "description": "Shagan-team-only. Protected by X-Internal-Key (INTERNAL_API_KEY). Registers a Device on branch_id without needing an authenticated owner session - branch_id must already belong to org_id, otherwise returns 404 (not 403 - same not-found-not-forbidden reasoning as the authenticated device/branch endpoints)."
+          },
+          "response": []
           }
         },
         {
@@ -519,41 +475,6 @@
       "item": [
         {
           "name": "Login - POST /auth/login",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/auth/login",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "auth",
-                "login"
-              ]
-            },
-            "description": "Owner email+password login",
-            "auth": {
-              "type": "noauth"
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"owner@example.com\",\n  \"password\": \"changeme123\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
           "event": [
             {
               "listen": "test",
@@ -568,11 +489,11 @@
                 ]
               }
             }
-          ]
-        },
-        {
-          "name": "RefreshSession - POST /auth/refresh",
+          ],
           "request": {
+            "auth": {
+              "type": "noauth"
+            },
             "method": "POST",
             "header": [
               {
@@ -581,22 +502,53 @@
                 "type": "text"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/auth/refresh",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "auth",
-                "refresh"
-              ]
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"owner@example.com\",\n  \"password\": \"changeme\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
-            "description": "RefreshSession",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "login"]
+            },
+            "description": "Owner email+password login"
+          },
+          "response": []
+        },
+        {
+          "name": "RefreshSession - POST /auth/refresh",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const data = pm.response.json();",
+                  "    if (data.access_token) pm.environment.set('token', data.access_token);",
+                  "    if (data.refresh_token) pm.environment.set('refreshToken', data.refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
             "auth": {
               "type": "noauth"
             },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"refresh_token\": \"{{refreshToken}}\"\n}",
@@ -605,23 +557,15 @@
                   "language": "json"
                 }
               }
-            }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/refresh",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "refresh"]
+            },
+            "description": "RefreshSession"
           },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (pm.response.code === 200) {",
-                  "    const data = pm.response.json();",
-                  "    if (data.access_token) pm.environment.set('token', data.access_token);",
-                  "    if (data.refresh_token) pm.environment.set('refreshToken', data.refresh_token);",
-                  "}"
-                ]
-              }
-            }
-          ]
+          "response": []
         },
         {
           "name": "Logout - POST /auth/logout",
@@ -639,19 +583,6 @@
                 "type": "text"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/auth/logout",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "auth",
-                "logout"
-              ]
-            },
-            "description": "Revokes refresh token",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"refresh_token\": \"paste-refresh-token-from-login-here\"\n}",
@@ -660,8 +591,15 @@
                   "language": "json"
                 }
               }
-            }
-          }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/logout",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "logout"]
+            },
+            "description": "Revokes refresh token"
+          },
+          "response": []
         },
         {
           "name": "GetMe - GET /me",
@@ -676,17 +614,12 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/me",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "me"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "me"]
             },
             "description": "Caller's identity + roles/permissions"
-          }
+          },
+          "response": []
         },
         {
           "name": "UpdateMe - PATCH /me",
@@ -704,17 +637,6 @@
                 "type": "text"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/me",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "me"
-              ]
-            },
             "body": {
               "mode": "raw",
               "raw": "{\n  \"name\": \"New Name\"\n}",
@@ -724,11 +646,31 @@
                 }
               }
             },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "me"]
+            },
             "description": "Locale preference, etc."
-          }
+          },
+          "response": []
         },
         {
           "name": "VerifyManagerPIN - POST /staff/:id/manager-pin/verify",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const data = pm.response.json();",
+                  "    if (data.token) pm.environment.set('staffToken', data.token);",
+                  "}"
+                ]
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [
@@ -743,27 +685,6 @@
                 "type": "text"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/staff/:id/manager-pin/verify",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "staff",
-                ":id",
-                "manager-pin",
-                "verify"
-              ],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "1"
-                }
-              ]
-            },
-            "description": "Short-lived elevation token for a single approval (void/return/manual-discount) - NOT for a manager's own backoffice sign-in, use VerifyStaffPIN for that. Requires a valid bearer access token (the calling device or owner) - :id is the staff being asked to approve, scoped to the caller's org (and branch, if the caller's own token carries one). permission is the specific permission code this approval is for (e.g. approve_void, approve_return, apply_manual_discount) - the target staff's role must actually grant it, checked via the same Roles/Permissions matrix as GET /roles/:id/permissions. Wrong staff, wrong branch, wrong PIN, and role-lacks-permission all return the same generic 401 (never 404) - a terminal can't enumerate staff IDs, branches, or role grants by probing. On success, returns the Staff record plus a separate 2-minute token (authtoken.StaffClaims) - much shorter than VerifyStaffPIN's 12-hour shift token, since this proves one momentary approval, not a signed-in session. After 5 consecutive wrong PINs, this staff's PIN locks out for 15 minutes (shared with VerifyManagerPIN/VerifyStaffPIN - same underlying PinHash) - further attempts return 429 with an unlock timestamp, even with the correct PIN.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"pin\": \"111111\",\n  \"permission\": \"approve_void\"\n}",
@@ -772,8 +693,24 @@
                   "language": "json"
                 }
               }
-            }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/staff/:id/manager-pin/verify",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "staff", ":id", "manager-pin", "verify"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Short-lived elevation token for a single approval (void/return/manual-discount) - NOT for a manager's own backoffice sign-in, use VerifyStaffPIN for that. Requires a valid bearer access token (the calling device or owner) - :id is the staff being asked to approve, scoped to the caller's org (and branch, if the caller's own token carries one). permission is the specific permission code this approval is for (e.g. approve_void, approve_return, apply_manual_discount) - the target staff's role must actually grant it, checked via the same Roles/Permissions matrix as GET /roles/:id/permissions. Wrong staff, wrong branch, wrong PIN, and role-lacks-permission all return the same generic 401 (never 404) - a terminal can't enumerate staff IDs, branches, or role grants by probing. On success, returns the Staff record plus a separate 2-minute token (authtoken.StaffClaims) - much shorter than VerifyStaffPIN's 12-hour shift token, since this proves one momentary approval, not a signed-in session. After 5 consecutive wrong PINs, this staff's PIN locks out for 15 minutes (shared with VerifyManagerPIN/VerifyStaffPIN - same underlying PinHash) - further attempts return 429 with an unlock timestamp, even with the correct PIN."
           },
+          "response": []
+        },
+        {
+          "name": "VerifyStaffPIN - POST /staff/:id/pin/verify",
           "event": [
             {
               "listen": "test",
@@ -787,10 +724,7 @@
                 ]
               }
             }
-          ]
-        },
-        {
-          "name": "VerifyStaffPIN - POST /staff/:id/pin/verify",
+          ],
           "request": {
             "method": "POST",
             "header": [
@@ -805,27 +739,6 @@
                 "type": "text"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/staff/:id/pin/verify",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "staff",
-                ":id",
-                "pin",
-                "verify"
-              ],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "1"
-                }
-              ]
-            },
-            "description": "Cashier PIN sign-on at a terminal. Requires a valid bearer access token (the calling device or owner) - :id is the Staff being verified, scoped to the caller's org. If the caller's own token carries a branch_id (a pos-device token), the staff must belong to that same branch, otherwise this returns the same generic 401 as a wrong PIN (never 404) - a terminal can't be used to enumerate staff IDs or which branch they belong to. An owner/service_center token (no branch_id) can verify any staff in the org. On success, returns the Staff record plus a separate, shift-length staff-session token (12h TTL) - distinct from the caller's own device/owner access token. After 5 consecutive wrong PINs, this staff's PIN locks out for 15 minutes (shared with VerifyManagerPIN/VerifyStaffPIN - same underlying PinHash) - further attempts return 429 with an unlock timestamp, even with the correct PIN.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"pin\": \"123456\"\n}",
@@ -834,22 +747,21 @@
                   "language": "json"
                 }
               }
-            }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/staff/:id/pin/verify",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "staff", ":id", "pin", "verify"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Cashier PIN sign-on at a terminal. Requires a valid bearer access token (the calling device or owner) - :id is the Staff being verified, scoped to the caller's org. If the caller's own token carries a branch_id (a pos-device token), the staff must belong to that same branch, otherwise this returns the same generic 401 as a wrong PIN (never 404) - a terminal can't be used to enumerate staff IDs or which branch they belong to. An owner/service_center token (no branch_id) can verify any staff in the org. On success, returns the Staff record plus a separate, shift-length staff-session token (12h TTL) - distinct from the caller's own device/owner access token. After 5 consecutive wrong PINs, this staff's PIN locks out for 15 minutes (shared with VerifyManagerPIN/VerifyStaffPIN - same underlying PinHash) - further attempts return 429 with an unlock timestamp, even with the correct PIN."
           },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (pm.response.code === 200) {",
-                  "    const data = pm.response.json();",
-                  "    if (data.token) pm.environment.set('staffToken', data.token);",
-                  "}"
-                ]
-              }
-            }
-          ]
+          "response": []
         },
         {
           "name": "CreateDevice - POST /devices",
@@ -867,17 +779,6 @@
                 "type": "text"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/devices",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "devices"
-              ]
-            },
             "body": {
               "mode": "raw",
               "raw": "{\n  \"branch_id\": 1,\n  \"name\": \"Register 1\",\n  \"status\": \"active\"\n}",
@@ -887,8 +788,14 @@
                 }
               }
             },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/devices",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "devices"]
+            },
             "description": "CreateDevice"
-          }
+          },
+          "response": []
         },
         {
           "name": "ListDevices - GET /devices",
@@ -903,17 +810,12 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/devices",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "devices"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "devices"]
             },
             "description": "ListDevices"
-          }
+          },
+          "response": []
         },
         {
           "name": "UpdateDevice - PATCH /devices/:id",
@@ -931,24 +833,6 @@
                 "type": "text"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/devices/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "devices",
-                ":id"
-              ],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "1"
-                }
-              ]
-            },
             "body": {
               "mode": "raw",
               "raw": "{\n  \"status\": \"inactive\"\n}",
@@ -958,8 +842,20 @@
                 }
               }
             },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/devices/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "devices", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1"
+                }
+              ]
+            },
             "description": "UpdateDevice"
-          }
+          },
+          "response": []
         },
         {
           "name": "ListBranches - GET /branches",
@@ -974,17 +870,12 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/branches",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "branches"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "branches"]
             },
             "description": "ListBranches"
-          }
+          },
+          "response": []
         },
         {
           "name": "CreateBranch - POST /branches",
@@ -1002,17 +893,6 @@
                 "type": "text"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/branches",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "branches"
-              ]
-            },
             "body": {
               "mode": "raw",
               "raw": "{\n  \"name\": \"Main Branch\",\n  \"status\": \"active\",\n  \"address\": \"123 Main St\",\n  \"phone\": \"0123456789\"\n}",
@@ -1022,8 +902,14 @@
                 }
               }
             },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/branches",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "branches"]
+            },
             "description": "CreateBranch"
-          }
+          },
+          "response": []
         },
         {
           "name": "GetBranch - GET /branches/:id",
@@ -1038,15 +924,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/branches/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "branches",
-                ":id"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "branches", ":id"],
               "variable": [
                 {
                   "key": "id",
@@ -1055,7 +934,8 @@
               ]
             },
             "description": "GetBranch"
-          }
+          },
+          "response": []
         },
         {
           "name": "UpdateBranch - PATCH /branches/:id",
@@ -1073,24 +953,6 @@
                 "type": "text"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/branches/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "branches",
-                ":id"
-              ],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "1"
-                }
-              ]
-            },
             "body": {
               "mode": "raw",
               "raw": "{\n  \"name\": \"Renamed Branch\",\n  \"status\": \"active\"\n}",
@@ -1100,8 +962,20 @@
                 }
               }
             },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/branches/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "branches", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1"
+                }
+              ]
+            },
             "description": "UpdateBranch"
-          }
+          },
+          "response": []
         },
         {
           "name": "ListBranchStaff - GET /branches/:id/staff",
@@ -1116,16 +990,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/branches/:id/staff",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "branches",
-                ":id",
-                "staff"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "branches", ":id", "staff"],
               "variable": [
                 {
                   "key": "id",
@@ -1134,7 +1000,8 @@
               ]
             },
             "description": "ListBranchStaff"
-          }
+          },
+          "response": []
         },
         {
           "name": "ListBranchManagers - GET /branches/:id/managers",
@@ -1149,16 +1016,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/branches/:id/managers?permission=approve_void",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "branches",
-                ":id",
-                "managers"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "branches", ":id", "managers"],
               "query": [
                 {
                   "key": "permission",
@@ -1173,7 +1032,8 @@
               ]
             },
             "description": "Lists staff at this branch whose role grants the given permission code (query param, required) - not staff with role=manager specifically, since e.g. apply_manual_discount is granted to both super_staff and manager (see the v1 role/permission grant table). Use this to build a picker of who's eligible to approve a specific action before calling VerifyManagerPIN with the same permission code. An unrecognized permission code just returns an empty list, not an error."
-          }
+          },
+          "response": []
         },
         {
           "name": "ListStaff - GET /staff",
@@ -1188,17 +1048,12 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/staff",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "staff"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "staff"]
             },
             "description": "ListStaff"
-          }
+          },
+          "response": []
         },
         {
           "name": "CreateStaff - POST /staff",
@@ -1216,17 +1071,6 @@
                 "type": "text"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/staff",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "staff"
-              ]
-            },
             "body": {
               "mode": "raw",
               "raw": "{\n  \"branch_id\": 1,\n  \"name\": \"Cashier Joe\",\n  \"role\": 1,\n  \"pin\": \"123456\",\n  \"phone\": \"0123456789\",\n  \"status\": \"active\"\n}",
@@ -1236,8 +1080,14 @@
                 }
               }
             },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/staff",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "staff"]
+            },
             "description": "Ends in PIN set step"
-          }
+          },
+          "response": []
         },
         {
           "name": "GetStaff - GET /staff/:id",
@@ -1252,15 +1102,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/staff/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "staff",
-                ":id"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "staff", ":id"],
               "variable": [
                 {
                   "key": "id",
@@ -1269,7 +1112,8 @@
               ]
             },
             "description": "GetStaff"
-          }
+          },
+          "response": []
         },
         {
           "name": "UpdateStaff - PATCH /staff/:id",
@@ -1287,24 +1131,6 @@
                 "type": "text"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/staff/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "staff",
-                ":id"
-              ],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "1"
-                }
-              ]
-            },
             "body": {
               "mode": "raw",
               "raw": "{\n  \"pin\": \"654321\",\n  \"status\": \"active\"\n}",
@@ -1314,8 +1140,20 @@
                 }
               }
             },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/staff/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "staff", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1"
+                }
+              ]
+            },
             "description": "Never a hard delete - deactivate only"
-          }
+          },
+          "response": []
         },
         {
           "name": "ListRoles - GET /roles",
@@ -1330,17 +1168,12 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/roles",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "roles"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "roles"]
             },
             "description": "ListRoles"
-          }
+          },
+          "response": []
         },
         {
           "name": "ListPermissions - GET /permissions",
@@ -1355,17 +1188,12 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/permissions",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "permissions"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "permissions"]
             },
             "description": "ListPermissions"
-          }
+          },
+          "response": []
         },
         {
           "name": "ListRolePermissions - GET /roles/:id/permissions",
@@ -1380,16 +1208,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/roles/:id/permissions",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "roles",
-                ":id",
-                "permissions"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "roles", ":id", "permissions"],
               "variable": [
                 {
                   "key": "id",
@@ -1398,7 +1218,8 @@
               ]
             },
             "description": "Read the matrix"
-          }
+          },
+          "response": []
         }
       ]
     },
@@ -1421,17 +1242,6 @@
                 "type": "text"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/shifts",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "shifts"
-              ]
-            },
             "body": {
               "mode": "raw",
               "raw": "{}",
@@ -1441,8 +1251,14 @@
                 }
               }
             },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/shifts",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "shifts"]
+            },
             "description": "Open shift with opening float"
-          }
+          },
+          "response": []
         },
         {
           "name": "GetCurrentShift - GET /shifts/current",
@@ -1457,18 +1273,12 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/shifts/current",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "shifts",
-                "current"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "shifts", "current"]
             },
             "description": "GetCurrentShift"
-          }
+          },
+          "response": []
         },
         {
           "name": "GetShift - GET /shifts/:id",
@@ -1483,15 +1293,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/shifts/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "shifts",
-                ":id"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "shifts", ":id"],
               "variable": [
                 {
                   "key": "id",
@@ -1500,7 +1303,8 @@
               ]
             },
             "description": "GetShift"
-          }
+          },
+          "response": []
         },
         {
           "name": "CloseShift - POST /shifts/:id/close",
@@ -1515,16 +1319,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/shifts/:id/close",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "shifts",
-                ":id",
-                "close"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "shifts", ":id", "close"],
               "variable": [
                 {
                   "key": "id",
@@ -1533,7 +1329,8 @@
               ]
             },
             "description": "Writes reconciliation row(s) as a side effect"
-          }
+          },
+          "response": []
         },
         {
           "name": "GetShiftSummary - GET /shifts/:id/summary",
@@ -1548,16 +1345,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/shifts/:id/summary",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "shifts",
-                ":id",
-                "summary"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "shifts", ":id", "summary"],
               "variable": [
                 {
                   "key": "id",
@@ -1566,7 +1355,8 @@
               ]
             },
             "description": "Printable summary"
-          }
+          },
+          "response": []
         },
         {
           "name": "ListShiftReconciliations - GET /shifts/:id/reconciliations",
@@ -1581,16 +1371,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/shifts/:id/reconciliations",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "shifts",
-                ":id",
-                "reconciliations"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "shifts", ":id", "reconciliations"],
               "variable": [
                 {
                   "key": "id",
@@ -1599,7 +1381,8 @@
               ]
             },
             "description": "Per-method breakdown"
-          }
+          },
+          "response": []
         },
         {
           "name": "CreateDrawerEvent - POST /drawer-events",
@@ -1617,17 +1400,6 @@
                 "type": "text"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/drawer-events",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "drawer-events"
-              ]
-            },
             "body": {
               "mode": "raw",
               "raw": "{}",
@@ -1637,8 +1409,14 @@
                 }
               }
             },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/drawer-events",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "drawer-events"]
+            },
             "description": "Cash drawer opened without a sale"
-          }
+          },
+          "response": []
         },
         {
           "name": "ListDrawerEvents - GET /drawer-events",
@@ -1653,17 +1431,12 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/drawer-events",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "drawer-events"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "drawer-events"]
             },
             "description": "ListDrawerEvents"
-          }
+          },
+          "response": []
         },
         {
           "name": "ListExpenses - GET /expenses",
@@ -1678,17 +1451,12 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/expenses",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "expenses"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "expenses"]
             },
             "description": "ListExpenses"
-          }
+          },
+          "response": []
         },
         {
           "name": "CreateExpense - POST /expenses",
@@ -1706,17 +1474,6 @@
                 "type": "text"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/expenses",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "expenses"
-              ]
-            },
             "body": {
               "mode": "raw",
               "raw": "{}",
@@ -1726,8 +1483,14 @@
                 }
               }
             },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/expenses",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "expenses"]
+            },
             "description": "CreateExpense"
-          }
+          },
+          "response": []
         },
         {
           "name": "UpdateExpense - PATCH /expenses/:id",
@@ -1745,24 +1508,6 @@
                 "type": "text"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/expenses/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "expenses",
-                ":id"
-              ],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "1"
-                }
-              ]
-            },
             "body": {
               "mode": "raw",
               "raw": "{}",
@@ -1772,8 +1517,20 @@
                 }
               }
             },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/expenses/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "expenses", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1"
+                }
+              ]
+            },
             "description": "UpdateExpense"
-          }
+          },
+          "response": []
         },
         {
           "name": "DeleteExpense - DELETE /expenses/:id",
@@ -1788,15 +1545,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/expenses/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "expenses",
-                ":id"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "expenses", ":id"],
               "variable": [
                 {
                   "key": "id",
@@ -1805,7 +1555,8 @@
               ]
             },
             "description": "DeleteExpense"
-          }
+          },
+          "response": []
         }
       ]
     },
@@ -1813,520 +1564,503 @@
       "name": "Catalog",
       "item": [
         {
-          "name": "ListProducts - GET /products",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/products",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "products"
-              ]
-            },
-            "description": "List/search/filter"
-          }
-        },
-        {
-          "name": "GetProduct - GET /products/:id",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/products/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "products",
-                ":id"
-              ],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "1"
-                }
-              ]
-            },
-            "description": "GetProduct"
-          }
-        },
-        {
-          "name": "GetProductByBarcode - GET /products/barcode/:code",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/products/barcode/:code",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "products",
-                "barcode",
-                ":code"
-              ],
-              "variable": [
-                {
-                  "key": "code",
-                  "value": "sample"
-                }
-              ]
-            },
-            "description": "Exact-match scan lookup"
-          }
-        },
-        {
-          "name": "CreateProduct - POST /products",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}",
-                "type": "text"
+          "name": "Products",
+          "item": [
+            {
+              "name": "ListProducts - GET /products",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/products",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "products"]
+                },
+                "description": "Lists products in the caller's org. If the caller's token carries a branch (a pos device), results are restricted to that branch automatically - owner/service_center tokens see every branch. No query params - the scope comes from the token, not something the client can override."
               },
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/products",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "products"
-              ]
+              "response": []
             },
-            "body": {
-              "mode": "raw",
-              "raw": "{}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "description": "CreateProduct"
-          }
-        },
-        {
-          "name": "UpdateProduct - PATCH /products/:id",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}",
-                "type": "text"
+            {
+              "name": "GetProductByBarcode - GET /products/barcode/:code",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/products/barcode/:code",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "products", "barcode", ":code"],
+                  "query": [
+                    {
+                      "key": "branch_id",
+                      "value": "1",
+                      "description": "Required only for an owner/service_center token (no branch on the token). Ignored for a pos-device token, which always uses its own branch.",
+                      "disabled": true
+                    }
+                  ],
+                  "variable": [
+                    {
+                      "key": "code",
+                      "value": "8850001234567"
+                    }
+                  ]
+                },
+                "description": "Exact-match barcode lookup, scoped to the caller's org and branch - returns the product plus its \"images\" array (see ListProducts), same presigned-URL/15-minute-TTL reasoning. Barcode is only unique per branch (not per org), so a branch is always required: a pos-device token supplies its own branch automatically; an owner/service_center token must pass ?branch_id= (enable the disabled query param below and set it to a real branch id in that org)."
               },
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/products/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "products",
-                ":id"
-              ],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "1"
-                }
-              ]
+              "response": []
             },
-            "body": {
-              "mode": "raw",
-              "raw": "{}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "description": "UpdateProduct"
-          }
-        },
-        {
-          "name": "DeleteProduct - DELETE /products/:id",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/products/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "products",
-                ":id"
-              ],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "1"
-                }
-              ]
-            },
-            "description": "Soft delete only"
-          }
-        },
-        {
-          "name": "ListCategories - GET /categories",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/categories",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "categories"
-              ]
-            },
-            "description": "ListCategories"
-          }
-        },
-        {
-          "name": "CreateCategory - POST /categories",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}",
-                "type": "text"
+            {
+              "name": "GetProduct - GET /products/:id",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/products/:id",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "products", ":id"],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": "1"
+                    }
+                  ]
+                },
+                "description": "GetProduct"
               },
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/categories",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "categories"
-              ]
+              "response": []
             },
-            "body": {
-              "mode": "raw",
-              "raw": "{}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "description": "CreateCategory"
-          }
-        },
-        {
-          "name": "UpdateCategory - PATCH /categories/:id",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}",
-                "type": "text"
+            {
+              "name": "CreateProduct - POST /products",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "branch_id",
+                      "value": "1",
+                      "type": "text"
+                    },
+                    {
+                      "key": "category_id",
+                      "value": "1",
+                      "type": "text"
+                    },
+                    {
+                      "key": "name",
+                      "value": "Iced Coffee",
+                      "type": "text"
+                    },
+                    {
+                      "key": "barcode",
+                      "value": "8850001234567",
+                      "type": "text"
+                    },
+                    {
+                      "key": "price",
+                      "value": "3.50",
+                      "type": "text"
+                    },
+                    {
+                      "key": "discount",
+                      "value": "0.50",
+                      "type": "text"
+                    },
+                    {
+                      "key": "tax",
+                      "value": "0.20",
+                      "type": "text"
+                    },
+                    {
+                      "key": "threshold",
+                      "value": "10",
+                      "type": "text"
+                    },
+                    {
+                      "key": "is_active",
+                      "value": "true",
+                      "type": "text"
+                    },
+                    {
+                      "key": "modifier",
+                      "value": "",
+                      "type": "text"
+                    },
+                    {
+                      "key": "image",
+                      "type": "file",
+                      "value": null
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/products",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "products"]
+                },
+                "description": "Multipart upload: every product field as a form field, plus \"image\" (required product photo - attach it yourself, no default file is set). branch_id/category_id must belong to your own org. modifier is optional - leave blank for null."
               },
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/categories/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "categories",
-                ":id"
-              ],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "1"
-                }
-              ]
+              "response": []
             },
-            "body": {
-              "mode": "raw",
-              "raw": "{}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "description": "UpdateCategory"
-          }
-        },
-        {
-          "name": "DeleteCategory - DELETE /categories/:id",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/categories/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "categories",
-                ":id"
-              ],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "1"
-                }
-              ]
-            },
-            "description": "DeleteCategory"
-          }
-        },
-        {
-          "name": "UploadMedia - POST /media",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/media",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "media"
-              ]
-            },
-            "description": "Upload; returns storage_key"
-          }
-        },
-        {
-          "name": "ListCombos - GET /combos",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/combos",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "combos"
-              ]
-            },
-            "description": "ListCombos"
-          }
-        },
-        {
-          "name": "CreateCombo - POST /combos",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}",
-                "type": "text"
+            {
+              "name": "UpdateProduct - PATCH /products/:id",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "name",
+                      "value": "Hot Coffee",
+                      "type": "text"
+                    },
+                    {
+                      "key": "price",
+                      "value": "3.75",
+                      "type": "text"
+                    },
+                    {
+                      "key": "image",
+                      "type": "file",
+                      "src": []
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/products/:id",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "products", ":id"],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": "1"
+                    }
+                  ]
+                },
+                "description": "Multipart upload, scoped to the caller's org (org_id can never be reassigned via this endpoint). Every field is optional - only send what you want to change, remove any row you don't need (an unselected \"image\" file row causes a Postman bug - EISDIR - so delete it entirely rather than leaving it empty). branch_id/category_id, if sent, must belong to your own org. price/discount/tax are validated against the resulting combined state (existing values fill in for anything not sent), not just the fields in this request. image, if attached, entirely replaces the product's existing photo. modifier can't be cleared back to null via PATCH yet - omitting it just leaves it unchanged."
               },
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/combos",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "combos"
-              ]
+              "response": []
             },
-            "body": {
-              "mode": "raw",
-              "raw": "{}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "description": "CreateCombo"
-          }
-        },
-        {
-          "name": "UpdateCombo - PATCH /combos/:id",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}",
-                "type": "text"
+            {
+              "name": "DeleteProduct - DELETE /products/:id",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/products/:id",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "products", ":id"],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": "1"
+                    }
+                  ]
+                },
+                "description": "Soft delete only"
               },
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/combos/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "combos",
-                ":id"
-              ],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "1"
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "description": "UpdateCombo"
-          }
+              "response": []
+            }
+          ]
         },
         {
-          "name": "DeleteCombo - DELETE /combos/:id",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/combos/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "combos",
-                ":id"
-              ],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "1"
-                }
-              ]
+          "name": "Combo",
+          "item": [
+            {
+              "name": "CreateCombo - POST /combos",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "name",
+                      "value": "Breakfast Combo",
+                      "type": "text"
+                    },
+                    {
+                      "key": "price",
+                      "value": "5.00",
+                      "type": "text"
+                    },
+                    {
+                      "key": "expires_at",
+                      "value": "2026-12-31T00:00:00Z",
+                      "type": "text"
+                    },
+                    {
+                      "key": "items",
+                      "value": "[{\"product_id\": 1, \"qty\": 1}, {\"product_id\": 2, \"qty\": 2}]",
+                      "type": "text"
+                    },
+                    {
+                      "key": "image",
+                      "type": "file",
+                      "value": null
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/combos",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "combos"]
+                },
+                "description": "Multipart upload: name, price, expires_at (RFC3339), and items (a JSON-encoded array of {\"product_id\",\"qty\"} objects) as form fields, plus an optional \"image\" file - unlike CreateProduct, a combo can be created without one (leave the file field empty to skip it). price must be > 0, expires_at must be in the future, and items must have at least one entry with no duplicate product_id - each product_id must already exist in your org (create products first via CreateProduct)."
+              },
+              "response": []
             },
-            "description": "DeleteCombo"
-          }
+            {
+              "name": "UpdateCombo - PATCH /combos/:id",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/combos/:id",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "combos", ":id"],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": "1"
+                    }
+                  ]
+                },
+                "description": "UpdateCombo"
+              },
+              "response": []
+            },
+            {
+              "name": "DeleteCombo - DELETE /combos/:id",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/combos/:id",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "combos", ":id"],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": "1"
+                    }
+                  ]
+                },
+                "description": "DeleteCombo"
+              },
+              "response": []
+            },
+            {
+              "name": "ListCombos - GET /combos",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/combos",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "combos"]
+                },
+                "description": "ListCombos"
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Category",
+          "item": [
+            {
+              "name": "ListCategories - GET /categories",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/categories",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "categories"]
+                },
+                "description": "ListCategories"
+              },
+              "response": []
+            },
+            {
+              "name": "CreateCategory - POST /categories",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n    \"name_i18n\": \"Drinks\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/categories",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "categories"]
+                },
+                "description": "CreateCategory"
+              },
+              "response": []
+            },
+            {
+              "name": "UpdateCategory - PATCH /categories/:id",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "\n    {\n        \"name_i18n\": \"Drinks\"\n    }",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/categories/:id",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "categories", ":id"],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": "1"
+                    }
+                  ]
+                },
+                "description": "UpdateCategory"
+              },
+              "response": []
+            },
+            {
+              "name": "DeleteCategory - DELETE /categories/:id",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/categories/:id",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "categories", ":id"],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": "1"
+                    }
+                  ]
+                },
+                "description": "DeleteCategory"
+              },
+              "response": []
+            }
+          ]
         }
       ]
     },
@@ -2346,17 +2080,12 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/stock-levels",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "stock-levels"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "stock-levels"]
             },
             "description": "Filter by product/branch"
-          }
+          },
+          "response": []
         },
         {
           "name": "ListLowStock - GET /inventory/low-stock",
@@ -2371,18 +2100,12 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/inventory/low-stock",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "inventory",
-                "low-stock"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "low-stock"]
             },
             "description": "ListLowStock"
-          }
+          },
+          "response": []
         },
         {
           "name": "ListInventoryLedger - GET /inventory/ledger",
@@ -2397,18 +2120,12 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/inventory/ledger",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "inventory",
-                "ledger"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "ledger"]
             },
             "description": "Read-only - never written directly by a client"
-          }
+          },
+          "response": []
         },
         {
           "name": "CreateStockAdjustment - POST /inventory/adjustments",
@@ -2426,18 +2143,6 @@
                 "type": "text"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/inventory/adjustments",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "inventory",
-                "adjustments"
-              ]
-            },
             "body": {
               "mode": "raw",
               "raw": "{}",
@@ -2447,8 +2152,14 @@
                 }
               }
             },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/inventory/adjustments",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "inventory", "adjustments"]
+            },
             "description": "Writes a ledger row as a side effect"
-          }
+          },
+          "response": []
         },
         {
           "name": "ListStockTransfers - GET /stock-transfers",
@@ -2463,17 +2174,12 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/stock-transfers",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "stock-transfers"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "stock-transfers"]
             },
             "description": "ListStockTransfers"
-          }
+          },
+          "response": []
         },
         {
           "name": "CreateStockTransfer - POST /stock-transfers",
@@ -2491,17 +2197,6 @@
                 "type": "text"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/stock-transfers",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "stock-transfers"
-              ]
-            },
             "body": {
               "mode": "raw",
               "raw": "{}",
@@ -2511,8 +2206,14 @@
                 }
               }
             },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/stock-transfers",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "stock-transfers"]
+            },
             "description": "Also writes stock_transfers_items"
-          }
+          },
+          "response": []
         },
         {
           "name": "UpdateStockTransfer - PATCH /stock-transfers/:id",
@@ -2530,24 +2231,6 @@
                 "type": "text"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/stock-transfers/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "stock-transfers",
-                ":id"
-              ],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "1"
-                }
-              ]
-            },
             "body": {
               "mode": "raw",
               "raw": "{}",
@@ -2557,8 +2240,20 @@
                 }
               }
             },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/stock-transfers/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "stock-transfers", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1"
+                }
+              ]
+            },
             "description": "Status lifecycle: pending -> in-transit -> received"
-          }
+          },
+          "response": []
         }
       ]
     },
@@ -2581,17 +2276,6 @@
                 "type": "text"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/sales",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "sales"
-              ]
-            },
             "body": {
               "mode": "raw",
               "raw": "{}",
@@ -2601,8 +2285,14 @@
                 }
               }
             },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/sales",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "sales"]
+            },
             "description": "Idempotent, transactional; also decrements stock + writes ledger"
-          }
+          },
+          "response": []
         },
         {
           "name": "ListSales - GET /sales",
@@ -2617,17 +2307,12 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/sales",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "sales"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "sales"]
             },
             "description": "ListSales"
-          }
+          },
+          "response": []
         },
         {
           "name": "GetSale - GET /sales/:id",
@@ -2642,15 +2327,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/sales/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "sales",
-                ":id"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "sales", ":id"],
               "variable": [
                 {
                   "key": "id",
@@ -2659,7 +2337,8 @@
               ]
             },
             "description": "GetSale"
-          }
+          },
+          "response": []
         },
         {
           "name": "GetSaleReceipt - GET /sales/:id/receipt",
@@ -2674,16 +2353,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/sales/:id/receipt",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "sales",
-                ":id",
-                "receipt"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "sales", ":id", "receipt"],
               "variable": [
                 {
                   "key": "id",
@@ -2692,7 +2363,8 @@
               ]
             },
             "description": "ESC/POS payload"
-          }
+          },
+          "response": []
         },
         {
           "name": "ReprintSale - POST /sales/:id/reprint",
@@ -2707,16 +2379,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/sales/:id/reprint",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "sales",
-                ":id",
-                "reprint"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "sales", ":id", "reprint"],
               "variable": [
                 {
                   "key": "id",
@@ -2725,7 +2389,8 @@
               ]
             },
             "description": "ReprintSale"
-          }
+          },
+          "response": []
         },
         {
           "name": "CreateHeldSale - POST /held-sales",
@@ -2743,17 +2408,6 @@
                 "type": "text"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/held-sales",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "held-sales"
-              ]
-            },
             "body": {
               "mode": "raw",
               "raw": "{}",
@@ -2763,8 +2417,14 @@
                 }
               }
             },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/held-sales",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "held-sales"]
+            },
             "description": "CreateHeldSale"
-          }
+          },
+          "response": []
         },
         {
           "name": "ListHeldSales - GET /held-sales",
@@ -2779,17 +2439,12 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/held-sales",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "held-sales"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "held-sales"]
             },
             "description": "ListHeldSales"
-          }
+          },
+          "response": []
         },
         {
           "name": "ResumeHeldSale - DELETE /held-sales/:id",
@@ -2804,15 +2459,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/held-sales/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "held-sales",
-                ":id"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "held-sales", ":id"],
               "variable": [
                 {
                   "key": "id",
@@ -2821,7 +2469,8 @@
               ]
             },
             "description": "Resume - atomic delete-and-restore"
-          }
+          },
+          "response": []
         }
       ]
     },
@@ -2844,25 +2493,6 @@
                 "type": "text"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/sales/:id/void",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "sales",
-                ":id",
-                "void"
-              ],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "11111111-1111-1111-1111-111111111111"
-                }
-              ]
-            },
             "body": {
               "mode": "raw",
               "raw": "{}",
@@ -2872,8 +2502,20 @@
                 }
               }
             },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/sales/:id/void",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "sales", ":id", "void"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "11111111-1111-1111-1111-111111111111"
+                }
+              ]
+            },
             "description": "Full or partial"
-          }
+          },
+          "response": []
         },
         {
           "name": "ListVoids - GET /voids",
@@ -2888,17 +2530,12 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/voids",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "voids"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "voids"]
             },
             "description": "ListVoids"
-          }
+          },
+          "response": []
         },
         {
           "name": "CreateReturn - POST /returns",
@@ -2916,17 +2553,6 @@
                 "type": "text"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/returns",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "returns"
-              ]
-            },
             "body": {
               "mode": "raw",
               "raw": "{}",
@@ -2936,8 +2562,14 @@
                 }
               }
             },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/returns",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "returns"]
+            },
             "description": "Also writes return_items"
-          }
+          },
+          "response": []
         },
         {
           "name": "ListReturns - GET /returns",
@@ -2952,17 +2584,12 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/returns",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "returns"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "returns"]
             },
             "description": "ListReturns"
-          }
+          },
+          "response": []
         },
         {
           "name": "GetReturn - GET /returns/:id",
@@ -2977,15 +2604,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/returns/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "returns",
-                ":id"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "returns", ":id"],
               "variable": [
                 {
                   "key": "id",
@@ -2994,7 +2614,8 @@
               ]
             },
             "description": "GetReturn"
-          }
+          },
+          "response": []
         },
         {
           "name": "CreateExchange - POST /exchanges",
@@ -3012,17 +2633,6 @@
                 "type": "text"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/exchanges",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "exchanges"
-              ]
-            },
             "body": {
               "mode": "raw",
               "raw": "{}",
@@ -3032,8 +2642,14 @@
                 }
               }
             },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/exchanges",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "exchanges"]
+            },
             "description": "Also writes exchange_items"
-          }
+          },
+          "response": []
         },
         {
           "name": "ListExchanges - GET /exchanges",
@@ -3048,17 +2664,12 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/exchanges",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "exchanges"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "exchanges"]
             },
             "description": "ListExchanges"
-          }
+          },
+          "response": []
         },
         {
           "name": "GetExchange - GET /exchanges/:id",
@@ -3073,15 +2684,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/exchanges/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "exchanges",
-                ":id"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "exchanges", ":id"],
               "variable": [
                 {
                   "key": "id",
@@ -3090,7 +2694,8 @@
               ]
             },
             "description": "GetExchange"
-          }
+          },
+          "response": []
         }
       ]
     },
@@ -3109,6 +2714,13 @@
               }
             ],
             "url": {
+              "raw": "{{baseUrl}}/api/v1/customers",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "customers"]
+            },
+            "description": "ListCustomers"
+          },
+          "response": []
               "raw": "{{baseUrl}}/api/v1/customers?search=",
               "host": [
                 "{{baseUrl}}"
@@ -3145,17 +2757,6 @@
                 "type": "text"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/customers",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "customers"
-              ]
-            },
             "body": {
               "mode": "raw",
               "raw": "{\n  \"name\": \"Jane Doe\",\n  \"phone\": \"0987654321\",\n  \"tags\": [\"vip\"]\n}",
@@ -3165,6 +2766,14 @@
                 }
               }
             },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/customers",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "customers"]
+            },
+            "description": "Inline creation from the POS cart"
+          },
+          "response": []
             "description": "Inline creation from the POS cart. org_id is never accepted here - it's taken from the caller's own token. tags is optional. consent_status isn't client-settable either - every new customer starts at \"pending\"; it only changes via POST /customers/:id/consents, which writes a real CustomerConsent audit row (see that endpoint's description). phone is unique per-org, not globally - the same phone number can exist in two different orgs."
           }
         },
@@ -3181,15 +2790,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/customers/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "customers",
-                ":id"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "customers", ":id"],
               "variable": [
                 {
                   "key": "id",
@@ -3197,6 +2799,9 @@
                 }
               ]
             },
+            "description": "Detail + purchase history"
+          },
+          "response": []
             "description": "Org-scoped - returns 404 for a customer that exists but belongs to a different org, same as one that doesn't exist at all. Detail only for now - purchase history needs Sales, which doesn't exist yet."
           }
         },
@@ -3213,16 +2818,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/customers/:id/consents",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "customers",
-                ":id",
-                "consents"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "customers", ":id", "consents"],
               "variable": [
                 {
                   "key": "id",
@@ -3230,6 +2827,9 @@
                 }
               ]
             },
+            "description": "ListCustomerConsents"
+          },
+          "response": []
             "description": "Org-scoped via the customer - returns 404 if :id doesn't belong to the caller's org. The full consent audit trail for this customer, oldest first."
           }
         },
@@ -3249,25 +2849,6 @@
                 "type": "text"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/customers/:id/consents",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "customers",
-                ":id",
-                "consents"
-              ],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "1"
-                }
-              ]
-            },
             "body": {
               "mode": "raw",
               "raw": "{\n  \"status\": \"granted\",\n  \"source\": \"pos\"\n}",
@@ -3277,6 +2858,20 @@
                 }
               }
             },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/customers/:id/consents",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "customers", ":id", "consents"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Also updates the cached customers.consent_status"
+          },
+          "response": []
             "description": "customer_id isn't in the body - it's the :id path param. changed_at isn't client-settable either - the server stamps it at creation, same as Device.LastSeenAt. Writes a real CustomerConsent audit row AND updates the cached customers.consent_status in one atomic transaction - a failure partway through never leaves the cache out of sync with the actual consent history. status is one of: granted, revoked, pending. source is one of: pos, online, sms, email."
           }
         }
@@ -3298,17 +2893,12 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/suppliers",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "suppliers"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "suppliers"]
             },
             "description": "ListSuppliers"
-          }
+          },
+          "response": []
         },
         {
           "name": "CreateSupplier - POST /suppliers",
@@ -3326,17 +2916,6 @@
                 "type": "text"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/suppliers",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "suppliers"
-              ]
-            },
             "body": {
               "mode": "raw",
               "raw": "{}",
@@ -3346,8 +2925,14 @@
                 }
               }
             },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/suppliers",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "suppliers"]
+            },
             "description": "CreateSupplier"
-          }
+          },
+          "response": []
         },
         {
           "name": "UpdateSupplier - PATCH /suppliers/:id",
@@ -3365,24 +2950,6 @@
                 "type": "text"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/suppliers/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "suppliers",
-                ":id"
-              ],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "1"
-                }
-              ]
-            },
             "body": {
               "mode": "raw",
               "raw": "{}",
@@ -3392,8 +2959,20 @@
                 }
               }
             },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/suppliers/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "suppliers", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1"
+                }
+              ]
+            },
             "description": "UpdateSupplier"
-          }
+          },
+          "response": []
         },
         {
           "name": "DeleteSupplier - DELETE /suppliers/:id",
@@ -3408,15 +2987,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/suppliers/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "suppliers",
-                ":id"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "suppliers", ":id"],
               "variable": [
                 {
                   "key": "id",
@@ -3425,7 +2997,8 @@
               ]
             },
             "description": "DeleteSupplier"
-          }
+          },
+          "response": []
         },
         {
           "name": "ListPurchaseOrders - GET /purchase-orders",
@@ -3440,17 +3013,12 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/purchase-orders",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "purchase-orders"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "purchase-orders"]
             },
             "description": "ListPurchaseOrders"
-          }
+          },
+          "response": []
         },
         {
           "name": "CreatePurchaseOrder - POST /purchase-orders",
@@ -3468,17 +3036,6 @@
                 "type": "text"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/purchase-orders",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "purchase-orders"
-              ]
-            },
             "body": {
               "mode": "raw",
               "raw": "{}",
@@ -3488,8 +3045,14 @@
                 }
               }
             },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/purchase-orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "purchase-orders"]
+            },
             "description": "Also writes purchase_order_items"
-          }
+          },
+          "response": []
         },
         {
           "name": "GetPurchaseOrder - GET /purchase-orders/:id",
@@ -3504,15 +3067,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/purchase-orders/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "purchase-orders",
-                ":id"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "purchase-orders", ":id"],
               "variable": [
                 {
                   "key": "id",
@@ -3521,7 +3077,8 @@
               ]
             },
             "description": "GetPurchaseOrder"
-          }
+          },
+          "response": []
         },
         {
           "name": "UpdatePurchaseOrder - PATCH /purchase-orders/:id",
@@ -3539,24 +3096,6 @@
                 "type": "text"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/purchase-orders/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "purchase-orders",
-                ":id"
-              ],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "1"
-                }
-              ]
-            },
             "body": {
               "mode": "raw",
               "raw": "{}",
@@ -3566,8 +3105,20 @@
                 }
               }
             },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/purchase-orders/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "purchase-orders", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1"
+                }
+              ]
+            },
             "description": "Status transitions"
-          }
+          },
+          "response": []
         },
         {
           "name": "CreateGoodsReceipt - POST /purchase-orders/:id/receipts",
@@ -3585,25 +3136,6 @@
                 "type": "text"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/purchase-orders/:id/receipts",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "purchase-orders",
-                ":id",
-                "receipts"
-              ],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "1"
-                }
-              ]
-            },
             "body": {
               "mode": "raw",
               "raw": "{}",
@@ -3613,8 +3145,20 @@
                 }
               }
             },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/purchase-orders/:id/receipts",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "purchase-orders", ":id", "receipts"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1"
+                }
+              ]
+            },
             "description": "Posting increases stock + writes ledger"
-          }
+          },
+          "response": []
         }
       ]
     },
@@ -3634,17 +3178,12 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/receipt-settings",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "receipt-settings"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "receipt-settings"]
             },
             "description": "Needed for the edit form's pre-fill / live preview"
-          }
+          },
+          "response": []
         },
         {
           "name": "UpdateReceiptSettings - PUT /receipt-settings",
@@ -3662,17 +3201,6 @@
                 "type": "text"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/receipt-settings",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "receipt-settings"
-              ]
-            },
             "body": {
               "mode": "raw",
               "raw": "{}",
@@ -3682,8 +3210,14 @@
                 }
               }
             },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/receipt-settings",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "receipt-settings"]
+            },
             "description": "UpdateReceiptSettings"
-          }
+          },
+          "response": []
         },
         {
           "name": "TestPrinter - POST /printers/test",
@@ -3698,18 +3232,12 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/printers/test",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "printers",
-                "test"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "printers", "test"]
             },
             "description": "No table; renders a test payload"
-          }
+          },
+          "response": []
         },
         {
           "name": "UploadPaymentQRCode - POST /branches/:id/payment-qr-codes",
@@ -3722,25 +3250,6 @@
                 "type": "text"
               }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/branches/:id/payment-qr-codes",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "branches",
-                ":id",
-                "payment-qr-codes"
-              ],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "1"
-                }
-              ]
-            },
             "body": {
               "mode": "formdata",
               "formdata": [
@@ -3752,12 +3261,24 @@
                 {
                   "key": "file",
                   "type": "file",
-                  "src": []
+                  "value": null
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/branches/:id/payment-qr-codes",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "branches", ":id", "payment-qr-codes"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1"
                 }
               ]
             },
             "description": "Multipart upload: \"file\" (the QR image) + \"provider\" (e.g. kbzpay, wavepay)."
-          }
+          },
+          "response": []
         },
         {
           "name": "ListPaymentQRCodes - GET /branches/:id/payment-qr-codes",
@@ -3772,16 +3293,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/branches/:id/payment-qr-codes",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "branches",
-                ":id",
-                "payment-qr-codes"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "branches", ":id", "payment-qr-codes"],
               "variable": [
                 {
                   "key": "id",
@@ -3789,7 +3302,8 @@
                 }
               ]
             }
-          }
+          },
+          "response": []
         },
         {
           "name": "DeletePaymentQRCode - DELETE /branches/:id/payment-qr-codes/:qrId",
@@ -3804,9 +3318,7 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/branches/:id/payment-qr-codes/:qrId",
-              "host": [
-                "{{baseUrl}}"
-              ],
+              "host": ["{{baseUrl}}"],
               "path": [
                 "api",
                 "v1",
@@ -3826,7 +3338,8 @@
                 }
               ]
             }
-          }
+          },
+          "response": []
         }
       ]
     },
@@ -3846,17 +3359,12 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/audit-log",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "audit-log"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "audit-log"]
             },
             "description": "Read-only; written via mutation hooks, not a public POST"
-          }
+          },
+          "response": []
         }
       ]
     },
@@ -3876,18 +3384,12 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/sync/catalog",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "sync",
-                "catalog"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "sync", "catalog"]
             },
             "description": "Snapshot + ETag for offline caching (products/categories/combos)"
-          }
+          },
+          "response": []
         },
         {
           "name": "IngestQueuedSales - POST /sync/sales",
@@ -3902,18 +3404,12 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/sync/sales",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "sync",
-                "sales"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "sync", "sales"]
             },
             "description": "Queued-sale ingest, idempotent"
-          }
+          },
+          "response": []
         },
         {
           "name": "FlushSync - POST /sync/flush",
@@ -3928,18 +3424,12 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/sync/flush",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "sync",
-                "flush"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "sync", "flush"]
             },
             "description": "FlushSync"
-          }
+          },
+          "response": []
         },
         {
           "name": "GetSyncStatus - GET /sync/status",
@@ -3954,18 +3444,12 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/sync/status",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "sync",
-                "status"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "sync", "status"]
             },
             "description": "GetSyncStatus"
-          }
+          },
+          "response": []
         },
         {
           "name": "ListSyncConflicts - GET /sync/conflicts",
@@ -3980,18 +3464,12 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/sync/conflicts",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "sync",
-                "conflicts"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "sync", "conflicts"]
             },
             "description": "ListSyncConflicts"
-          }
+          },
+          "response": []
         },
         {
           "name": "ResolveSyncConflict - PATCH /sync/conflicts/:id/resolve",
@@ -4006,17 +3484,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/sync/conflicts/:id/resolve",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "sync",
-                "conflicts",
-                ":id",
-                "resolve"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "sync", "conflicts", ":id", "resolve"],
               "variable": [
                 {
                   "key": "id",
@@ -4025,7 +3494,8 @@
               ]
             },
             "description": "Sets resolved_by/resolved_at"
-          }
+          },
+          "response": []
         }
       ]
     },
@@ -4045,18 +3515,12 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/reports/home-summary",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "reports",
-                "home-summary"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "reports", "home-summary"]
             },
             "description": "GetHomeSummary"
-          }
+          },
+          "response": []
         },
         {
           "name": "GetStockOverview - GET /reports/stock-overview",
@@ -4071,18 +3535,12 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/reports/stock-overview",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "reports",
-                "stock-overview"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "reports", "stock-overview"]
             },
             "description": "GetStockOverview"
-          }
+          },
+          "response": []
         },
         {
           "name": "GetTodayReport - GET /reports/today",
@@ -4097,18 +3555,12 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/reports/today",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "reports",
-                "today"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "reports", "today"]
             },
             "description": "GetTodayReport"
-          }
+          },
+          "response": []
         },
         {
           "name": "GetRevenueTrend - GET /reports/revenue-trend",
@@ -4123,18 +3575,12 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/reports/revenue-trend",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "reports",
-                "revenue-trend"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "reports", "revenue-trend"]
             },
             "description": "GetRevenueTrend"
-          }
+          },
+          "response": []
         },
         {
           "name": "GetSalesSummary - GET /reports/sales-summary",
@@ -4149,18 +3595,12 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/reports/sales-summary",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "reports",
-                "sales-summary"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "reports", "sales-summary"]
             },
             "description": "GetSalesSummary"
-          }
+          },
+          "response": []
         },
         {
           "name": "GetSalesTrend - GET /reports/sales-trend",
@@ -4175,18 +3615,12 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/reports/sales-trend",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "reports",
-                "sales-trend"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "reports", "sales-trend"]
             },
             "description": "GetSalesTrend"
-          }
+          },
+          "response": []
         },
         {
           "name": "GetPaymentMethodsReport - GET /reports/payment-methods",
@@ -4201,18 +3635,12 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/reports/payment-methods",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "reports",
-                "payment-methods"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "reports", "payment-methods"]
             },
             "description": "GetPaymentMethodsReport"
-          }
+          },
+          "response": []
         },
         {
           "name": "GetTransactionsReport - GET /reports/transactions",
@@ -4227,18 +3655,12 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/reports/transactions",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "reports",
-                "transactions"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "reports", "transactions"]
             },
             "description": "GetTransactionsReport"
-          }
+          },
+          "response": []
         },
         {
           "name": "GetProductSalesReport - GET /reports/product-sales",
@@ -4253,18 +3675,12 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/reports/product-sales",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "reports",
-                "product-sales"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "reports", "product-sales"]
             },
             "description": "GetProductSalesReport"
-          }
+          },
+          "response": []
         },
         {
           "name": "GetTopProducts - GET /reports/top-products",
@@ -4279,18 +3695,12 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/reports/top-products",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "reports",
-                "top-products"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "reports", "top-products"]
             },
             "description": "GetTopProducts"
-          }
+          },
+          "response": []
         },
         {
           "name": "ExportReport - POST /reports/export",
@@ -4305,20 +3715,38 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/reports/export",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "reports",
-                "export"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "reports", "export"]
             },
             "description": "DEFER per the cut list"
-          }
+          },
+          "response": []
         }
       ]
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8000"
+    },
+    {
+      "key": "token",
+      "value": "dev-token"
+    },
+    {
+      "key": "internalKey",
+      "value": "changeme-internal-key"
     }
   ]
 }
