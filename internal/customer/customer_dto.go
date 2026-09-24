@@ -1,28 +1,32 @@
 package customer
 
 import (
-	"time"
-
 	"github.com/lib/pq"
 )
 
-// CreateCustomerConsentRequest is the request body for the endpoint that creates or updates a CustomerConsent.
-// TODO: fields mirroring org/branch/staff/device ownership (e.g. OrgID, BranchID, StaffID)
-// likely belong to the authenticated session/context, not client input - review before use.
+// CreateCustomerConsentRequest is the request body for
+// `POST /customers/:id/consents`. CustomerID isn't here - it's the :id path
+// param, the single source of truth for which customer this is about (same
+// reasoning as OrgID never appearing in CreateCustomerRequest). ChangedAt
+// isn't client-settable either - it's a server-tracked audit timestamp, set
+// to now() when the row is created, same as Device.LastSeenAt.
 type CreateCustomerConsentRequest struct {
-	CustomerID uint          `json:"customer_id" binding:"required"`
-	Status     ConsentStatus `json:"status" binding:"required"`
-	Source     ConsentSource `json:"source" binding:"required"`
-	ChangedAt  time.Time     `json:"changed_at" binding:"required"`
+	Status ConsentStatus `json:"status" binding:"required"`
+	Source ConsentSource `json:"source" binding:"required"`
 }
 
-// CreateCustomerRequest is the request body for the endpoint that creates or updates a Customer.
-// TODO: fields mirroring org/branch/staff/device ownership (e.g. OrgID, BranchID, StaffID)
-// likely belong to the authenticated session/context, not client input - review before use.
+// CreateCustomerRequest is the request body for the endpoint that creates a
+// Customer. OrgID is deliberately not here - a customer always belongs to
+// the authenticated caller's own organization (see middleware.OrgIDFromContext),
+// never a client-supplied org. ConsentStatus isn't here either - it's a
+// cache of the customer's latest real CustomerConsent record (see
+// CreateCustomerConsentRequest), and a customer created inline from the POS
+// cart hasn't consented to anything yet, so the server always starts it at
+// ConsentStatusPending; the only legitimate way to change it afterward is
+// through POST /customers/:id/consents. Tags is optional - a quick inline
+// creation shouldn't be blocked on supplying metadata tags.
 type CreateCustomerRequest struct {
-	OrgID         uint           `json:"org_id" binding:"required"`
-	Name          string         `json:"name" binding:"required"`
-	Phone         string         `json:"phone" binding:"required"`
-	Tags          pq.StringArray `json:"tags" binding:"required"`
-	ConsentStatus ConsentStatus  `json:"consent_status" binding:"required"`
+	Name  string         `json:"name" binding:"required"`
+	Phone string         `json:"phone" binding:"required"`
+	Tags  pq.StringArray `json:"tags" binding:"omitempty"`
 }

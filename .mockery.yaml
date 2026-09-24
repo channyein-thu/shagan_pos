@@ -38,3 +38,12 @@ packages:
       Storage:
         config:
           filename: "mock_storage_test.go"
+  shagan_pos/internal/customer:
+    config:
+      dir: "internal/customer"
+      outpkg: customer
+      inpackage: true
+    interfaces:
+      Repository:
+        config:
+          filename: "mock_customer_repository_test.go"

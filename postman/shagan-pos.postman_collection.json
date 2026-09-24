@@ -190,6 +190,283 @@
             "description": "Shagan-team-only. Protected by X-Internal-Key (INTERNAL_API_KEY). Registers a Device on branch_id without needing an authenticated owner session - branch_id must already belong to org_id, otherwise returns 404 (not 403 - same not-found-not-forbidden reasoning as the authenticated device/branch endpoints)."
           },
           "response": []
+          }
+        },
+        {
+          "name": "ListOrganizations - GET /internal/organizations",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Internal-Key",
+                "value": "{{internalKey}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/internal/organizations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "organizations"
+              ]
+            },
+            "description": "Shagan-team-only. Every organization, no filter - there's no tenant JWT to scope this from."
+          }
+        },
+        {
+          "name": "UpdateOrganizationStatus - PATCH /internal/organizations/:id/status",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-Internal-Key",
+                "value": "{{internalKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/internal/organizations/:id/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "organizations",
+                ":id",
+                "status"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"suspended\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Shagan-team-only. Suspends or reactivates a whole tenant - status is \"active\" or \"suspended\". A suspended org blocks Login/RefreshSession for every one of its users (owner, service_center, and pos alike), not just individually-suspended pos accounts."
+          }
+        },
+        {
+          "name": "ListBranchesInternal - GET /internal/branches",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Internal-Key",
+                "value": "{{internalKey}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/internal/branches?org_id=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "branches"
+              ],
+              "query": [
+                {
+                  "key": "org_id",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Shagan-team-only. Reuses the same logic as the tenant-facing GET /branches, with org_id (required query param) instead of a JWT."
+          }
+        },
+        {
+          "name": "ListDevicesInternal - GET /internal/devices",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Internal-Key",
+                "value": "{{internalKey}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/internal/devices?org_id=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "devices"
+              ],
+              "query": [
+                {
+                  "key": "org_id",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Shagan-team-only. Reuses the same logic as the tenant-facing GET /devices, with org_id (required query param) instead of a JWT."
+          }
+        },
+        {
+          "name": "ListPosAccounts - GET /internal/accounts/pos",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Internal-Key",
+                "value": "{{internalKey}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/internal/accounts/pos?org_id=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "accounts",
+                "pos"
+              ],
+              "query": [
+                {
+                  "key": "org_id",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Shagan-team-only. Every pos-type login in the given org (required query param)."
+          }
+        },
+        {
+          "name": "UpdatePosAccountStatus - PATCH /internal/accounts/pos/:id/status",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-Internal-Key",
+                "value": "{{internalKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/internal/accounts/pos/:id/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "accounts",
+                "pos",
+                ":id",
+                "status"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"suspended\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Shagan-team-only. Suspends or reactivates a single pos-terminal login, independent of the underlying Device's own status - status is \"active\" or \"suspended\". Returns 404 if :id isn't a pos-type account (this endpoint can't be used to disable an owner/service_center login)."
+          }
+        },
+        {
+          "name": "ResetPosAccountPassword - POST /internal/accounts/pos/:id/reset-password",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Internal-Key",
+                "value": "{{internalKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/internal/accounts/pos/:id/reset-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "accounts",
+                "pos",
+                ":id",
+                "reset-password"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"password\": \"a-brand-new-password\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Shagan-team-only. Resets a pos-terminal login's password - password is plaintext, hashed server-side before it's persisted. Returns 404 if :id isn't a pos-type account."
+          }
         }
       ]
     },
@@ -2450,6 +2727,25 @@
             "description": "ListCustomers"
           },
           "response": []
+              "raw": "{{baseUrl}}/api/v1/customers?search=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "customers"
+              ],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "",
+                  "description": "Optional - partial, case-insensitive match on name OR phone"
+                }
+              ]
+            },
+            "description": "Org-scoped. search is optional - a case-insensitive partial match against name OR phone in one field, matching a POS lookup screen's single search box. Omit it to list every customer in the caller's org."
+          }
         },
         {
           "name": "CreateCustomer - POST /customers",
@@ -2469,7 +2765,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{}",
+              "raw": "{\n  \"name\": \"Jane Doe\",\n  \"phone\": \"0987654321\",\n  \"tags\": [\"vip\"]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2484,6 +2780,8 @@
             "description": "Inline creation from the POS cart"
           },
           "response": []
+            "description": "Inline creation from the POS cart. org_id is never accepted here - it's taken from the caller's own token. tags is optional. consent_status isn't client-settable either - every new customer starts at \"pending\"; it only changes via POST /customers/:id/consents, which writes a real CustomerConsent audit row (see that endpoint's description). phone is unique per-org, not globally - the same phone number can exist in two different orgs."
+          }
         },
         {
           "name": "GetCustomer - GET /customers/:id",
@@ -2510,6 +2808,8 @@
             "description": "Detail + purchase history"
           },
           "response": []
+            "description": "Org-scoped - returns 404 for a customer that exists but belongs to a different org, same as one that doesn't exist at all. Detail only for now - purchase history needs Sales, which doesn't exist yet."
+          }
         },
         {
           "name": "ListCustomerConsents - GET /customers/:id/consents",
@@ -2536,6 +2836,8 @@
             "description": "ListCustomerConsents"
           },
           "response": []
+            "description": "Org-scoped via the customer - returns 404 if :id doesn't belong to the caller's org. The full consent audit trail for this customer, oldest first."
+          }
         },
         {
           "name": "CreateCustomerConsent - POST /customers/:id/consents",
@@ -2555,7 +2857,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{}",
+              "raw": "{\n  \"status\": \"granted\",\n  \"source\": \"pos\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2576,6 +2878,8 @@
             "description": "Also updates the cached customers.consent_status"
           },
           "response": []
+            "description": "customer_id isn't in the body - it's the :id path param. changed_at isn't client-settable either - the server stamps it at creation, same as Device.LastSeenAt. Writes a real CustomerConsent audit row AND updates the cached customers.consent_status in one atomic transaction - a failure partway through never leaves the cache out of sync with the actual consent history. status is one of: granted, revoked, pending. source is one of: pos, online, sms, email."
+          }
         }
       ]
     },

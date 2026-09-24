@@ -32,6 +32,27 @@ const (
 	AccountTypeServiceCenter AccountType = "service_center"
 )
 
+// OrganizationStatus gates whether a whole tenant can operate - a
+// Shagan-team-only lever (see CreateAccount/UpdateOrganizationStatus), not
+// something a tenant's own owner can set.
+type OrganizationStatus string
+
+const (
+	OrganizationStatusActive    OrganizationStatus = "active"
+	OrganizationStatusSuspended OrganizationStatus = "suspended"
+)
+
+// UserStatus gates whether a single login (most commonly a pos-type
+// terminal credential) can authenticate at all - checked in Login/RefreshSession,
+// separate from Device.Status (a device can be fine while its login is
+// suspended, e.g. after a password reset, or vice versa).
+type UserStatus string
+
+const (
+	UserStatusActive    UserStatus = "active"
+	UserStatusSuspended UserStatus = "suspended"
+)
+
 // StaffStatus is a best-guess enum (ERD only specified "enum"; confirm real values).
 type StaffStatus string
 
@@ -43,10 +64,14 @@ const (
 
 // Organization maps to the "Organizations" table in the ERD.
 type Organization struct {
-	ID        uint      `gorm:"primaryKey;autoIncrement" json:"id"`
-	Name      string    `gorm:"size:255;not null" json:"name"`
-	CreatedAt time.Time `gorm:"autoCreateTime;not null" json:"created_at"`
-	UpdatedAt time.Time `gorm:"autoUpdateTime;not null" json:"updated_at"`
+	ID   uint   `gorm:"primaryKey;autoIncrement" json:"id"`
+	Name string `gorm:"size:255;not null" json:"name"`
+	// Status defaults to active for every existing and new row (the
+	// `default` tag applies at the DB level via AutoMigrate, so this never
+	// needs setting explicitly in CreateAccount - see OrganizationStatus).
+	Status    OrganizationStatus `gorm:"type:varchar(30);not null;default:'active'" json:"status"`
+	CreatedAt time.Time          `gorm:"autoCreateTime;not null" json:"created_at"`
+	UpdatedAt time.Time          `gorm:"autoUpdateTime;not null" json:"updated_at"`
 }
 
 // Branch maps to the "Branches" table in the ERD.
@@ -85,11 +110,15 @@ type User struct {
 	// never accepted as client input, and gets carried into the access token's
 	// claims on Login/RefreshSession so a pos terminal's requests can be
 	// branch-scoped without an extra Device lookup.
-	BranchID       *uint     `gorm:"index" json:"branch_id"`
-	Email          *string   `gorm:"size:255;uniqueIndex" json:"email"`
-	CredentialHash string    `gorm:"size:255;not null" json:"credential_hash"`
-	CreatedAt      time.Time `gorm:"autoCreateTime;not null" json:"created_at"`
-	UpdatedAt      time.Time `gorm:"autoUpdateTime;not null" json:"updated_at"`
+	BranchID       *uint   `gorm:"index" json:"branch_id"`
+	Email          *string `gorm:"size:255;uniqueIndex" json:"email"`
+	CredentialHash string  `gorm:"size:255;not null" json:"credential_hash"`
+	// Status defaults to active for every existing and new row - see
+	// UserStatus. Checked in Login/RefreshSession; never settable by the
+	// account itself, only via the internal UpdatePosAccountStatus endpoint.
+	Status    UserStatus `gorm:"type:varchar(30);not null;default:'active'" json:"status"`
+	CreatedAt time.Time  `gorm:"autoCreateTime;not null" json:"created_at"`
+	UpdatedAt time.Time  `gorm:"autoUpdateTime;not null" json:"updated_at"`
 }
 
 // Session maps to the "Sessions" table in the ERD.

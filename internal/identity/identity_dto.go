@@ -146,6 +146,28 @@ type CreatePosAccountInput struct {
 	Password string `json:"password" binding:"required,min=8"`
 }
 
+// UpdateOrganizationStatusRequest is the request body for
+// `PATCH /internal/organizations/:id/status`. Shagan-team-only lever for
+// suspending/reactivating a whole tenant.
+type UpdateOrganizationStatusRequest struct {
+	Status OrganizationStatus `json:"status" binding:"required,oneof=active suspended"`
+}
+
+// UpdatePosAccountStatusRequest is the request body for
+// `PATCH /internal/accounts/pos/:id/status`. Only ever applies to a
+// pos-type User - see RepositoryImpl.UpdatePosAccountStatus.
+type UpdatePosAccountStatusRequest struct {
+	Status UserStatus `json:"status" binding:"required,oneof=active suspended"`
+}
+
+// ResetPosAccountPasswordRequest is the request body for
+// `POST /internal/accounts/pos/:id/reset-password`. Password is plaintext -
+// Service.ResetPosAccountPassword hashes it before it ever reaches the
+// repository, same as every other password field in this package.
+type ResetPosAccountPasswordRequest struct {
+	Password string `json:"password" binding:"required,min=8"`
+}
+
 // LoginRequest is the request body for `POST /auth/login`.
 type LoginRequest struct {
 	Email    string `json:"email" binding:"required,email"`
