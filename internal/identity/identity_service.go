@@ -40,4 +40,11 @@ type Interface interface {
 	ListRolePermissions(ctx context.Context, id uint) ([]Permission, error)
 	CreateAccount(ctx context.Context, in CreateAccountInput) (*CreateAccountResult, error)
 	CreatePosAccount(ctx context.Context, in CreatePosAccountInput) (*User, error)
+	ListOrganizations(ctx context.Context) ([]Organization, error)
+	ListPosAccounts(ctx context.Context, orgID uint) ([]User, error)
+	UpdateOrganizationStatus(ctx context.Context, id uint, status OrganizationStatus) error
+	UpdatePosAccountStatus(ctx context.Context, id uint, status UserStatus) error
+	// ResetPosAccountPassword hashes plaintext before it ever reaches the
+	// repository - see Service.CreateAccount for the same pattern.
+	ResetPosAccountPassword(ctx context.Context, id uint, plaintext string) error
 }

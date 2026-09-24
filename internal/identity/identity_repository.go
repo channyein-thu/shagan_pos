@@ -83,4 +83,28 @@ type Repository interface {
 	// CreatePosAccount returns common.NotFoundError if in.DeviceID doesn't
 	// belong to in.OrgID - same not-found-not-forbidden reasoning as branches.
 	CreatePosAccount(ctx context.Context, in CreatePosAccountInput) (*User, error)
+	// ListOrganizations and ListPosAccounts back the Shagan-team-only
+	// internal portal, which has no tenant JWT to scope from - orgID (for
+	// ListPosAccounts) comes from a query param instead, trusted because the
+	// caller already holds the shared X-Internal-Key.
+	ListOrganizations(ctx context.Context) ([]Organization, error)
+	// GetOrganization backs Login/RefreshSession's check that a user's own
+	// organization isn't suspended - a whole-tenant suspension must block
+	// every one of that org's logins (owner/service_center/pos alike), not
+	// just individually-suspended pos accounts.
+	GetOrganization(ctx context.Context, id uint) (*Organization, error)
+	ListPosAccounts(ctx context.Context, orgID uint) ([]User, error)
+	// UpdateOrganizationStatus is a plain field write - the decision of when
+	// a tenant should be suspended is the internal portal operator's, not a
+	// business rule this layer enforces.
+	UpdateOrganizationStatus(ctx context.Context, id uint, status OrganizationStatus) error
+	// UpdatePosAccountStatus and ResetPosAccountPassword return
+	// common.NotFoundError if id isn't a pos-type User - same
+	// not-found-not-forbidden reasoning as everywhere else, and it keeps
+	// these internal endpoints from silently doubling as a generic
+	// "disable/reset any account" tool for owner/service_center logins.
+	UpdatePosAccountStatus(ctx context.Context, id uint, status UserStatus) error
+	// ResetPosAccountPassword takes credentialHash already hashed - see
+	// Service.ResetPosAccountPassword.
+	ResetPosAccountPassword(ctx context.Context, id uint, credentialHash string) error
 }

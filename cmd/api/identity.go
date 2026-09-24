@@ -64,6 +64,25 @@ func (a *IdentityAPI) RegisterInternalRoutes(rg *gin.RouterGroup) {
 	rg.POST("/accounts/pos", a.CreatePosAccount)
 	rg.POST("/branches", a.CreateBranchInternal)
 	rg.POST("/devices", a.CreateDeviceInternal)
+	rg.GET("/organizations", a.ListOrganizations)
+	rg.PATCH("/organizations/:id/status", a.UpdateOrganizationStatus)
+	rg.GET("/branches", a.ListBranchesInternal)
+	rg.GET("/devices", a.ListDevicesInternal)
+	rg.GET("/accounts/pos", a.ListPosAccounts)
+	rg.PATCH("/accounts/pos/:id/status", a.UpdatePosAccountStatus)
+	rg.POST("/accounts/pos/:id/reset-password", a.ResetPosAccountPassword)
+}
+
+// requireOrgIDQuery reads a required org_id query param - the internal
+// portal has no tenant JWT to scope from, so org_id is passed explicitly and
+// trusted because the caller already holds the shared X-Internal-Key.
+func requireOrgIDQuery(c *gin.Context) (uint, bool) {
+	val, err := strconv.ParseUint(c.Query("org_id"), 10, 64)
+	if err != nil {
+		common.HandleError(c, common.BadRequestError("org_id query param is required"))
+		return 0, false
+	}
+	return uint(val), true
 }
 
 // Login handles `POST /auth/login`. Owner email+password login
@@ -541,6 +560,125 @@ func (a *IdentityAPI) CreatePosAccount(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, result)
+}
+
+// ListOrganizations handles `GET /internal/organizations`. Shagan-team-only:
+// every org, no filter - there's no tenant JWT to scope this from.
+func (a *IdentityAPI) ListOrganizations(c *gin.Context) {
+	result, err := a.service.ListOrganizations(c.Request.Context())
+	if err != nil {
+		common.HandleError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// UpdateOrganizationStatus handles
+// `PATCH /internal/organizations/:id/status`. Shagan-team-only: suspends or
+// reactivates a whole tenant.
+func (a *IdentityAPI) UpdateOrganizationStatus(c *gin.Context) {
+	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		common.HandleError(c, common.BadRequestError("invalid id"))
+		return
+	}
+	var in identity.UpdateOrganizationStatusRequest
+	if err := c.ShouldBindJSON(&in); err != nil {
+		common.HandleError(c, common.BadRequestError(err.Error()))
+		return
+	}
+	if err := a.service.UpdateOrganizationStatus(c.Request.Context(), uint(idVal), in.Status); err != nil {
+		common.HandleError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+// ListBranchesInternal handles `GET /internal/branches`. Shagan-team-only:
+// reuses the same Service.ListBranches the tenant-facing GET /branches uses,
+// just with org_id read from a query param instead of the caller's own JWT.
+func (a *IdentityAPI) ListBranchesInternal(c *gin.Context) {
+	orgID, ok := requireOrgIDQuery(c)
+	if !ok {
+		return
+	}
+	result, err := a.service.ListBranches(c.Request.Context(), orgID)
+	if err != nil {
+		common.HandleError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// ListDevicesInternal handles `GET /internal/devices`. Shagan-team-only:
+// reuses the same Service.ListDevices the tenant-facing GET /devices uses.
+func (a *IdentityAPI) ListDevicesInternal(c *gin.Context) {
+	orgID, ok := requireOrgIDQuery(c)
+	if !ok {
+		return
+	}
+	result, err := a.service.ListDevices(c.Request.Context(), orgID)
+	if err != nil {
+		common.HandleError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// ListPosAccounts handles `GET /internal/accounts/pos`. Shagan-team-only:
+// every pos-type User in the given org.
+func (a *IdentityAPI) ListPosAccounts(c *gin.Context) {
+	orgID, ok := requireOrgIDQuery(c)
+	if !ok {
+		return
+	}
+	result, err := a.service.ListPosAccounts(c.Request.Context(), orgID)
+	if err != nil {
+		common.HandleError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// UpdatePosAccountStatus handles `PATCH /internal/accounts/pos/:id/status`.
+// Shagan-team-only: suspends or reactivates a single pos-terminal login,
+// independent of the underlying Device's own status.
+func (a *IdentityAPI) UpdatePosAccountStatus(c *gin.Context) {
+	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		common.HandleError(c, common.BadRequestError("invalid id"))
+		return
+	}
+	var in identity.UpdatePosAccountStatusRequest
+	if err := c.ShouldBindJSON(&in); err != nil {
+		common.HandleError(c, common.BadRequestError(err.Error()))
+		return
+	}
+	if err := a.service.UpdatePosAccountStatus(c.Request.Context(), uint(idVal), in.Status); err != nil {
+		common.HandleError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+// ResetPosAccountPassword handles
+// `POST /internal/accounts/pos/:id/reset-password`. Shagan-team-only.
+func (a *IdentityAPI) ResetPosAccountPassword(c *gin.Context) {
+	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		common.HandleError(c, common.BadRequestError("invalid id"))
+		return
+	}
+	var in identity.ResetPosAccountPasswordRequest
+	if err := c.ShouldBindJSON(&in); err != nil {
+		common.HandleError(c, common.BadRequestError(err.Error()))
+		return
+	}
+	if err := a.service.ResetPosAccountPassword(c.Request.Context(), uint(idVal), in.Password); err != nil {
+		common.HandleError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 // CreateBranchInternal handles `POST /internal/branches`. Shagan-team-only:

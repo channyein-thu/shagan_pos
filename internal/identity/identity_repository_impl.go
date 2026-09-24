@@ -483,3 +483,75 @@ func (r *RepositoryImpl) CreatePosAccount(ctx context.Context, in CreatePosAccou
 
 	return &user, nil
 }
+
+// ListOrganizations backs `GET /internal/organizations`. Shagan-team-only:
+// every org, no filter - there's no tenant JWT to scope this from.
+func (r *RepositoryImpl) ListOrganizations(ctx context.Context) ([]Organization, error) {
+	var orgs []Organization
+	if err := r.db.WithContext(ctx).Find(&orgs).Error; err != nil {
+		return nil, err
+	}
+	return orgs, nil
+}
+
+// GetOrganization backs Login/RefreshSession's suspension check.
+func (r *RepositoryImpl) GetOrganization(ctx context.Context, id uint) (*Organization, error) {
+	var org Organization
+	if err := r.db.WithContext(ctx).First(&org, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, common.NotFoundError("organization not found")
+		}
+		return nil, err
+	}
+	return &org, nil
+}
+
+// ListPosAccounts backs `GET /internal/accounts/pos`. Shagan-team-only:
+// orgID comes from a query param, not a token.
+func (r *RepositoryImpl) ListPosAccounts(ctx context.Context, orgID uint) ([]User, error) {
+	var users []User
+	err := r.db.WithContext(ctx).
+		Where("org_id = ? AND account_type = ?", orgID, AccountTypePos).
+		Find(&users).Error
+	if err != nil {
+		return nil, err
+	}
+	return users, nil
+}
+
+// UpdateOrganizationStatus backs `PATCH /internal/organizations/:id/status`.
+func (r *RepositoryImpl) UpdateOrganizationStatus(ctx context.Context, id uint, status OrganizationStatus) error {
+	return r.db.WithContext(ctx).Model(&Organization{}).Where("id = ?", id).Update("status", status).Error
+}
+
+// getPosAccount fetches a User, scoped to AccountTypePos - shared by
+// UpdatePosAccountStatus/ResetPosAccountPassword so neither can be used to
+// silently disable/reset an owner or service_center login instead.
+func (r *RepositoryImpl) getPosAccount(ctx context.Context, id uint) (*User, error) {
+	var user User
+	err := r.db.WithContext(ctx).Where("id = ? AND account_type = ?", id, AccountTypePos).First(&user).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, common.NotFoundError("pos account not found")
+		}
+		return nil, err
+	}
+	return &user, nil
+}
+
+// UpdatePosAccountStatus backs `PATCH /internal/accounts/pos/:id/status`.
+func (r *RepositoryImpl) UpdatePosAccountStatus(ctx context.Context, id uint, status UserStatus) error {
+	if _, err := r.getPosAccount(ctx, id); err != nil {
+		return err
+	}
+	return r.db.WithContext(ctx).Model(&User{}).Where("id = ?", id).Update("status", status).Error
+}
+
+// ResetPosAccountPassword backs `POST /internal/accounts/pos/:id/reset-password`.
+// credentialHash is already hashed - see Service.ResetPosAccountPassword.
+func (r *RepositoryImpl) ResetPosAccountPassword(ctx context.Context, id uint, credentialHash string) error {
+	if _, err := r.getPosAccount(ctx, id); err != nil {
+		return err
+	}
+	return r.db.WithContext(ctx).Model(&User{}).Where("id = ?", id).Update("credential_hash", credentialHash).Error
+}

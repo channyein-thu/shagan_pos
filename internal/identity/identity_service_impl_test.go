@@ -176,6 +176,116 @@ func TestService_CreatePosAccount_PropagatesRepositoryError(t *testing.T) {
 	require.Equal(t, wantErr.Message, gotErr.Message)
 }
 
+func TestService_ListOrganizations_DelegatesToRepository(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo)
+
+	want := []Organization{{ID: 1, Name: "Acme Retail"}, {ID: 2, Name: "Golden Star Retail"}}
+	repo.EXPECT().ListOrganizations(mock.Anything).Return(want, nil).Once()
+
+	got, err := svc.ListOrganizations(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+}
+
+func TestService_ListOrganizations_PropagatesRepositoryError(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo)
+
+	wantErr := common.SystemError("db read failed")
+	repo.EXPECT().ListOrganizations(mock.Anything).Return(nil, wantErr).Once()
+
+	_, err := svc.ListOrganizations(context.Background())
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusInternalServerError)
+}
+
+func TestService_ListPosAccounts_DelegatesToRepository(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo)
+
+	want := []User{{ID: 1, OrgID: 7, AccountType: AccountTypePos}}
+	repo.EXPECT().ListPosAccounts(mock.Anything, uint(7)).Return(want, nil).Once()
+
+	got, err := svc.ListPosAccounts(context.Background(), 7)
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+}
+
+func TestService_UpdateOrganizationStatus_DelegatesToRepository(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo)
+
+	repo.EXPECT().UpdateOrganizationStatus(mock.Anything, uint(1), OrganizationStatusSuspended).Return(nil).Once()
+
+	err := svc.UpdateOrganizationStatus(context.Background(), 1, OrganizationStatusSuspended)
+	require.NoError(t, err)
+}
+
+func TestService_UpdateOrganizationStatus_PropagatesRepositoryError(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo)
+
+	wantErr := common.SystemError("db write failed")
+	repo.EXPECT().UpdateOrganizationStatus(mock.Anything, uint(1), OrganizationStatusSuspended).Return(wantErr).Once()
+
+	err := svc.UpdateOrganizationStatus(context.Background(), 1, OrganizationStatusSuspended)
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusInternalServerError)
+}
+
+func TestService_UpdatePosAccountStatus_DelegatesToRepository(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo)
+
+	repo.EXPECT().UpdatePosAccountStatus(mock.Anything, uint(5), UserStatusSuspended).Return(nil).Once()
+
+	err := svc.UpdatePosAccountStatus(context.Background(), 5, UserStatusSuspended)
+	require.NoError(t, err)
+}
+
+func TestService_UpdatePosAccountStatus_PropagatesNotFound(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo)
+
+	wantErr := common.NotFoundError("pos account not found")
+	repo.EXPECT().UpdatePosAccountStatus(mock.Anything, uint(999), UserStatusSuspended).Return(wantErr).Once()
+
+	err := svc.UpdatePosAccountStatus(context.Background(), 999, UserStatusSuspended)
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusNotFound)
+}
+
+func TestService_ResetPosAccountPassword_HashesPasswordBeforePersisting(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo)
+
+	const plaintext = "a-brand-new-password"
+	repo.EXPECT().
+		ResetPosAccountPassword(mock.Anything, uint(5), mock.MatchedBy(func(hash string) bool {
+			if hash == plaintext {
+				return false // must not be the plaintext
+			}
+			return bcrypt.CompareHashAndPassword([]byte(hash), []byte(plaintext)) == nil
+		})).
+		Return(nil).Once()
+
+	err := svc.ResetPosAccountPassword(context.Background(), 5, plaintext)
+	require.NoError(t, err)
+}
+
+func TestService_ResetPosAccountPassword_PropagatesNotFound(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo)
+
+	wantErr := common.NotFoundError("pos account not found")
+	repo.EXPECT().ResetPosAccountPassword(mock.Anything, uint(999), mock.Anything).Return(wantErr).Once()
+
+	err := svc.ResetPosAccountPassword(context.Background(), 999, "whatever-password")
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusNotFound)
+}
+
 func hashPassword(t *testing.T, plaintext string) string {
 	t.Helper()
 	hash, err := bcrypt.GenerateFromPassword([]byte(plaintext), bcrypt.DefaultCost)
@@ -198,6 +308,7 @@ func TestService_Login_HappyPath(t *testing.T) {
 	user := &User{ID: 42, OrgID: 7, CredentialHash: hashPassword(t, plaintext)}
 
 	repo.EXPECT().GetUserByEmail(mock.Anything, "owner@acme.test").Return(user, nil).Once()
+	repo.EXPECT().GetOrganization(mock.Anything, uint(7)).Return(&Organization{ID: 7, Status: OrganizationStatusActive}, nil).Once()
 
 	var capturedHash string
 	repo.EXPECT().
@@ -237,6 +348,7 @@ func TestService_Login_PosAccount_IncludesBranchIDInClaims(t *testing.T) {
 	user := &User{ID: 42, OrgID: 7, BranchID: &branchID, CredentialHash: hashPassword(t, plaintext)}
 
 	repo.EXPECT().GetUserByEmail(mock.Anything, "pos1@acme.test").Return(user, nil).Once()
+	repo.EXPECT().GetOrganization(mock.Anything, uint(7)).Return(&Organization{ID: 7, Status: OrganizationStatusActive}, nil).Once()
 	repo.EXPECT().
 		CreateSession(mock.Anything, user.ID, mock.Anything, mock.AnythingOfType("time.Time")).
 		Return(&Session{ID: 1}, nil).
@@ -285,6 +397,44 @@ func TestService_Login_WrongPassword_ReturnsSameGenericUnauthorized(t *testing.T
 	require.Equal(t, invalidCredentialsMessage, restErr.Message, "must match the unknown-email message exactly - no user enumeration")
 }
 
+func TestService_Login_SuspendedAccount_ReturnsSameGenericUnauthorized(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo)
+
+	const plaintext = "correct horse battery staple"
+	user := &User{ID: 42, OrgID: 7, Status: UserStatusSuspended, CredentialHash: hashPassword(t, plaintext)}
+	repo.EXPECT().GetUserByEmail(mock.Anything, "pos1@acme.test").Return(user, nil).Once()
+	// CreateSession must never be called - a suspended account never gets a session.
+
+	_, err := svc.Login(context.Background(), LoginRequest{Email: "pos1@acme.test", Password: plaintext})
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusUnauthorized)
+
+	var restErr common.RestError
+	errors.As(err, &restErr)
+	require.Equal(t, invalidCredentialsMessage, restErr.Message, "must match the wrong-password message exactly - a suspended account must not be distinguishable from a wrong password")
+}
+
+func TestService_Login_SuspendedOrganization_ReturnsSameGenericUnauthorized(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo)
+
+	const plaintext = "correct horse battery staple"
+	user := &User{ID: 42, OrgID: 7, CredentialHash: hashPassword(t, plaintext)}
+	repo.EXPECT().GetUserByEmail(mock.Anything, "owner@acme.test").Return(user, nil).Once()
+	repo.EXPECT().GetOrganization(mock.Anything, uint(7)).Return(&Organization{ID: 7, Status: OrganizationStatusSuspended}, nil).Once()
+	// CreateSession must never be called - a whole-tenant suspension blocks
+	// every one of that org's users, not just individually-suspended ones.
+
+	_, err := svc.Login(context.Background(), LoginRequest{Email: "owner@acme.test", Password: plaintext})
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusUnauthorized)
+
+	var restErr common.RestError
+	errors.As(err, &restErr)
+	require.Equal(t, invalidCredentialsMessage, restErr.Message)
+}
+
 func TestService_Login_UnexpectedRepositoryError_PropagatesAsIs(t *testing.T) {
 	repo := NewMockRepository(t)
 	svc := newTestService(repo)
@@ -304,6 +454,7 @@ func TestService_Login_CreateSessionFails_PropagatesError(t *testing.T) {
 	user := &User{ID: 42, OrgID: 7, CredentialHash: hashPassword(t, plaintext)}
 
 	repo.EXPECT().GetUserByEmail(mock.Anything, "owner@acme.test").Return(user, nil).Once()
+	repo.EXPECT().GetOrganization(mock.Anything, uint(7)).Return(&Organization{ID: 7, Status: OrganizationStatusActive}, nil).Once()
 	sessionErr := common.SystemError("db write failed")
 	repo.EXPECT().
 		CreateSession(mock.Anything, user.ID, mock.Anything, mock.AnythingOfType("time.Time")).
@@ -328,6 +479,7 @@ func TestService_RefreshSession_HappyPath_RotatesToken(t *testing.T) {
 
 	repo.EXPECT().GetSessionByRefreshHash(mock.Anything, oldHash).Return(session, nil).Once()
 	repo.EXPECT().GetUserByID(mock.Anything, user.ID).Return(user, nil).Once()
+	repo.EXPECT().GetOrganization(mock.Anything, uint(7)).Return(&Organization{ID: 7, Status: OrganizationStatusActive}, nil).Once()
 
 	var newHash string
 	repo.EXPECT().
@@ -415,6 +567,46 @@ func TestService_RefreshSession_UserGone_ReturnsGenericUnauthorized(t *testing.T
 	requireRestErrorStatus(t, err, http.StatusUnauthorized)
 }
 
+func TestService_RefreshSession_SuspendedAccount_ReturnsSameGenericUnauthorized(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo)
+
+	session := &Session{ID: 1, UserID: 42, ExpiresAt: time.Now().Add(time.Hour)}
+	user := &User{ID: 42, OrgID: 7, Status: UserStatusSuspended}
+	repo.EXPECT().GetSessionByRefreshHash(mock.Anything, mock.Anything).Return(session, nil).Once()
+	repo.EXPECT().GetUserByID(mock.Anything, session.UserID).Return(user, nil).Once()
+	// CreateSession/RevokeSession must never be called - a refresh token
+	// belonging to a now-suspended account must stop working immediately.
+
+	_, err := svc.RefreshSession(context.Background(), RefreshRequest{RefreshToken: testRefreshPlaintext})
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusUnauthorized)
+
+	var restErr common.RestError
+	errors.As(err, &restErr)
+	require.Equal(t, invalidRefreshTokenMessage, restErr.Message)
+}
+
+func TestService_RefreshSession_SuspendedOrganization_ReturnsSameGenericUnauthorized(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo)
+
+	session := &Session{ID: 1, UserID: 42, ExpiresAt: time.Now().Add(time.Hour)}
+	user := &User{ID: 42, OrgID: 7}
+	repo.EXPECT().GetSessionByRefreshHash(mock.Anything, mock.Anything).Return(session, nil).Once()
+	repo.EXPECT().GetUserByID(mock.Anything, session.UserID).Return(user, nil).Once()
+	repo.EXPECT().GetOrganization(mock.Anything, uint(7)).Return(&Organization{ID: 7, Status: OrganizationStatusSuspended}, nil).Once()
+	// CreateSession/RevokeSession must never be called.
+
+	_, err := svc.RefreshSession(context.Background(), RefreshRequest{RefreshToken: testRefreshPlaintext})
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusUnauthorized)
+
+	var restErr common.RestError
+	errors.As(err, &restErr)
+	require.Equal(t, invalidRefreshTokenMessage, restErr.Message)
+}
+
 func TestService_RefreshSession_RotationFails_PropagatesError(t *testing.T) {
 	repo := NewMockRepository(t)
 	svc := newTestService(repo)
@@ -423,6 +615,7 @@ func TestService_RefreshSession_RotationFails_PropagatesError(t *testing.T) {
 	user := &User{ID: 42, OrgID: 7}
 	repo.EXPECT().GetSessionByRefreshHash(mock.Anything, mock.Anything).Return(session, nil).Once()
 	repo.EXPECT().GetUserByID(mock.Anything, session.UserID).Return(user, nil).Once()
+	repo.EXPECT().GetOrganization(mock.Anything, uint(7)).Return(&Organization{ID: 7, Status: OrganizationStatusActive}, nil).Once()
 
 	dbErr := common.SystemError("db write failed")
 	repo.EXPECT().

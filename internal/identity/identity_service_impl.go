@@ -94,6 +94,28 @@ func (s *Service) Login(ctx context.Context, in LoginRequest) (*SessionResult, e
 		return nil, common.UnauthorizedError(invalidCredentialsMessage)
 	}
 
+	// Folded into the same generic message as a wrong password - a
+	// suspended account (see UpdatePosAccountStatus) must be
+	// indistinguishable from a wrong password to anyone probing it.
+	if user.Status == UserStatusSuspended {
+		return nil, common.UnauthorizedError(invalidCredentialsMessage)
+	}
+
+	// A whole-tenant suspension (see UpdateOrganizationStatus) must block
+	// every one of that org's logins, not just individually-suspended pos
+	// accounts - same generic message, same reasoning.
+	org, err := s.repo.GetOrganization(ctx, user.OrgID)
+	if err != nil {
+		var restErr common.RestError
+		if errors.As(err, &restErr) && restErr.Status == http.StatusNotFound {
+			return nil, common.UnauthorizedError(invalidCredentialsMessage)
+		}
+		return nil, err
+	}
+	if org.Status == OrganizationStatusSuspended {
+		return nil, common.UnauthorizedError(invalidCredentialsMessage)
+	}
+
 	accessToken, err := authtoken.GenerateAccessToken(s.jwtSecret, user.ID, user.OrgID, user.BranchID, s.accessTokenTTL)
 	if err != nil {
 		return nil, common.SystemError("failed to issue access token")
@@ -146,6 +168,26 @@ func (s *Service) RefreshSession(ctx context.Context, in RefreshRequest) (*Sessi
 			return nil, common.UnauthorizedError(invalidRefreshTokenMessage)
 		}
 		return nil, err
+	}
+
+	// A refresh token issued before the account was suspended must stop
+	// working immediately, not just future logins - same generic message,
+	// same reasoning as Login's own suspension check.
+	if user.Status == UserStatusSuspended {
+		return nil, common.UnauthorizedError(invalidRefreshTokenMessage)
+	}
+
+	// Same for a whole-tenant suspension - see Login's identical check.
+	org, err := s.repo.GetOrganization(ctx, user.OrgID)
+	if err != nil {
+		var restErr common.RestError
+		if errors.As(err, &restErr) && restErr.Status == http.StatusNotFound {
+			return nil, common.UnauthorizedError(invalidRefreshTokenMessage)
+		}
+		return nil, err
+	}
+	if org.Status == OrganizationStatusSuspended {
+		return nil, common.UnauthorizedError(invalidRefreshTokenMessage)
 	}
 
 	accessToken, err := authtoken.GenerateAccessToken(s.jwtSecret, user.ID, user.OrgID, user.BranchID, s.accessTokenTTL)
@@ -510,4 +552,30 @@ func (s *Service) CreatePosAccount(ctx context.Context, in CreatePosAccountInput
 	in.Password = string(hash)
 
 	return s.repo.CreatePosAccount(ctx, in)
+}
+
+func (s *Service) ListOrganizations(ctx context.Context) ([]Organization, error) {
+	return s.repo.ListOrganizations(ctx)
+}
+
+func (s *Service) ListPosAccounts(ctx context.Context, orgID uint) ([]User, error) {
+	return s.repo.ListPosAccounts(ctx, orgID)
+}
+
+func (s *Service) UpdateOrganizationStatus(ctx context.Context, id uint, status OrganizationStatus) error {
+	return s.repo.UpdateOrganizationStatus(ctx, id, status)
+}
+
+func (s *Service) UpdatePosAccountStatus(ctx context.Context, id uint, status UserStatus) error {
+	return s.repo.UpdatePosAccountStatus(ctx, id, status)
+}
+
+// ResetPosAccountPassword hashes the plaintext password before it ever
+// reaches the repository - same pattern as CreateAccount/CreatePosAccount.
+func (s *Service) ResetPosAccountPassword(ctx context.Context, id uint, plaintext string) error {
+	hash, err := bcrypt.GenerateFromPassword([]byte(plaintext), bcrypt.DefaultCost)
+	if err != nil {
+		return common.SystemError("failed to hash password")
+	}
+	return s.repo.ResetPosAccountPassword(ctx, id, string(hash))
 }
