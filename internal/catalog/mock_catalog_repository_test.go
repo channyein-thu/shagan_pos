@@ -22,6 +22,63 @@ func (_m *MockRepository) EXPECT() *MockRepository_Expecter {
 	return &MockRepository_Expecter{mock: &_m.Mock}
 }
 
+// ComboItemsExistForProduct provides a mock function with given fields: ctx, productID
+func (_m *MockRepository) ComboItemsExistForProduct(ctx context.Context, productID uint) (bool, error) {
+	ret := _m.Called(ctx, productID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ComboItemsExistForProduct")
+	}
+
+	var r0 bool
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, uint) (bool, error)); ok {
+		return rf(ctx, productID)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, uint) bool); ok {
+		r0 = rf(ctx, productID)
+	} else {
+		r0 = ret.Get(0).(bool)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, uint) error); ok {
+		r1 = rf(ctx, productID)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// MockRepository_ComboItemsExistForProduct_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ComboItemsExistForProduct'
+type MockRepository_ComboItemsExistForProduct_Call struct {
+	*mock.Call
+}
+
+// ComboItemsExistForProduct is a helper method to define mock.On call
+//   - ctx context.Context
+//   - productID uint
+func (_e *MockRepository_Expecter) ComboItemsExistForProduct(ctx interface{}, productID interface{}) *MockRepository_ComboItemsExistForProduct_Call {
+	return &MockRepository_ComboItemsExistForProduct_Call{Call: _e.mock.On("ComboItemsExistForProduct", ctx, productID)}
+}
+
+func (_c *MockRepository_ComboItemsExistForProduct_Call) Run(run func(ctx context.Context, productID uint)) *MockRepository_ComboItemsExistForProduct_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(uint))
+	})
+	return _c
+}
+
+func (_c *MockRepository_ComboItemsExistForProduct_Call) Return(_a0 bool, _a1 error) *MockRepository_ComboItemsExistForProduct_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *MockRepository_ComboItemsExistForProduct_Call) RunAndReturn(run func(context.Context, uint) (bool, error)) *MockRepository_ComboItemsExistForProduct_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // CreateCategory provides a mock function with given fields: ctx, category
 func (_m *MockRepository) CreateCategory(ctx context.Context, category *Category) error {
 	ret := _m.Called(ctx, category)
@@ -445,17 +502,17 @@ func (_c *MockRepository_DeleteComboImagesByComboID_Call) RunAndReturn(run func(
 	return _c
 }
 
-// DeleteProduct provides a mock function with given fields: ctx, id
-func (_m *MockRepository) DeleteProduct(ctx context.Context, id uint) error {
-	ret := _m.Called(ctx, id)
+// DeleteProduct provides a mock function with given fields: db, id
+func (_m *MockRepository) DeleteProduct(db *gorm.DB, id uint) error {
+	ret := _m.Called(db, id)
 
 	if len(ret) == 0 {
 		panic("no return value specified for DeleteProduct")
 	}
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, uint) error); ok {
-		r0 = rf(ctx, id)
+	if rf, ok := ret.Get(0).(func(*gorm.DB, uint) error); ok {
+		r0 = rf(db, id)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -469,15 +526,15 @@ type MockRepository_DeleteProduct_Call struct {
 }
 
 // DeleteProduct is a helper method to define mock.On call
-//   - ctx context.Context
+//   - db *gorm.DB
 //   - id uint
-func (_e *MockRepository_Expecter) DeleteProduct(ctx interface{}, id interface{}) *MockRepository_DeleteProduct_Call {
-	return &MockRepository_DeleteProduct_Call{Call: _e.mock.On("DeleteProduct", ctx, id)}
+func (_e *MockRepository_Expecter) DeleteProduct(db interface{}, id interface{}) *MockRepository_DeleteProduct_Call {
+	return &MockRepository_DeleteProduct_Call{Call: _e.mock.On("DeleteProduct", db, id)}
 }
 
-func (_c *MockRepository_DeleteProduct_Call) Run(run func(ctx context.Context, id uint)) *MockRepository_DeleteProduct_Call {
+func (_c *MockRepository_DeleteProduct_Call) Run(run func(db *gorm.DB, id uint)) *MockRepository_DeleteProduct_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(uint))
+		run(args[0].(*gorm.DB), args[1].(uint))
 	})
 	return _c
 }
@@ -487,7 +544,7 @@ func (_c *MockRepository_DeleteProduct_Call) Return(_a0 error) *MockRepository_D
 	return _c
 }
 
-func (_c *MockRepository_DeleteProduct_Call) RunAndReturn(run func(context.Context, uint) error) *MockRepository_DeleteProduct_Call {
+func (_c *MockRepository_DeleteProduct_Call) RunAndReturn(run func(*gorm.DB, uint) error) *MockRepository_DeleteProduct_Call {
 	_c.Call.Return(run)
 	return _c
 }

@@ -328,14 +328,19 @@ func (a *CatalogAPI) UpdateProduct(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// DeleteProduct handles `DELETE /products/:id`. Soft delete only
+// DeleteProduct handles `DELETE /products/:id`. Hard delete, blocked if any
+// combo still references the product.
 func (a *CatalogAPI) DeleteProduct(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
-	if err := a.service.DeleteProduct(c.Request.Context(), uint(idVal)); err != nil {
+	if err := a.service.DeleteProduct(c.Request.Context(), orgID, uint(idVal)); err != nil {
 		common.HandleError(c, err)
 		return
 	}

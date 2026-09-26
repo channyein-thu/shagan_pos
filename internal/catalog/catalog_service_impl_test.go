@@ -1060,6 +1060,81 @@ func TestService_UpdateProduct_ImageRowFails_CleansUpUploadedObject(t *testing.T
 	require.ErrorIs(t, err, dbErr)
 }
 
+func TestService_DeleteProduct_HappyPath_DeletesProductAndImages(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	existing := &Product{ID: 1, OrgID: 7, BranchID: 5}
+	images := []ProductImage{{ID: 10, ProductID: 1, StorageKey: "products/1/photo.png"}}
+
+	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(existing, nil).Once()
+	repo.EXPECT().ComboItemsExistForProduct(mock.Anything, uint(1)).Return(false, nil).Once()
+	repo.EXPECT().ListProductImagesByProductIDs(mock.Anything, []uint{1}).Return(images, nil).Once()
+	repo.EXPECT().DeleteProductImagesByProductID(mock.Anything, uint(1)).Return(nil).Once()
+	repo.EXPECT().DeleteProduct(mock.Anything, uint(1)).Return(nil).Once()
+	// the storage object is only removed after the DB delete commits - see
+	// Service.DeleteProduct's comment.
+	store.EXPECT().Delete(mock.Anything, "products/1/photo.png").Return(nil).Once()
+
+	err := svc.DeleteProduct(context.Background(), 7, 1)
+	require.NoError(t, err)
+}
+
+func TestService_DeleteProduct_InUseByCombo_ReturnsConflict(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	existing := &Product{ID: 1, OrgID: 7, BranchID: 5}
+	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(existing, nil).Once()
+	repo.EXPECT().ComboItemsExistForProduct(mock.Anything, uint(1)).Return(true, nil).Once()
+	// Neither the image lookup nor DeleteProduct must be called once a
+	// combo reference is found - no .EXPECT() set up for either means the
+	// mock fails the test if it is.
+
+	err := svc.DeleteProduct(context.Background(), 7, 1)
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusConflict)
+}
+
+func TestService_DeleteProduct_PropagatesNotFound(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	wantErr := common.NotFoundError("product not found")
+	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(999)).Return(nil, wantErr).Once()
+	// Neither ComboItemsExistForProduct nor DeleteProduct must be called on
+	// a not-found product.
+
+	err := svc.DeleteProduct(context.Background(), 7, 999)
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusNotFound)
+}
+
+func TestService_DeleteProduct_RepositoryDeleteFails_PropagatesAsIs(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	existing := &Product{ID: 1, OrgID: 7, BranchID: 5}
+	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(existing, nil).Once()
+	repo.EXPECT().ComboItemsExistForProduct(mock.Anything, uint(1)).Return(false, nil).Once()
+	repo.EXPECT().ListProductImagesByProductIDs(mock.Anything, []uint{1}).Return(nil, nil).Once()
+	repo.EXPECT().DeleteProductImagesByProductID(mock.Anything, uint(1)).Return(nil).Once()
+	dbErr := errors.New("db write failed")
+	repo.EXPECT().DeleteProduct(mock.Anything, uint(1)).Return(dbErr).Once()
+	// storage.Delete must never be called once the DB delete itself fails.
+
+	err := svc.DeleteProduct(context.Background(), 7, 1)
+	require.ErrorIs(t, err, dbErr)
+}
+
 func validCreateComboRequest() CreateComboRequest {
 	return CreateComboRequest{
 		Name:      "Breakfast Combo",

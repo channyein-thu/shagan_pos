@@ -60,7 +60,20 @@ type Repository interface {
 	// before the new one is created. Plain delete, same
 	// db-is-either-plain-or-in-flight-transaction reasoning as CreateProduct.
 	DeleteProductImagesByProductID(db *gorm.DB, productID uint) error
-	DeleteProduct(ctx context.Context, id uint) error
+	// ComboItemsExistForProduct backs Service.DeleteProduct's
+	// referential-integrity check - a plain existence query. Whether that
+	// should block the delete is the service's call, not this one's, same
+	// reasoning as ProductsExistForCategory.
+	ComboItemsExistForProduct(ctx context.Context, productID uint) (bool, error)
+	// DeleteProduct is a hard delete - Product has no status field to
+	// deactivate instead (unlike Staff/Branch/Device). Existence/ownership
+	// was already confirmed by a prior GetProduct call, and referential
+	// integrity by a prior ComboItemsExistForProduct call. db is either the
+	// repository's normal connection or an in-flight transaction handed
+	// down by the caller - Service.DeleteProduct runs this and
+	// DeleteProductImagesByProductID inside one db.Transaction, so a
+	// product row is never left with dangling ProductImage rows.
+	DeleteProduct(db *gorm.DB, id uint) error
 	// ListCategories backs `GET /categories`, scoped to the authenticated
 	// caller's own organization - same reasoning as identity's
 	// org-scoped lists (e.g. ListBranches).

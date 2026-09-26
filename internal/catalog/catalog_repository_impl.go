@@ -100,9 +100,19 @@ func (r *RepositoryImpl) DeleteProductImagesByProductID(db *gorm.DB, productID u
 	return db.Where("product_id = ?", productID).Delete(&ProductImage{}).Error
 }
 
-// DeleteProduct backs `DELETE /products/:id`. Soft delete only
-func (r *RepositoryImpl) DeleteProduct(ctx context.Context, id uint) error {
-	return common.ErrNotImplemented
+// ComboItemsExistForProduct backs Service.DeleteProduct's
+// referential-integrity check.
+func (r *RepositoryImpl) ComboItemsExistForProduct(ctx context.Context, productID uint) (bool, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).Model(&ComboItem{}).Where("product_id = ?", productID).Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// DeleteProduct backs `DELETE /products/:id`. Hard delete.
+func (r *RepositoryImpl) DeleteProduct(db *gorm.DB, id uint) error {
+	return db.Delete(&Product{}, id).Error
 }
 
 // ListCategories backs `GET /categories`, scoped to orgID.

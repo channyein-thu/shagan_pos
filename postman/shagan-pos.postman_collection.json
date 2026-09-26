@@ -1793,7 +1793,7 @@
                     }
                   ]
                 },
-                "description": "Soft delete only"
+                "description": "Hard delete, scoped to the caller's org. Blocked with 409 if any combo still bundles this product (create a combo referencing it via CreateCombo to test that path). On success, also removes the product's own image and its storage object - 204 No Content, no body."
               },
               "response": []
             }

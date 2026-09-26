@@ -44,7 +44,18 @@ type Interface interface {
 	// new one is successfully created, same failure-cleanup reasoning as
 	// CreateProduct's image handling.
 	UpdateProduct(ctx context.Context, orgID uint, id uint, in UpdateProductRequest, file io.ReadSeeker, fileSize int64, contentType, filename string) (*Product, error)
-	DeleteProduct(ctx context.Context, id uint) error
+	// DeleteProduct confirms the product exists AND belongs to orgID before
+	// touching anything (not-found-not-forbidden, same reasoning as
+	// UpdateProduct), then blocks the delete with common.ConflictError if
+	// any combo still references it via ComboItem - deleting out from
+	// under a combo would leave it bundling a product that no longer
+	// exists, same reasoning as DeleteCategory. The product's own
+	// ProductImage row(s) and their storage objects are removed as part of
+	// the delete (they belong to the product, not a separate concern that
+	// should block it) - the DB rows atomically with the product row, the
+	// storage objects best-effort afterward, same cleanup-after-commit
+	// reasoning as UpdateProduct's image replace.
+	DeleteProduct(ctx context.Context, orgID uint, id uint) error
 	ListCategories(ctx context.Context, orgID uint) ([]Category, error)
 	CreateCategory(ctx context.Context, orgID uint, in CreateCategoryRequest) (*Category, error)
 	UpdateCategory(ctx context.Context, orgID uint, id uint, in UpdateCategoryRequest) (*Category, error)

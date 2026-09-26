@@ -370,8 +370,41 @@ func (s *Service) UpdateProduct(ctx context.Context, orgID uint, id uint, in Upd
 	return s.repo.GetProduct(ctx, orgID, id)
 }
 
-func (s *Service) DeleteProduct(ctx context.Context, id uint) error {
-	return s.repo.DeleteProduct(ctx, id)
+func (s *Service) DeleteProduct(ctx context.Context, orgID uint, id uint) error {
+	if _, err := s.repo.GetProduct(ctx, orgID, id); err != nil {
+		return err
+	}
+
+	inUse, err := s.repo.ComboItemsExistForProduct(ctx, id)
+	if err != nil {
+		return err
+	}
+	if inUse {
+		return common.ConflictError("product is still in use by one or more combos")
+	}
+
+	// fetched before the transaction - only needed to clean up the storage
+	// objects after a successful commit (see below), not part of the
+	// atomic write itself.
+	images, err := s.repo.ListProductImagesByProductIDs(ctx, []uint{id})
+	if err != nil {
+		return err
+	}
+
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := s.repo.DeleteProductImagesByProductID(tx, id); err != nil {
+			return err
+		}
+		return s.repo.DeleteProduct(tx, id)
+	}); err != nil {
+		return err
+	}
+
+	for _, img := range images {
+		_ = s.storage.Delete(ctx, img.StorageKey)
+	}
+
+	return nil
 }
 
 func (s *Service) ListCategories(ctx context.Context, orgID uint) ([]Category, error) {
