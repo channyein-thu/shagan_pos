@@ -553,8 +553,116 @@ func (s *Service) CreateCombo(ctx context.Context, orgID uint, in CreateComboReq
 	return result, nil
 }
 
-func (s *Service) UpdateCombo(ctx context.Context, id uint, in UpdateComboRequest) (*Combo, error) {
-	return s.repo.UpdateCombo(ctx, id, in)
+func (s *Service) UpdateCombo(ctx context.Context, orgID uint, id uint, in UpdateComboRequest, file io.ReadSeeker, fileSize int64, contentType, filename string) (*Combo, error) {
+	combo, err := s.repo.GetCombo(ctx, orgID, id)
+	if err != nil {
+		return nil, err
+	}
+
+	if in.Price != nil || in.ExpiresAt != nil {
+		price, expiresAt := combo.Price, combo.ExpiresAt
+		if in.Price != nil {
+			price = *in.Price
+		}
+		if in.ExpiresAt != nil {
+			expiresAt = *in.ExpiresAt
+		}
+		if !price.IsPositive() {
+			return nil, common.BadRequestError("price must be greater than zero")
+		}
+		if !expiresAt.After(time.Now()) {
+			return nil, common.BadRequestError("expires_at must be in the future")
+		}
+	}
+
+	var cfg image.Config
+	if file != nil {
+		var err error
+		// image.DecodeConfig only reads the header (not the full pixel
+		// data) to get Width/Height, but it still consumes bytes from file -
+		// rewind before the full content gets uploaded below.
+		cfg, _, err = image.DecodeConfig(file)
+		if err != nil {
+			return nil, common.BadRequestError("uploaded file is not a valid image")
+		}
+		if _, err := file.Seek(0, io.SeekStart); err != nil {
+			return nil, common.SystemError("failed to rewind uploaded image")
+		}
+	}
+
+	// fetched before the transaction - only needed to clean up the old
+	// storage object after a successful commit (see below), not part of the
+	// atomic write itself.
+	var oldImages []ComboImage
+	if file != nil {
+		oldImages, err = s.repo.ListComboImagesByComboID(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	updates := map[string]any{}
+	if in.Name != nil {
+		updates["name"] = *in.Name
+	}
+	if in.Price != nil {
+		updates["price"] = *in.Price
+	}
+	if in.ExpiresAt != nil {
+		updates["expires_at"] = *in.ExpiresAt
+	}
+
+	if len(updates) > 0 || file != nil {
+		err := s.db.Transaction(func(tx *gorm.DB) error {
+			if len(updates) > 0 {
+				if err := s.repo.UpdateCombo(tx, id, updates); err != nil {
+					return err
+				}
+			}
+
+			if file == nil {
+				return nil
+			}
+
+			if err := s.repo.DeleteComboImagesByComboID(tx, id); err != nil {
+				return err
+			}
+
+			// suffixed with a UUID, same collision reasoning as
+			// UpdateProduct's image replace.
+			newKey := fmt.Sprintf("combos/%d/%s-%s", id, uuid.NewString(), filename)
+			if err := s.storage.Upload(ctx, newKey, file, fileSize, contentType); err != nil {
+				return common.SystemError("failed to upload combo image")
+			}
+
+			comboImage := ComboImage{
+				ComboID:    id,
+				StorageKey: newKey,
+				Width:      cfg.Width,
+				Height:     cfg.Height,
+			}
+			if err := s.repo.CreateComboImage(tx, &comboImage); err != nil {
+				_ = s.storage.Delete(ctx, newKey)
+				return err
+			}
+
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// only remove the old object once the new one is durably committed -
+	// otherwise a failure above would leave the combo with no valid image
+	// at all.
+	if file != nil {
+		for _, img := range oldImages {
+			_ = s.storage.Delete(ctx, img.StorageKey)
+		}
+	}
+
+	return s.repo.GetCombo(ctx, orgID, id)
 }
 
 func (s *Service) DeleteCombo(ctx context.Context, id uint) error {

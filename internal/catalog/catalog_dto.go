@@ -77,11 +77,16 @@ type UpdateCategoryRequest struct {
 	NameI18n *string `json:"name_i18n" binding:"omitempty"`
 }
 
-// UpdateComboRequest is the request body for the endpoint that creates or updates a Combo.
-// TODO: fields mirroring org/branch/staff/device ownership (e.g. OrgID, BranchID, StaffID)
-// likely belong to the authenticated session/context, not client input - review before use.
+// UpdateComboRequest is the request body for `PATCH /combos/:id`. Bound
+// from a multipart form, not JSON - `image` is an optional file field
+// alongside these (see cmd/api.CatalogAPI.UpdateCombo), so the struct
+// binding tags below are never actually evaluated (same situation as
+// UpdateProductRequest already is); they document the shape only. OrgID is
+// deliberately not here - a combo can never be reassigned to a different
+// organization via a client update, same reasoning as
+// identity.UpdateBranchRequest. Doesn't support editing Items yet - only
+// the combo's own fields and its image.
 type UpdateComboRequest struct {
-	OrgID     *uint            `json:"org_id" binding:"omitempty"`
 	Name      *string          `json:"name" binding:"omitempty"`
 	Price     *decimal.Decimal `json:"price" binding:"omitempty"`
 	ExpiresAt *time.Time       `json:"expires_at" binding:"omitempty"`

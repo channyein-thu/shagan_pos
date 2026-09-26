@@ -189,9 +189,38 @@ func (r *RepositoryImpl) CreateComboImage(db *gorm.DB, image *ComboImage) error 
 	return db.Create(image).Error
 }
 
-// UpdateCombo backs `PATCH /combos/:id`.
-func (r *RepositoryImpl) UpdateCombo(ctx context.Context, id uint, in UpdateComboRequest) (*Combo, error) {
-	return nil, common.ErrNotImplemented
+// GetCombo backs Service.UpdateCombo's existence/ownership check.
+func (r *RepositoryImpl) GetCombo(ctx context.Context, orgID uint, id uint) (*Combo, error) {
+	var combo Combo
+	err := r.db.WithContext(ctx).Where("id = ? AND org_id = ?", id, orgID).First(&combo).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, common.NotFoundError("combo not found")
+		}
+		return nil, err
+	}
+	return &combo, nil
+}
+
+// ListComboImagesByComboID backs Service.UpdateCombo's image-replace step.
+func (r *RepositoryImpl) ListComboImagesByComboID(ctx context.Context, comboID uint) ([]ComboImage, error) {
+	var images []ComboImage
+	if err := r.db.WithContext(ctx).Where("combo_id = ?", comboID).Find(&images).Error; err != nil {
+		return nil, err
+	}
+	return images, nil
+}
+
+// UpdateCombo backs `PATCH /combos/:id`. Plain write - updates is already
+// decided by the service.
+func (r *RepositoryImpl) UpdateCombo(db *gorm.DB, id uint, updates map[string]any) error {
+	return db.Model(&Combo{}).Where("id = ?", id).Updates(updates).Error
+}
+
+// DeleteComboImagesByComboID backs Service.UpdateCombo's image-replace
+// step. Plain delete.
+func (r *RepositoryImpl) DeleteComboImagesByComboID(db *gorm.DB, comboID uint) error {
+	return db.Where("combo_id = ?", comboID).Delete(&ComboImage{}).Error
 }
 
 // DeleteCombo backs `DELETE /combos/:id`.

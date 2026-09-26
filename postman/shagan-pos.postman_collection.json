@@ -190,7 +190,6 @@
             "description": "Shagan-team-only. Protected by X-Internal-Key (INTERNAL_API_KEY). Registers a Device on branch_id without needing an authenticated owner session - branch_id must already belong to org_id, otherwise returns 404 (not 403 - same not-found-not-forbidden reasoning as the authenticated device/branch endpoints)."
           },
           "response": []
-          }
         },
         {
           "name": "ListOrganizations - GET /internal/organizations",
@@ -1862,21 +1861,22 @@
                     "key": "Authorization",
                     "value": "Bearer {{token}}",
                     "type": "text"
-                  },
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json",
-                    "type": "text"
                   }
                 ],
                 "body": {
-                  "mode": "raw",
-                  "raw": "{}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "name",
+                      "value": "Brunch Combo",
+                      "type": "text"
+                    },
+                    {
+                      "key": "price",
+                      "value": "6.00",
+                      "type": "text"
                     }
-                  }
+                  ]
                 },
                 "url": {
                   "raw": "{{baseUrl}}/api/v1/combos/:id",
@@ -1889,7 +1889,7 @@
                     }
                   ]
                 },
-                "description": "UpdateCombo"
+                "description": "Multipart upload, scoped to the caller's org (org_id can never be reassigned via this endpoint). Every field is optional - only send what you want to change. price/expires_at are validated against the resulting combined state (existing values fill in for anything not sent). To also replace the image, add an \"image\" file field yourself and attach a real file - do NOT add an empty/unselected file field, since Postman has a bug (EISDIR) where a present-but-empty file field breaks the request; only add the row when you're attaching an actual file. Doesn't support editing items yet - only the combo's own fields and its image."
               },
               "response": []
             },
@@ -2714,22 +2714,9 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/customers",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "customers"]
-            },
-            "description": "ListCustomers"
-          },
-          "response": []
               "raw": "{{baseUrl}}/api/v1/customers?search=",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "customers"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "customers"],
               "query": [
                 {
                   "key": "search",
@@ -2739,7 +2726,8 @@
               ]
             },
             "description": "Org-scoped. search is optional - a case-insensitive partial match against name OR phone in one field, matching a POS lookup screen's single search box. Omit it to list every customer in the caller's org."
-          }
+          },
+          "response": []
         },
         {
           "name": "CreateCustomer - POST /customers",
@@ -2771,11 +2759,9 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "customers"]
             },
-            "description": "Inline creation from the POS cart"
+            "description": "Inline creation from the POS cart. org_id is never accepted here - it's taken from the caller's own token. tags is optional. consent_status isn't client-settable either - every new customer starts at \"pending\"; it only changes via POST /customers/:id/consents, which writes a real CustomerConsent audit row (see that endpoint's description). phone is unique per-org, not globally - the same phone number can exist in two different orgs."
           },
           "response": []
-            "description": "Inline creation from the POS cart. org_id is never accepted here - it's taken from the caller's own token. tags is optional. consent_status isn't client-settable either - every new customer starts at \"pending\"; it only changes via POST /customers/:id/consents, which writes a real CustomerConsent audit row (see that endpoint's description). phone is unique per-org, not globally - the same phone number can exist in two different orgs."
-          }
         },
         {
           "name": "GetCustomer - GET /customers/:id",
@@ -2799,11 +2785,9 @@
                 }
               ]
             },
-            "description": "Detail + purchase history"
+            "description": "Org-scoped - returns 404 for a customer that exists but belongs to a different org, same as one that doesn't exist at all. Detail only for now - purchase history needs Sales, which doesn't exist yet."
           },
           "response": []
-            "description": "Org-scoped - returns 404 for a customer that exists but belongs to a different org, same as one that doesn't exist at all. Detail only for now - purchase history needs Sales, which doesn't exist yet."
-          }
         },
         {
           "name": "ListCustomerConsents - GET /customers/:id/consents",
@@ -2827,11 +2811,9 @@
                 }
               ]
             },
-            "description": "ListCustomerConsents"
+            "description": "Org-scoped via the customer - returns 404 if :id doesn't belong to the caller's org. The full consent audit trail for this customer, oldest first."
           },
           "response": []
-            "description": "Org-scoped via the customer - returns 404 if :id doesn't belong to the caller's org. The full consent audit trail for this customer, oldest first."
-          }
         },
         {
           "name": "CreateCustomerConsent - POST /customers/:id/consents",
@@ -2869,11 +2851,9 @@
                 }
               ]
             },
-            "description": "Also updates the cached customers.consent_status"
+            "description": "customer_id isn't in the body - it's the :id path param. changed_at isn't client-settable either - the server stamps it at creation, same as Device.LastSeenAt. Writes a real CustomerConsent audit row AND updates the cached customers.consent_status in one atomic transaction - a failure partway through never leaves the cache out of sync with the actual consent history. status is one of: granted, revoked, pending. source is one of: pos, online, sms, email."
           },
           "response": []
-            "description": "customer_id isn't in the body - it's the :id path param. changed_at isn't client-settable either - the server stamps it at creation, same as Device.LastSeenAt. Writes a real CustomerConsent audit row AND updates the cached customers.consent_status in one atomic transaction - a failure partway through never leaves the cache out of sync with the actual consent history. status is one of: granted, revoked, pending. source is one of: pos, online, sms, email."
-          }
         }
       ]
     },
