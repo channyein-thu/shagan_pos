@@ -47,3 +47,12 @@ packages:
       Repository:
         config:
           filename: "mock_customer_repository_test.go"
+  shagan_pos/internal/sales:
+    config:
+      dir: "internal/sales"
+      outpkg: sales
+      inpackage: true
+    interfaces:
+      Repository:
+        config:
+          filename: "mock_sales_repository_test.go"

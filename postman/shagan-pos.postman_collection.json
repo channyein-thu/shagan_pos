@@ -190,7 +190,6 @@
             "description": "Shagan-team-only. Protected by X-Internal-Key (INTERNAL_API_KEY). Registers a Device on branch_id without needing an authenticated owner session - branch_id must already belong to org_id, otherwise returns 404 (not 403 - same not-found-not-forbidden reasoning as the authenticated device/branch endpoints)."
           },
           "response": []
-          }
         },
         {
           "name": "ListOrganizations - GET /internal/organizations",
@@ -1237,6 +1236,11 @@
                 "type": "text"
               },
               {
+                "key": "X-Staff-Token",
+                "value": "{{staffToken}}",
+                "type": "text"
+              },
+              {
                 "key": "Content-Type",
                 "value": "application/json",
                 "type": "text"
@@ -1244,7 +1248,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{}",
+              "raw": "{\n  \"branch_id\": 1,\n  \"device_id\": 1,\n  \"opening_cash\": \"100\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1256,7 +1260,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "shifts"]
             },
-            "description": "Open shift with opening float"
+            "description": "Open shift with opening float. Requires X-Staff-Token (run VerifyStaffPIN first - it auto-saves into {{staffToken}}). The shift always belongs to whichever staff that token identifies - staff_id in the body is ignored even if sent. That same staff member is the only one who can later close it."
           },
           "response": []
         },
@@ -1315,8 +1319,27 @@
                 "key": "Authorization",
                 "value": "Bearer {{token}}",
                 "type": "text"
+              },
+              {
+                "key": "X-Staff-Token",
+                "value": "{{staffToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
               }
             ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"closing_cash\": \"180\",\n  \"reason\": \"drawer short 20, investigating\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
             "url": {
               "raw": "{{baseUrl}}/api/v1/shifts/:id/close",
               "host": ["{{baseUrl}}"],
@@ -1328,7 +1351,7 @@
                 }
               ]
             },
-            "description": "Writes reconciliation row(s) as a side effect"
+            "description": "closing_cash is what the person closing the shift actually counted in the drawer - only cash is physically counted, card/QR/mobile-wallet payments are trusted to match what the system recorded. reason is required only when closing_cash doesn't match the system's expected cash total (opening_cash + cash sales this shift); otherwise 400. Writes one ShiftReconciliation row per payment method as a side effect. Requires X-Staff-Token, and returns 403 unless it identifies the same staff member who opened this shift - run VerifyStaffPIN as that staff first."
           },
           "response": []
         },
@@ -1395,6 +1418,11 @@
                 "type": "text"
               },
               {
+                "key": "X-Staff-Token",
+                "value": "{{staffToken}}",
+                "type": "text"
+              },
+              {
                 "key": "Content-Type",
                 "value": "application/json",
                 "type": "text"
@@ -1402,7 +1430,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{}",
+              "raw": "{\n  \"shift_id\": 1,\n  \"reason\": \"drawer opened for change\",\n  \"sale_id\": null\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1414,7 +1442,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "drawer-events"]
             },
-            "description": "Cash drawer opened without a sale"
+            "description": "Cash drawer opened, with or without a triggering sale. sale_id is optional and must be a real Sale's UUID (not an integer) when given - e.g. copy the id from a CreateSale response. Requires X-Staff-Token - the event is always attributed to whichever staff that token identifies, not a client-supplied staff_id."
           },
           "response": []
         },
@@ -1469,6 +1497,11 @@
                 "type": "text"
               },
               {
+                "key": "X-Staff-Token",
+                "value": "{{staffToken}}",
+                "type": "text"
+              },
+              {
                 "key": "Content-Type",
                 "value": "application/json",
                 "type": "text"
@@ -1476,7 +1509,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{}",
+              "raw": "{\n  \"date\": \"2026-09-25T00:00:00Z\",\n  \"category\": \"staff_meal\",\n  \"amount\": \"5000\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1488,7 +1521,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "expenses"]
             },
-            "description": "CreateExpense"
+            "description": "Requires X-Staff-Token - always logged as created by whichever staff that token identifies, not a client-supplied created_by."
           },
           "response": []
         },
@@ -1503,6 +1536,11 @@
                 "type": "text"
               },
               {
+                "key": "X-Staff-Token",
+                "value": "{{staffToken}}",
+                "type": "text"
+              },
+              {
                 "key": "Content-Type",
                 "value": "application/json",
                 "type": "text"
@@ -1510,7 +1548,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{}",
+              "raw": "{\n  \"category\": \"transport\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1528,7 +1566,7 @@
                 }
               ]
             },
-            "description": "UpdateExpense"
+            "description": "Requires X-Staff-Token. Returns 403 unless that token identifies either the staff member who originally logged this expense, or someone with access_backoffice (a Manager)."
           },
           "response": []
         },
@@ -1540,6 +1578,11 @@
               {
                 "key": "Authorization",
                 "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "X-Staff-Token",
+                "value": "{{staffToken}}",
                 "type": "text"
               }
             ],
@@ -1554,7 +1597,7 @@
                 }
               ]
             },
-            "description": "DeleteExpense"
+            "description": "Requires X-Staff-Token. Same authorization as UpdateExpense - only the original creator or a Manager (access_backoffice) may delete it."
           },
           "response": []
         }
@@ -2278,7 +2321,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{}",
+              "raw": "{\n  \"id\": \"11111111-1111-1111-1111-111111111111\",\n  \"shift_id\": 1,\n  \"staff_id\": 1,\n  \"device_id\": 1,\n  \"tax\": \"100\",\n  \"items\": [\n    {\n      \"product_id\": 1,\n      \"name_snapshot\": \"Rice 5kg\",\n      \"unit_price\": \"1000\",\n      \"qty\": 2,\n      \"discount\": \"50\"\n    }\n  ],\n  \"payments\": [\n    {\n      \"method\": \"cash\",\n      \"amount\": \"2050\",\n      \"amount_received\": \"2050\"\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2290,7 +2333,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "sales"]
             },
-            "description": "Idempotent, transactional; also decrements stock + writes ledger"
+            "description": "Requires a branch-bound pos-device token - org_id and branch_id both come from it, never the body. id is a client-generated UUID (idempotency key for the offline-first device). Subtotal/Discount/Tax/Total are NOT accepted here - the server derives Subtotal/Discount from items and Total = Subtotal - Discount + Tax, then rejects the request (400) if payments don't add up to that Total. shift_id must be a currently-open shift belonging to this branch, else 404. Status/completed_at are always server-set to completed/now(). Stock decrement/inventory-ledger writes are deliberately deferred until the Inventory domain exists."
           },
           "response": []
         },
@@ -2310,7 +2353,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "sales"]
             },
-            "description": "ListSales"
+            "description": "Org-scoped, newest-completed-first."
           },
           "response": []
         },
@@ -2336,7 +2379,7 @@
                 }
               ]
             },
-            "description": "GetSale"
+            "description": "Org-scoped - returns 404 for a sale that exists but belongs to a different org, same as one that doesn't exist at all."
           },
           "response": []
         },
@@ -2362,7 +2405,7 @@
                 }
               ]
             },
-            "description": "ESC/POS payload"
+            "description": "Structured receipt data (sale + items + payments) - not printer-specific ESC/POS byte formatting, which belongs to Platform's printer integration, not here."
           },
           "response": []
         },
@@ -2388,7 +2431,7 @@
                 }
               ]
             },
-            "description": "ReprintSale"
+            "description": "Returns the same bundle as GetSaleReceipt - a receipt's content never changes between its first print and a reprint."
           },
           "response": []
         },
@@ -2714,22 +2757,9 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/customers",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "customers"]
-            },
-            "description": "ListCustomers"
-          },
-          "response": []
               "raw": "{{baseUrl}}/api/v1/customers?search=",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "customers"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "customers"],
               "query": [
                 {
                   "key": "search",
@@ -2739,7 +2769,8 @@
               ]
             },
             "description": "Org-scoped. search is optional - a case-insensitive partial match against name OR phone in one field, matching a POS lookup screen's single search box. Omit it to list every customer in the caller's org."
-          }
+          },
+          "response": []
         },
         {
           "name": "CreateCustomer - POST /customers",
@@ -2771,11 +2802,9 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "customers"]
             },
-            "description": "Inline creation from the POS cart"
+            "description": "Inline creation from the POS cart. org_id is never accepted here - it's taken from the caller's own token. tags is optional. consent_status isn't client-settable either - every new customer starts at \"pending\"; it only changes via POST /customers/:id/consents, which writes a real CustomerConsent audit row (see that endpoint's description). phone is unique per-org, not globally - the same phone number can exist in two different orgs."
           },
           "response": []
-            "description": "Inline creation from the POS cart. org_id is never accepted here - it's taken from the caller's own token. tags is optional. consent_status isn't client-settable either - every new customer starts at \"pending\"; it only changes via POST /customers/:id/consents, which writes a real CustomerConsent audit row (see that endpoint's description). phone is unique per-org, not globally - the same phone number can exist in two different orgs."
-          }
         },
         {
           "name": "GetCustomer - GET /customers/:id",
@@ -2799,11 +2828,9 @@
                 }
               ]
             },
-            "description": "Detail + purchase history"
+            "description": "Org-scoped - returns 404 for a customer that exists but belongs to a different org, same as one that doesn't exist at all. Detail only for now - purchase history needs Sales, which doesn't exist yet."
           },
           "response": []
-            "description": "Org-scoped - returns 404 for a customer that exists but belongs to a different org, same as one that doesn't exist at all. Detail only for now - purchase history needs Sales, which doesn't exist yet."
-          }
         },
         {
           "name": "ListCustomerConsents - GET /customers/:id/consents",
@@ -2827,11 +2854,9 @@
                 }
               ]
             },
-            "description": "ListCustomerConsents"
+            "description": "Org-scoped via the customer - returns 404 if :id doesn't belong to the caller's org. The full consent audit trail for this customer, oldest first."
           },
           "response": []
-            "description": "Org-scoped via the customer - returns 404 if :id doesn't belong to the caller's org. The full consent audit trail for this customer, oldest first."
-          }
         },
         {
           "name": "CreateCustomerConsent - POST /customers/:id/consents",
@@ -2869,11 +2894,9 @@
                 }
               ]
             },
-            "description": "Also updates the cached customers.consent_status"
+            "description": "customer_id isn't in the body - it's the :id path param. changed_at isn't client-settable either - the server stamps it at creation, same as Device.LastSeenAt. Writes a real CustomerConsent audit row AND updates the cached customers.consent_status in one atomic transaction - a failure partway through never leaves the cache out of sync with the actual consent history. status is one of: granted, revoked, pending. source is one of: pos, online, sms, email."
           },
           "response": []
-            "description": "customer_id isn't in the body - it's the :id path param. changed_at isn't client-settable either - the server stamps it at creation, same as Device.LastSeenAt. Writes a real CustomerConsent audit row AND updates the cached customers.consent_status in one atomic transaction - a failure partway through never leaves the cache out of sync with the actual consent history. status is one of: granted, revoked, pending. source is one of: pos, online, sms, email."
-          }
         }
       ]
     },

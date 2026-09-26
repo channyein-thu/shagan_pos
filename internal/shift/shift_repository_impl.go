@@ -3,6 +3,7 @@ package shift
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -143,7 +144,7 @@ func (r *RepositoryImpl) GetShift(ctx context.Context, scope AccessScope, id uin
 }
 
 // CloseShift backs `POST /shifts/:id/close`. Writes reconciliation row(s) as a side effect
-func (r *RepositoryImpl) CloseShift(ctx context.Context, scope AccessScope, id uint, closedAt time.Time) (*Shift, error) {
+func (r *RepositoryImpl) CloseShift(ctx context.Context, scope AccessScope, id uint, closedAt time.Time, staffID uint, in CloseShiftRequest) (*Shift, error) {
 	var closed Shift
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		found, err := getShiftInScope(tx, scope, id, true)
@@ -153,6 +154,9 @@ func (r *RepositoryImpl) CloseShift(ctx context.Context, scope AccessScope, id u
 		closed = *found
 		if closed.Status != ShiftStatusOpen {
 			return common.ConflictError("shift is already closed")
+		}
+		if closed.StaffID != staffID {
+			return common.ForbiddenError("only the staff member who opened this shift may close it")
 		}
 
 		var openSales int64
@@ -194,19 +198,39 @@ func (r *RepositoryImpl) CloseShift(ctx context.Context, scope AccessScope, id u
 			ReconciliationMethodMobile,
 			ReconciliationMethodOther,
 		}
+		// Only cash is physically counted at close - card/QR/mobile-wallet
+		// payments settle electronically, so they're trusted to match what
+		// was recorded (Counted == Expected, Difference always zero). Cash
+		// uses what was actually counted in the drawer; a non-zero
+		// difference requires a reason, since that's the one number that can
+		// genuinely be short or over.
+		expectedCash := expectedByMethod[ReconciliationMethodCash]
+		cashDifference := in.ClosingCash.Sub(expectedCash)
+		if !cashDifference.IsZero() && strings.TrimSpace(in.Reason) == "" {
+			return common.BadRequestError("reason is required when closing_cash does not match the expected cash total")
+		}
+
 		reconciliations := make([]ShiftReconciliation, 0, len(expectedByMethod))
 		for _, method := range orderedMethods {
 			expected, exists := expectedByMethod[method]
 			if !exists {
 				continue
 			}
+			counted := expected
+			difference := decimal.Zero
+			reason := ""
+			if method == ReconciliationMethodCash {
+				counted = in.ClosingCash
+				difference = cashDifference
+				reason = strings.TrimSpace(in.Reason)
+			}
 			reconciliations = append(reconciliations, ShiftReconciliation{
 				ShiftID:    closed.ID,
 				Method:     method,
 				Expected:   expected,
-				Counted:    expected,
-				Difference: decimal.Zero,
-				Reason:     "",
+				Counted:    counted,
+				Difference: difference,
+				Reason:     reason,
 			})
 		}
 		if err := tx.Create(&reconciliations).Error; err != nil {
@@ -404,12 +428,15 @@ func (r *RepositoryImpl) CreateExpense(ctx context.Context, scope AccessScope, i
 }
 
 // UpdateExpense backs `PATCH /expenses/:id`.
-func (r *RepositoryImpl) UpdateExpense(ctx context.Context, scope AccessScope, id uint, in UpdateExpenseRequest) (*Expense, error) {
+func (r *RepositoryImpl) UpdateExpense(ctx context.Context, scope AccessScope, id uint, actor ExpenseActor, in UpdateExpenseRequest) (*Expense, error) {
 	var expense Expense
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		found, err := getExpenseInScope(tx, scope, id, true)
 		if err != nil {
 			return err
+		}
+		if !actor.CanManageAny && found.CreatedBy != actor.StaffID {
+			return common.ForbiddenError("only the staff member who logged this expense, or a manager, may modify it")
 		}
 		expense = *found
 		effectiveBranchID := expense.BranchID
@@ -455,11 +482,14 @@ func (r *RepositoryImpl) UpdateExpense(ctx context.Context, scope AccessScope, i
 }
 
 // DeleteExpense backs `DELETE /expenses/:id`.
-func (r *RepositoryImpl) DeleteExpense(ctx context.Context, scope AccessScope, id uint) error {
+func (r *RepositoryImpl) DeleteExpense(ctx context.Context, scope AccessScope, id uint, actor ExpenseActor) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		expense, err := getExpenseInScope(tx, scope, id, true)
 		if err != nil {
 			return err
+		}
+		if !actor.CanManageAny && expense.CreatedBy != actor.StaffID {
+			return common.ForbiddenError("only the staff member who logged this expense, or a manager, may delete it")
 		}
 		return tx.Delete(expense).Error
 	})

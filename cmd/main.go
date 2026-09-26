@@ -61,7 +61,7 @@ func main() {
 	v1 := r.Group("/api/v1")
 	v1.Use(middleware.Auth([]byte(jwtSecret)))
 	identityAPI.RegisterRoutes(v1)
-	registerRoutes(v1, db, store)
+	registerRoutes(v1, db, store, []byte(jwtSecret))
 
 	internalGroup := r.Group("/internal")
 	internalGroup.Use(middleware.InternalAuth(os.Getenv("INTERNAL_API_KEY")))
@@ -79,7 +79,7 @@ func main() {
 
 // registerRoutes wires each domain's repository -> service -> API handler and mounts its routes.
 // TODO: as each domain grows, this is the place new sub-groups (e.g. per-branch scoping) get added.
-func registerRoutes(v1 *gin.RouterGroup, db *gorm.DB, store storage.Storage) {
+func registerRoutes(v1 *gin.RouterGroup, db *gorm.DB, store storage.Storage, jwtSecret []byte) {
 	api.NewCustomerAPI(db).RegisterRoutes(v1)
 	api.NewPlatformAPI(db, store).RegisterRoutes(v1)
 	api.NewCatalogAPI(db, store).RegisterRoutes(v1)
@@ -87,7 +87,7 @@ func registerRoutes(v1 *gin.RouterGroup, db *gorm.DB, store storage.Storage) {
 	api.NewInventoryAPI(db).RegisterRoutes(v1)
 	api.NewSalesAPI(db).RegisterRoutes(v1)
 	api.NewReturnsAPI(db).RegisterRoutes(v1)
-	api.NewShiftAPI(db).RegisterRoutes(v1)
+	api.NewShiftAPI(db, jwtSecret).RegisterRoutes(v1)
 	api.NewSyncAPI(db).RegisterRoutes(v1)
 	api.NewAuditAPI(db).RegisterRoutes(v1)
 	api.NewReportsAPI(db).RegisterRoutes(v1)
