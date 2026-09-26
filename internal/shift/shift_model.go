@@ -3,6 +3,7 @@ package shift
 import (
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 )
 
@@ -52,12 +53,12 @@ type ShiftReconciliation struct {
 
 // DrawerEvent maps to the "drawer_events" table in the ERD.
 type DrawerEvent struct {
-	ID        uint      `gorm:"primaryKey;autoIncrement" json:"id"`
-	ShiftID   uint      `gorm:"index;not null" json:"shift_id"`
-	StaffID   uint      `gorm:"index;not null" json:"staff_id"`
-	Reason    string    `gorm:"not null" json:"reason"`
-	SaleID    *uint     `gorm:"index" json:"sale_id"` // TODO: ERD types this as int but Sales.id is uuid - likely should be uuid too, confirm with source ERD
-	CreatedAt time.Time `gorm:"autoCreateTime;not null" json:"created_at"`
+	ID        uint       `gorm:"primaryKey;autoIncrement" json:"id"`
+	ShiftID   uint       `gorm:"index;not null" json:"shift_id"`
+	StaffID   uint       `gorm:"index;not null" json:"staff_id"`
+	Reason    string     `gorm:"not null" json:"reason"`
+	SaleID    *uuid.UUID `gorm:"type:uuid;index" json:"sale_id"`
+	CreatedAt time.Time  `gorm:"autoCreateTime;not null" json:"created_at"`
 }
 
 // Expense maps to the "expenses" table in the ERD.

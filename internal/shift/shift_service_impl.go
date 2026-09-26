@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 
 	"shagan_pos/internal/common"
@@ -63,8 +64,16 @@ func (s *Service) GetShift(ctx context.Context, scope AccessScope, id uint) (*Sh
 	return s.repo.GetShift(ctx, scope, id)
 }
 
-func (s *Service) CloseShift(ctx context.Context, scope AccessScope, id uint) (*Shift, error) {
-	return s.repo.CloseShift(ctx, scope, id, s.now().UTC())
+func (s *Service) CloseShift(ctx context.Context, scope AccessScope, id uint, staffID uint, in CloseShiftRequest) (*Shift, error) {
+	if in.ClosingCash.IsNegative() {
+		return nil, common.ValidationError("validation error", []common.FieldError{{Field: "ClosingCash", Message: "must be zero or greater"}})
+	} else if !in.ClosingCash.Round(2).Equal(in.ClosingCash) {
+		return nil, common.ValidationError("validation error", []common.FieldError{{Field: "ClosingCash", Message: "must have at most 2 decimal places"}})
+	} else if in.ClosingCash.GreaterThanOrEqual(maxOpeningCash) {
+		return nil, common.ValidationError("validation error", []common.FieldError{{Field: "ClosingCash", Message: "must be less than 100000000.00"}})
+	}
+	in.Reason = strings.TrimSpace(in.Reason)
+	return s.repo.CloseShift(ctx, scope, id, s.now().UTC(), staffID, in)
 }
 
 func (s *Service) GetShiftSummary(ctx context.Context, scope AccessScope, id uint) (map[string]any, error) {
@@ -87,8 +96,8 @@ func (s *Service) CreateDrawerEvent(ctx context.Context, scope AccessScope, in C
 	if in.Reason == "" {
 		validationErrors = append(validationErrors, common.FieldError{Field: "Reason", Message: "required"})
 	}
-	if in.SaleID != nil && *in.SaleID == 0 {
-		validationErrors = append(validationErrors, common.FieldError{Field: "SaleID", Message: "must be greater than zero"})
+	if in.SaleID != nil && *in.SaleID == uuid.Nil {
+		validationErrors = append(validationErrors, common.FieldError{Field: "SaleID", Message: "must not be the nil UUID"})
 	}
 	if len(validationErrors) > 0 {
 		return nil, common.ValidationError("validation error", validationErrors)
@@ -113,7 +122,7 @@ func (s *Service) CreateExpense(ctx context.Context, scope AccessScope, in Creat
 	return s.repo.CreateExpense(ctx, scope, in)
 }
 
-func (s *Service) UpdateExpense(ctx context.Context, scope AccessScope, id uint, in UpdateExpenseRequest) (*Expense, error) {
+func (s *Service) UpdateExpense(ctx context.Context, scope AccessScope, id uint, actor ExpenseActor, in UpdateExpenseRequest) (*Expense, error) {
 	validationErrors := make([]common.FieldError, 0, 5)
 	if in.BranchID == nil && in.Date == nil && in.Category == nil && in.Amount == nil && in.CreatedBy == nil {
 		validationErrors = append(validationErrors, common.FieldError{Field: "body", Message: "at least one field is required"})
@@ -141,11 +150,11 @@ func (s *Service) UpdateExpense(ctx context.Context, scope AccessScope, id uint,
 	if len(validationErrors) > 0 {
 		return nil, common.ValidationError("validation error", validationErrors)
 	}
-	return s.repo.UpdateExpense(ctx, scope, id, in)
+	return s.repo.UpdateExpense(ctx, scope, id, actor, in)
 }
 
-func (s *Service) DeleteExpense(ctx context.Context, scope AccessScope, id uint) error {
-	return s.repo.DeleteExpense(ctx, scope, id)
+func (s *Service) DeleteExpense(ctx context.Context, scope AccessScope, id uint, actor ExpenseActor) error {
+	return s.repo.DeleteExpense(ctx, scope, id, actor)
 }
 
 func validateExpenseInput(branchID uint, date time.Time, category string, amount decimal.Decimal, createdBy uint) []common.FieldError {
