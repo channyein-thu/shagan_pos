@@ -1935,7 +1935,7 @@
                   "host": ["{{baseUrl}}"],
                   "path": ["api", "v1", "combos"]
                 },
-                "description": "ListCombos"
+                "description": "Lists combos in the caller's org. No query params - org_id comes from the token. Each combo now includes an \"images\" array (id, url, width, height) - url is a temporary presigned link valid for 15 minutes, so re-fetch the list if it expires."
               },
               "response": []
             }

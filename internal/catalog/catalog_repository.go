@@ -117,10 +117,12 @@ type Repository interface {
 	// insert, same db-is-either-plain-or-in-flight-transaction reasoning as
 	// CreateCombo above.
 	CreateComboImage(db *gorm.DB, image *ComboImage) error
-	// ListComboImagesByComboID backs Service.UpdateCombo's image-replace
-	// step - a plain query, fetched before the transaction only to know
-	// what to clean up from storage after a successful commit.
-	ListComboImagesByComboID(ctx context.Context, comboID uint) ([]ComboImage, error)
+	// ListComboImagesByComboIDs backs Service.ListCombos' image lookup and
+	// Service.UpdateCombo's image-replace step (a single-element slice) - a
+	// plain query, no business decision about which combos the caller is
+	// allowed to see (that's already been decided by the caller), same
+	// reasoning as ListProductImagesByProductIDs.
+	ListComboImagesByComboIDs(ctx context.Context, comboIDs []uint) ([]ComboImage, error)
 	// UpdateCombo applies updates (already decided by the service - which
 	// fields changed, in what shape) to the combo identified by id. Plain
 	// write - existence/ownership was already confirmed by a prior

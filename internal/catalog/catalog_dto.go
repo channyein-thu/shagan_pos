@@ -141,3 +141,20 @@ type ProductResult struct {
 	Product
 	Images []ProductImageResult `json:"images"`
 }
+
+// ComboImageResult is one image attached to a combo, as returned by
+// ListCombos. Same reasoning as ProductImageResult - URL is a temporary
+// signed link, not the raw StorageKey.
+type ComboImageResult struct {
+	ID     uint   `json:"id"`
+	URL    string `json:"url"`
+	Width  int    `json:"width"`
+	Height int    `json:"height"`
+}
+
+// ComboResult is what ListCombos actually returns - the Combo row plus its
+// images, same reasoning as ProductResult.
+type ComboResult struct {
+	Combo
+	Images []ComboImageResult `json:"images"`
+}

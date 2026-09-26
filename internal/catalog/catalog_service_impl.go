@@ -448,8 +448,55 @@ func (s *Service) UploadMedia(ctx context.Context) (*ProductImage, error) {
 	return s.repo.UploadMedia(ctx)
 }
 
-func (s *Service) ListCombos(ctx context.Context, orgID uint) ([]Combo, error) {
-	return s.repo.ListCombos(ctx, orgID)
+func (s *Service) ListCombos(ctx context.Context, orgID uint) ([]ComboResult, error) {
+	combos, err := s.repo.ListCombos(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	return s.attachComboImages(ctx, combos)
+}
+
+// attachComboImages assembles each combo's ComboImageResult list, same
+// reasoning as attachImages.
+func (s *Service) attachComboImages(ctx context.Context, combos []Combo) ([]ComboResult, error) {
+	results := make([]ComboResult, len(combos))
+	if len(combos) == 0 {
+		return results, nil
+	}
+
+	ids := make([]uint, len(combos))
+	for i, c := range combos {
+		ids[i] = c.ID
+	}
+
+	images, err := s.repo.ListComboImagesByComboIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+
+	byCombo := make(map[uint][]ComboImage, len(combos))
+	for _, img := range images {
+		byCombo[img.ComboID] = append(byCombo[img.ComboID], img)
+	}
+
+	for i, c := range combos {
+		imgResults := make([]ComboImageResult, 0, len(byCombo[c.ID]))
+		for _, img := range byCombo[c.ID] {
+			url, err := s.storage.PresignedURL(ctx, img.StorageKey, DefaultImageURLTTL)
+			if err != nil {
+				return nil, common.SystemError("failed to generate image URL")
+			}
+			imgResults = append(imgResults, ComboImageResult{
+				ID:     img.ID,
+				URL:    url,
+				Width:  img.Width,
+				Height: img.Height,
+			})
+		}
+		results[i] = ComboResult{Combo: c, Images: imgResults}
+	}
+
+	return results, nil
 }
 
 // CreateCombo enforces that Price is actually positive, ExpiresAt is
@@ -595,7 +642,7 @@ func (s *Service) UpdateCombo(ctx context.Context, orgID uint, id uint, in Updat
 	// atomic write itself.
 	var oldImages []ComboImage
 	if file != nil {
-		oldImages, err = s.repo.ListComboImagesByComboID(ctx, id)
+		oldImages, err = s.repo.ListComboImagesByComboIDs(ctx, []uint{id})
 		if err != nil {
 			return nil, err
 		}

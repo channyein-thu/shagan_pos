@@ -202,10 +202,11 @@ func (r *RepositoryImpl) GetCombo(ctx context.Context, orgID uint, id uint) (*Co
 	return &combo, nil
 }
 
-// ListComboImagesByComboID backs Service.UpdateCombo's image-replace step.
-func (r *RepositoryImpl) ListComboImagesByComboID(ctx context.Context, comboID uint) ([]ComboImage, error) {
+// ListComboImagesByComboIDs backs Service.ListCombos/UpdateCombo's image
+// lookups.
+func (r *RepositoryImpl) ListComboImagesByComboIDs(ctx context.Context, comboIDs []uint) ([]ComboImage, error) {
 	var images []ComboImage
-	if err := r.db.WithContext(ctx).Where("combo_id = ?", comboID).Find(&images).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where("combo_id IN (?)", comboIDs).Find(&images).Error; err != nil {
 		return nil, err
 	}
 	return images, nil

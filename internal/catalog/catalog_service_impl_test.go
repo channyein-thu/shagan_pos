@@ -85,12 +85,59 @@ func TestService_ListCombos_DelegatesToRepository(t *testing.T) {
 	store := NewMockStorage(t)
 	svc := NewService(repo, branches, fakeTransactioner{}, store)
 
-	want := []Combo{{ID: 1, OrgID: 7, Name: "Breakfast Combo"}, {ID: 2, OrgID: 7, Name: "Lunch Combo"}}
-	repo.EXPECT().ListCombos(mock.Anything, uint(7)).Return(want, nil).Once()
+	combos := []Combo{{ID: 1, OrgID: 7, Name: "Breakfast Combo"}, {ID: 2, OrgID: 7, Name: "Lunch Combo"}}
+	repo.EXPECT().ListCombos(mock.Anything, uint(7)).Return(combos, nil).Once()
+	repo.EXPECT().ListComboImagesByComboIDs(mock.Anything, []uint{1, 2}).Return(nil, nil).Once()
 
 	got, err := svc.ListCombos(context.Background(), 7)
 	require.NoError(t, err)
-	require.Equal(t, want, got)
+	require.Len(t, got, 2)
+	require.Equal(t, uint(1), got[0].ID)
+	require.Empty(t, got[0].Images)
+	require.Equal(t, uint(2), got[1].ID)
+	require.Empty(t, got[1].Images)
+}
+
+func TestService_ListCombos_AttachesImagesWithPresignedURLs(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	combos := []Combo{{ID: 1, OrgID: 7, Name: "Breakfast Combo"}}
+	images := []ComboImage{{ID: 10, ComboID: 1, StorageKey: "combos/1/photo.png", Width: 2, Height: 3}}
+	repo.EXPECT().ListCombos(mock.Anything, uint(7)).Return(combos, nil).Once()
+	repo.EXPECT().ListComboImagesByComboIDs(mock.Anything, []uint{1}).Return(images, nil).Once()
+	store.EXPECT().
+		PresignedURL(mock.Anything, "combos/1/photo.png", DefaultImageURLTTL).
+		Return("https://minio.local/signed/photo.png", nil).
+		Once()
+
+	got, err := svc.ListCombos(context.Background(), 7)
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	require.Len(t, got[0].Images, 1)
+	require.Equal(t, ComboImageResult{ID: 10, URL: "https://minio.local/signed/photo.png", Width: 2, Height: 3}, got[0].Images[0])
+}
+
+func TestService_ListCombos_PresignedURLFails_ReturnsSystemError(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	combos := []Combo{{ID: 1, OrgID: 7, Name: "Breakfast Combo"}}
+	images := []ComboImage{{ID: 10, ComboID: 1, StorageKey: "combos/1/photo.png"}}
+	repo.EXPECT().ListCombos(mock.Anything, uint(7)).Return(combos, nil).Once()
+	repo.EXPECT().ListComboImagesByComboIDs(mock.Anything, []uint{1}).Return(images, nil).Once()
+	store.EXPECT().
+		PresignedURL(mock.Anything, "combos/1/photo.png", DefaultImageURLTTL).
+		Return("", errors.New("storage unavailable")).
+		Once()
+
+	_, err := svc.ListCombos(context.Background(), 7)
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusInternalServerError)
 }
 
 func TestService_ListCombos_PropagatesRepositoryError(t *testing.T) {
@@ -101,6 +148,9 @@ func TestService_ListCombos_PropagatesRepositoryError(t *testing.T) {
 
 	wantErr := common.SystemError("db read failed")
 	repo.EXPECT().ListCombos(mock.Anything, uint(7)).Return(nil, wantErr).Once()
+	// ListComboImagesByComboIDs must never be called once the combo list
+	// itself fails - no .EXPECT() set up for it means the mock fails the
+	// test if it is.
 
 	_, err := svc.ListCombos(context.Background(), 7)
 	require.Error(t, err)
@@ -1346,7 +1396,7 @@ func TestService_UpdateCombo_WithImage_ReplacesOldImageAfterCommit(t *testing.T)
 	imgBytes := testProductImageBytes(t, 2, 3)
 
 	repo.EXPECT().GetCombo(mock.Anything, uint(7), uint(9)).Return(existing, nil).Once()
-	repo.EXPECT().ListComboImagesByComboID(mock.Anything, uint(9)).Return(oldImages, nil).Once()
+	repo.EXPECT().ListComboImagesByComboIDs(mock.Anything, []uint{9}).Return(oldImages, nil).Once()
 	repo.EXPECT().DeleteComboImagesByComboID(mock.Anything, uint(9)).Return(nil).Once()
 	store.EXPECT().
 		Upload(mock.Anything, mock.MatchedBy(func(key string) bool {
@@ -1396,7 +1446,7 @@ func TestService_UpdateCombo_ImageRowFails_CleansUpUploadedObject(t *testing.T) 
 	imgBytes := testProductImageBytes(t, 2, 3)
 
 	repo.EXPECT().GetCombo(mock.Anything, uint(7), uint(9)).Return(existing, nil).Once()
-	repo.EXPECT().ListComboImagesByComboID(mock.Anything, uint(9)).Return(nil, nil).Once()
+	repo.EXPECT().ListComboImagesByComboIDs(mock.Anything, []uint{9}).Return(nil, nil).Once()
 	repo.EXPECT().DeleteComboImagesByComboID(mock.Anything, uint(9)).Return(nil).Once()
 	store.EXPECT().Upload(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 	dbErr := errors.New("db write failed")

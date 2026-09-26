@@ -50,7 +50,10 @@ type Interface interface {
 	UpdateCategory(ctx context.Context, orgID uint, id uint, in UpdateCategoryRequest) (*Category, error)
 	DeleteCategory(ctx context.Context, orgID uint, id uint) error
 	UploadMedia(ctx context.Context) (*ProductImage, error)
-	ListCombos(ctx context.Context, orgID uint) ([]Combo, error)
+	// ListCombos returns ComboResult, not bare Combo - each result's Images
+	// carry a temporary signed URL, not just a StorageKey, same reasoning
+	// as ListProducts.
+	ListCombos(ctx context.Context, orgID uint) ([]ComboResult, error)
 	// CreateCombo requires at least one item (see CreateComboRequest) - a
 	// combo without any bundled products should never exist. Each item's
 	// ProductID must belong to orgID (not-found-not-forbidden, same as

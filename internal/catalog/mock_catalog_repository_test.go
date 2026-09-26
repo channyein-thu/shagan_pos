@@ -839,29 +839,29 @@ func (_c *MockRepository_ListCategories_Call) RunAndReturn(run func(context.Cont
 	return _c
 }
 
-// ListComboImagesByComboID provides a mock function with given fields: ctx, comboID
-func (_m *MockRepository) ListComboImagesByComboID(ctx context.Context, comboID uint) ([]ComboImage, error) {
-	ret := _m.Called(ctx, comboID)
+// ListComboImagesByComboIDs provides a mock function with given fields: ctx, comboIDs
+func (_m *MockRepository) ListComboImagesByComboIDs(ctx context.Context, comboIDs []uint) ([]ComboImage, error) {
+	ret := _m.Called(ctx, comboIDs)
 
 	if len(ret) == 0 {
-		panic("no return value specified for ListComboImagesByComboID")
+		panic("no return value specified for ListComboImagesByComboIDs")
 	}
 
 	var r0 []ComboImage
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, uint) ([]ComboImage, error)); ok {
-		return rf(ctx, comboID)
+	if rf, ok := ret.Get(0).(func(context.Context, []uint) ([]ComboImage, error)); ok {
+		return rf(ctx, comboIDs)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, uint) []ComboImage); ok {
-		r0 = rf(ctx, comboID)
+	if rf, ok := ret.Get(0).(func(context.Context, []uint) []ComboImage); ok {
+		r0 = rf(ctx, comboIDs)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]ComboImage)
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, uint) error); ok {
-		r1 = rf(ctx, comboID)
+	if rf, ok := ret.Get(1).(func(context.Context, []uint) error); ok {
+		r1 = rf(ctx, comboIDs)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -869,31 +869,31 @@ func (_m *MockRepository) ListComboImagesByComboID(ctx context.Context, comboID 
 	return r0, r1
 }
 
-// MockRepository_ListComboImagesByComboID_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListComboImagesByComboID'
-type MockRepository_ListComboImagesByComboID_Call struct {
+// MockRepository_ListComboImagesByComboIDs_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListComboImagesByComboIDs'
+type MockRepository_ListComboImagesByComboIDs_Call struct {
 	*mock.Call
 }
 
-// ListComboImagesByComboID is a helper method to define mock.On call
+// ListComboImagesByComboIDs is a helper method to define mock.On call
 //   - ctx context.Context
-//   - comboID uint
-func (_e *MockRepository_Expecter) ListComboImagesByComboID(ctx interface{}, comboID interface{}) *MockRepository_ListComboImagesByComboID_Call {
-	return &MockRepository_ListComboImagesByComboID_Call{Call: _e.mock.On("ListComboImagesByComboID", ctx, comboID)}
+//   - comboIDs []uint
+func (_e *MockRepository_Expecter) ListComboImagesByComboIDs(ctx interface{}, comboIDs interface{}) *MockRepository_ListComboImagesByComboIDs_Call {
+	return &MockRepository_ListComboImagesByComboIDs_Call{Call: _e.mock.On("ListComboImagesByComboIDs", ctx, comboIDs)}
 }
 
-func (_c *MockRepository_ListComboImagesByComboID_Call) Run(run func(ctx context.Context, comboID uint)) *MockRepository_ListComboImagesByComboID_Call {
+func (_c *MockRepository_ListComboImagesByComboIDs_Call) Run(run func(ctx context.Context, comboIDs []uint)) *MockRepository_ListComboImagesByComboIDs_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(uint))
+		run(args[0].(context.Context), args[1].([]uint))
 	})
 	return _c
 }
 
-func (_c *MockRepository_ListComboImagesByComboID_Call) Return(_a0 []ComboImage, _a1 error) *MockRepository_ListComboImagesByComboID_Call {
+func (_c *MockRepository_ListComboImagesByComboIDs_Call) Return(_a0 []ComboImage, _a1 error) *MockRepository_ListComboImagesByComboIDs_Call {
 	_c.Call.Return(_a0, _a1)
 	return _c
 }
 
-func (_c *MockRepository_ListComboImagesByComboID_Call) RunAndReturn(run func(context.Context, uint) ([]ComboImage, error)) *MockRepository_ListComboImagesByComboID_Call {
+func (_c *MockRepository_ListComboImagesByComboIDs_Call) RunAndReturn(run func(context.Context, []uint) ([]ComboImage, error)) *MockRepository_ListComboImagesByComboIDs_Call {
 	_c.Call.Return(run)
 	return _c
 }
