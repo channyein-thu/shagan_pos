@@ -51,6 +51,10 @@ packages:
     config:
       dir: "internal/inventory"
       outpkg: inventory
+  shagan_pos/internal/sales:
+    config:
+      dir: "internal/sales"
+      outpkg: sales
       inpackage: true
     interfaces:
       Repository:
@@ -74,3 +78,4 @@ packages:
       InventoryWriter:
         config:
           filename: "mock_procurement_inventory_writer_test.go"
+          filename: "mock_sales_repository_test.go"

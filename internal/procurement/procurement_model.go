@@ -29,10 +29,17 @@ type Supplier struct {
 	LastOrderAt time.Time `gorm:"not null" json:"last_order_at"`
 }
 
-// PurchaseOrder maps to the "Purchase_orders" table in the ERD.
+// PurchaseOrder maps to the "Purchase_orders" table in the ERD. OrgID was
+// added to fix a real bug: PoNumber's unique index was named
+// ux_purchase_orders_org_po_number as if it were already org-scoped, but
+// with no org_id column to actually include, GORM built it as a
+// globally-unique single-column index instead - two different orgs could
+// never use the same PO number. Now the index genuinely covers (org_id,
+// po_number).
 type PurchaseOrder struct {
 	ID         uint                `gorm:"primaryKey;autoIncrement" json:"id"`
-	PoNumber   string              `gorm:"size:50;uniqueIndex:ux_purchase_orders_org_po_number;not null" json:"po_number"` // TODO: ERD has no org_id on this table, so this is only globally unique, not per-org
+	OrgID      uint                `gorm:"index;not null;uniqueIndex:ux_purchase_orders_org_po_number" json:"org_id"`
+	PoNumber   string              `gorm:"size:50;uniqueIndex:ux_purchase_orders_org_po_number;not null" json:"po_number"`
 	SupplierID uint                `gorm:"index;not null" json:"supplier_id"`
 	Status     PurchaseOrderStatus `gorm:"type:varchar(30);not null" json:"status"` // one of PurchaseOrderStatus* constants below (TODO: confirm real values)
 	Total      decimal.Decimal     `gorm:"type:decimal(10,2);not null" json:"total"`

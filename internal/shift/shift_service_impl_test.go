@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
 
@@ -32,12 +33,23 @@ type openShiftRepositoryStub struct {
 	getShiftID       uint
 	getShiftResult   *Shift
 	getShiftError    error
-	closeShiftCalled bool
-	closeShiftScope  AccessScope
-	closeShiftID     uint
-	closeShiftAt     time.Time
-	closeShiftResult *Shift
-	closeShiftError  error
+	closeShiftCalled  bool
+	closeShiftScope   AccessScope
+	closeShiftID      uint
+	closeShiftAt      time.Time
+	closeShiftStaffID uint
+	closeShiftIn      CloseShiftRequest
+	closeShiftResult  *Shift
+	closeShiftError   error
+
+	forceCloseShiftCalled  bool
+	forceCloseShiftScope   AccessScope
+	forceCloseShiftID      uint
+	forceCloseShiftAt      time.Time
+	forceCloseShiftStaffID uint
+	forceCloseShiftIn      CloseShiftRequest
+	forceCloseShiftResult  *Shift
+	forceCloseShiftError   error
 }
 
 func (r *openShiftRepositoryStub) OpenShift(_ context.Context, in OpenShiftRequest) (*Shift, error) {
@@ -60,12 +72,24 @@ func (r *openShiftRepositoryStub) GetShift(_ context.Context, scope AccessScope,
 	return r.getShiftResult, r.getShiftError
 }
 
-func (r *openShiftRepositoryStub) CloseShift(_ context.Context, scope AccessScope, id uint, closedAt time.Time) (*Shift, error) {
+func (r *openShiftRepositoryStub) CloseShift(_ context.Context, scope AccessScope, id uint, closedAt time.Time, staffID uint, in CloseShiftRequest) (*Shift, error) {
 	r.closeShiftCalled = true
 	r.closeShiftScope = scope
 	r.closeShiftID = id
 	r.closeShiftAt = closedAt
+	r.closeShiftStaffID = staffID
+	r.closeShiftIn = in
 	return r.closeShiftResult, r.closeShiftError
+}
+
+func (r *openShiftRepositoryStub) ForceCloseShift(_ context.Context, scope AccessScope, id uint, closedAt time.Time, closedByStaffID uint, in CloseShiftRequest) (*Shift, error) {
+	r.forceCloseShiftCalled = true
+	r.forceCloseShiftScope = scope
+	r.forceCloseShiftID = id
+	r.forceCloseShiftAt = closedAt
+	r.forceCloseShiftStaffID = closedByStaffID
+	r.forceCloseShiftIn = in
+	return r.forceCloseShiftResult, r.forceCloseShiftError
 }
 
 func TestService_OpenShift_NormalizesServerOwnedStateBeforePersisting(t *testing.T) {
@@ -204,7 +228,10 @@ func TestService_CloseShift_UsesAuthenticatedOrganizationAndServerTime(t *testin
 	svc.now = func() time.Time { return fixedNow }
 
 	scope := AccessScope{OrgID: 3}
-	got, err := svc.CloseShift(context.Background(), scope, 42)
+	got, err := svc.CloseShift(context.Background(), scope, 42, 9, CloseShiftRequest{
+		ClosingCash: decimal.NewFromInt(150),
+		Reason:      "  counted short, register jammed  ",
+	})
 
 	require.NoError(t, err)
 	require.Same(t, want, got)
@@ -212,6 +239,33 @@ func TestService_CloseShift_UsesAuthenticatedOrganizationAndServerTime(t *testin
 	require.Equal(t, scope, repo.closeShiftScope)
 	require.Equal(t, uint(42), repo.closeShiftID)
 	require.Equal(t, fixedNow.UTC(), repo.closeShiftAt)
+	require.Equal(t, uint(9), repo.closeShiftStaffID)
+	require.True(t, decimal.NewFromInt(150).Equal(repo.closeShiftIn.ClosingCash))
+	require.Equal(t, "counted short, register jammed", repo.closeShiftIn.Reason)
+}
+
+func TestService_CloseShift_RejectsInvalidClosingCashWithoutPersisting(t *testing.T) {
+	tests := []struct {
+		name string
+		in   CloseShiftRequest
+	}{
+		{name: "negative closing cash", in: CloseShiftRequest{ClosingCash: decimal.RequireFromString("-0.01")}},
+		{name: "fraction smaller than one cent", in: CloseShiftRequest{ClosingCash: decimal.RequireFromString("1.001")}},
+		{name: "amount exceeds database precision", in: CloseShiftRequest{ClosingCash: decimal.RequireFromString("100000000.00")}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &openShiftRepositoryStub{}
+			svc := NewService(repo)
+
+			got, err := svc.CloseShift(context.Background(), AccessScope{OrgID: 3}, 42, 9, tt.in)
+
+			require.Nil(t, got)
+			require.False(t, repo.closeShiftCalled)
+			requireRestErrorStatus(t, err, http.StatusBadRequest)
+		})
+	}
 }
 
 func TestService_CloseShift_PropagatesRepositoryError(t *testing.T) {
@@ -219,7 +273,73 @@ func TestService_CloseShift_PropagatesRepositoryError(t *testing.T) {
 	repo := &openShiftRepositoryStub{closeShiftError: wantErr}
 	svc := NewService(repo)
 
-	got, err := svc.CloseShift(context.Background(), AccessScope{OrgID: 3}, 42)
+	got, err := svc.CloseShift(context.Background(), AccessScope{OrgID: 3}, 42, 9, CloseShiftRequest{ClosingCash: decimal.NewFromInt(100)})
+
+	require.Nil(t, got)
+	var restErr common.RestError
+	require.True(t, errors.As(err, &restErr))
+	require.Equal(t, wantErr, restErr)
+}
+
+func TestService_ForceCloseShift_DelegatesWithTrimmedReason(t *testing.T) {
+	want := &Shift{ID: 42, Status: ShiftStatusClosed}
+	repo := &openShiftRepositoryStub{forceCloseShiftResult: want}
+	svc := NewService(repo)
+	fixedNow := time.Date(2026, time.September, 15, 21, 45, 0, 0, time.UTC)
+	svc.now = func() time.Time { return fixedNow }
+
+	scope := AccessScope{OrgID: 3}
+	got, err := svc.ForceCloseShift(context.Background(), scope, 42, 20, CloseShiftRequest{
+		ClosingCash: decimal.NewFromInt(100),
+		Reason:      "  staff called in sick, closing on their behalf  ",
+	})
+
+	require.NoError(t, err)
+	require.Same(t, want, got)
+	require.True(t, repo.forceCloseShiftCalled)
+	require.Equal(t, scope, repo.forceCloseShiftScope)
+	require.Equal(t, uint(42), repo.forceCloseShiftID)
+	require.Equal(t, fixedNow, repo.forceCloseShiftAt)
+	require.Equal(t, uint(20), repo.forceCloseShiftStaffID)
+	require.Equal(t, "staff called in sick, closing on their behalf", repo.forceCloseShiftIn.Reason)
+}
+
+func TestService_ForceCloseShift_RequiresReasonEvenWhenCashMatches(t *testing.T) {
+	repo := &openShiftRepositoryStub{}
+	svc := NewService(repo)
+
+	got, err := svc.ForceCloseShift(context.Background(), AccessScope{OrgID: 3}, 42, 20, CloseShiftRequest{
+		ClosingCash: decimal.NewFromInt(100),
+	})
+
+	require.Nil(t, got)
+	require.False(t, repo.forceCloseShiftCalled)
+	requireRestErrorStatus(t, err, http.StatusBadRequest)
+}
+
+func TestService_ForceCloseShift_RejectsInvalidClosingCashWithoutPersisting(t *testing.T) {
+	repo := &openShiftRepositoryStub{}
+	svc := NewService(repo)
+
+	got, err := svc.ForceCloseShift(context.Background(), AccessScope{OrgID: 3}, 42, 20, CloseShiftRequest{
+		ClosingCash: decimal.RequireFromString("-0.01"),
+		Reason:      "still invalid regardless of reason",
+	})
+
+	require.Nil(t, got)
+	require.False(t, repo.forceCloseShiftCalled)
+	requireRestErrorStatus(t, err, http.StatusBadRequest)
+}
+
+func TestService_ForceCloseShift_PropagatesRepositoryError(t *testing.T) {
+	wantErr := common.NotFoundError("shift not found")
+	repo := &openShiftRepositoryStub{forceCloseShiftError: wantErr}
+	svc := NewService(repo)
+
+	got, err := svc.ForceCloseShift(context.Background(), AccessScope{OrgID: 3}, 42, 20, CloseShiftRequest{
+		ClosingCash: decimal.NewFromInt(100),
+		Reason:      "staff unavailable",
+	})
 
 	require.Nil(t, got)
 	var restErr common.RestError
@@ -255,6 +375,7 @@ type remainingRepositoryStub struct {
 	drawerInput     CreateDrawerEventRequest
 	createExpense   CreateExpenseRequest
 	updateExpense   UpdateExpenseRequest
+	expenseActor    ExpenseActor
 	shiftSummary    map[string]any
 	reconciliations []ShiftReconciliation
 	drawerEvent     *DrawerEvent
@@ -294,13 +415,13 @@ func (r *remainingRepositoryStub) CreateExpense(_ context.Context, scope AccessS
 	return r.expense, r.err
 }
 
-func (r *remainingRepositoryStub) UpdateExpense(_ context.Context, scope AccessScope, id uint, in UpdateExpenseRequest) (*Expense, error) {
-	r.method, r.scope, r.id, r.updateExpense = "UpdateExpense", scope, id, in
+func (r *remainingRepositoryStub) UpdateExpense(_ context.Context, scope AccessScope, id uint, actor ExpenseActor, in UpdateExpenseRequest) (*Expense, error) {
+	r.method, r.scope, r.id, r.expenseActor, r.updateExpense = "UpdateExpense", scope, id, actor, in
 	return r.expense, r.err
 }
 
-func (r *remainingRepositoryStub) DeleteExpense(_ context.Context, scope AccessScope, id uint) error {
-	r.method, r.scope, r.id = "DeleteExpense", scope, id
+func (r *remainingRepositoryStub) DeleteExpense(_ context.Context, scope AccessScope, id uint, actor ExpenseActor) error {
+	r.method, r.scope, r.id, r.expenseActor = "DeleteExpense", scope, id, actor
 	return r.err
 }
 
@@ -335,7 +456,7 @@ func TestService_CreateDrawerEvent_TrimsReasonAndPersists(t *testing.T) {
 	want := &DrawerEvent{ID: 1, ShiftID: 2, StaffID: 3, Reason: "cash count"}
 	repo := &remainingRepositoryStub{drawerEvent: want}
 
-	got, err := NewService(repo).CreateDrawerEvent(context.Background(), scope, CreateDrawerEventRequest{
+	got, err := NewService(repo).CreateDrawerEvent(context.Background(), scope, true, CreateDrawerEventRequest{
 		ShiftID: 2, StaffID: 3, Reason: "  cash count  ",
 	})
 
@@ -346,20 +467,45 @@ func TestService_CreateDrawerEvent_TrimsReasonAndPersists(t *testing.T) {
 }
 
 func TestService_CreateDrawerEvent_RejectsInvalidInput(t *testing.T) {
-	zero := uint(0)
+	nilUUID := uuid.Nil
 	tests := []CreateDrawerEventRequest{
 		{StaffID: 1, Reason: "reason"},
 		{ShiftID: 1, Reason: "reason"},
 		{ShiftID: 1, StaffID: 1, Reason: "   "},
-		{ShiftID: 1, StaffID: 1, Reason: "reason", SaleID: &zero},
+		{ShiftID: 1, StaffID: 1, Reason: "reason", SaleID: &nilUUID},
 	}
 	for _, in := range tests {
 		repo := &remainingRepositoryStub{}
-		got, err := NewService(repo).CreateDrawerEvent(context.Background(), AccessScope{OrgID: 7}, in)
+		got, err := NewService(repo).CreateDrawerEvent(context.Background(), AccessScope{OrgID: 7}, true, in)
 		require.Nil(t, got)
 		require.Empty(t, repo.method)
 		requireRestErrorStatus(t, err, http.StatusBadRequest)
 	}
+}
+
+func TestService_CreateDrawerEvent_NoSaleWithoutPermission_Rejects(t *testing.T) {
+	repo := &remainingRepositoryStub{}
+
+	got, err := NewService(repo).CreateDrawerEvent(context.Background(), AccessScope{OrgID: 7}, false, CreateDrawerEventRequest{
+		ShiftID: 2, StaffID: 3, Reason: "cash count",
+	})
+
+	require.Nil(t, got)
+	require.Empty(t, repo.method)
+	requireRestErrorStatus(t, err, http.StatusForbidden)
+}
+
+func TestService_CreateDrawerEvent_WithSaleID_NoPermissionNeeded(t *testing.T) {
+	saleID := uuid.New()
+	want := &DrawerEvent{ID: 1, ShiftID: 2, StaffID: 3, SaleID: &saleID}
+	repo := &remainingRepositoryStub{drawerEvent: want}
+
+	got, err := NewService(repo).CreateDrawerEvent(context.Background(), AccessScope{OrgID: 7}, false, CreateDrawerEventRequest{
+		ShiftID: 2, StaffID: 3, Reason: "drawer opened for sale", SaleID: &saleID,
+	})
+
+	require.NoError(t, err)
+	require.Same(t, want, got)
 }
 
 func TestService_ListDrawerEventsAndExpenses_ForwardScope(t *testing.T) {
@@ -427,7 +573,8 @@ func TestService_UpdateExpense_ValidatesNormalizesAndPersists(t *testing.T) {
 	want := &Expense{ID: 9}
 	repo := &remainingRepositoryStub{expense: want}
 
-	got, err := NewService(repo).UpdateExpense(context.Background(), scope, 9, UpdateExpenseRequest{
+	actor := ExpenseActor{StaffID: 4, CanManageAny: true}
+	got, err := NewService(repo).UpdateExpense(context.Background(), scope, 9, actor, UpdateExpenseRequest{
 		Category: &category, Amount: &amount,
 	})
 
@@ -435,6 +582,7 @@ func TestService_UpdateExpense_ValidatesNormalizesAndPersists(t *testing.T) {
 	require.Same(t, want, got)
 	require.Equal(t, "UpdateExpense", repo.method)
 	require.Equal(t, uint(9), repo.id)
+	require.Equal(t, actor, repo.expenseActor)
 	require.NotNil(t, repo.updateExpense.Category)
 	require.Equal(t, "transport", *repo.updateExpense.Category)
 }
@@ -454,7 +602,7 @@ func TestService_UpdateExpense_RejectsInvalidInput(t *testing.T) {
 	}
 	for _, in := range tests {
 		repo := &remainingRepositoryStub{}
-		got, err := NewService(repo).UpdateExpense(context.Background(), AccessScope{OrgID: 7}, 1, in)
+		got, err := NewService(repo).UpdateExpense(context.Background(), AccessScope{OrgID: 7}, 1, ExpenseActor{StaffID: 4}, in)
 		require.Nil(t, got)
 		require.Empty(t, repo.method)
 		requireRestErrorStatus(t, err, http.StatusBadRequest)
@@ -466,7 +614,7 @@ func TestService_DeleteExpense_ForwardsScopeAndError(t *testing.T) {
 	wantErr := common.NotFoundError("expense not found")
 	repo := &remainingRepositoryStub{err: wantErr}
 
-	err := NewService(repo).DeleteExpense(context.Background(), scope, 9)
+	err := NewService(repo).DeleteExpense(context.Background(), scope, 9, ExpenseActor{StaffID: 4})
 
 	var restErr common.RestError
 	require.True(t, errors.As(err, &restErr))

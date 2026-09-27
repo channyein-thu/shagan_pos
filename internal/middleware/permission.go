@@ -9,10 +9,12 @@ import (
 	"shagan_pos/internal/common"
 )
 
-// Context keys RequirePermission sets on a successfully authorized request.
+// Context keys RequirePermission/RequireStaffToken set on a successfully
+// authorized request.
 const (
-	ContextStaffID = "staff_id"
-	ContextRoleID  = "role_id"
+	ContextStaffID          = "staff_id"
+	ContextRoleID           = "role_id"
+	ContextStaffPermissions = "staff_permissions"
 )
 
 // staffTokenHeader carries a separate token from Auth's own Authorization
@@ -20,6 +22,14 @@ const (
 // which human is authorized to do this (RequirePermission). Raw token value,
 // no "Bearer " prefix - same convention as InternalAuth's X-Internal-Key.
 const staffTokenHeader = "X-Staff-Token"
+
+// managerApprovalTokenHeader carries a manager's one-action elevation token
+// (identity.Service.VerifyManagerPIN), separate from staffTokenHeader - a
+// request can need both at once: X-Staff-Token still identifies which
+// ordinary staff member is ringing up the sale/opening the drawer/etc, while
+// this proves a manager separately approved this one action just now. See
+// ManagerApproved.
+const managerApprovalTokenHeader = "X-Manager-Approval-Token"
 
 // RequirePermission validates the X-Staff-Token JWT issued by
 // identity.Service.VerifyStaffPIN/VerifyManagerPIN and requires that its
@@ -36,17 +46,8 @@ const staffTokenHeader = "X-Staff-Token"
 // about anyone else.
 func RequirePermission(jwtSecret []byte, permission string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		token := c.GetHeader(staffTokenHeader)
-		if token == "" {
-			common.HandleError(c, common.UnauthorizedError("missing staff token"))
-			c.Abort()
-			return
-		}
-
-		claims, err := authtoken.ParseStaffToken(jwtSecret, token)
-		if err != nil {
-			common.HandleError(c, common.UnauthorizedError("invalid or expired staff token"))
-			c.Abort()
+		claims, ok := parseStaffToken(c, jwtSecret)
+		if !ok {
 			return
 		}
 
@@ -56,10 +57,49 @@ func RequirePermission(jwtSecret []byte, permission string) gin.HandlerFunc {
 			return
 		}
 
-		c.Set(ContextStaffID, claims.StaffID)
-		c.Set(ContextRoleID, claims.RoleID)
+		setStaffContext(c, claims)
 		c.Next()
 	}
+}
+
+// RequireStaffToken validates the same X-Staff-Token JWT as RequirePermission
+// and identifies which staff member is acting, without requiring any one
+// specific granted permission - stack this on routes that just need to know
+// *who* is calling (e.g. "record this expense as logged by me", "only the
+// staff who opened this shift may close it"), as opposed to
+// RequirePermission's *are they allowed to do this specific thing*.
+func RequireStaffToken(jwtSecret []byte) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		claims, ok := parseStaffToken(c, jwtSecret)
+		if !ok {
+			return
+		}
+		setStaffContext(c, claims)
+		c.Next()
+	}
+}
+
+func parseStaffToken(c *gin.Context, jwtSecret []byte) (*authtoken.StaffClaims, bool) {
+	token := c.GetHeader(staffTokenHeader)
+	if token == "" {
+		common.HandleError(c, common.UnauthorizedError("missing staff token"))
+		c.Abort()
+		return nil, false
+	}
+
+	claims, err := authtoken.ParseStaffToken(jwtSecret, token)
+	if err != nil {
+		common.HandleError(c, common.UnauthorizedError("invalid or expired staff token"))
+		c.Abort()
+		return nil, false
+	}
+	return claims, true
+}
+
+func setStaffContext(c *gin.Context, claims *authtoken.StaffClaims) {
+	c.Set(ContextStaffID, claims.StaffID)
+	c.Set(ContextRoleID, claims.RoleID)
+	c.Set(ContextStaffPermissions, claims.Permissions)
 }
 
 // StaffIDFromContext returns the authorized caller's staff ID, as set by
@@ -82,4 +122,38 @@ func RoleIDFromContext(c *gin.Context) (uint, bool) {
 	}
 	id, ok := v.(uint)
 	return id, ok
+}
+
+// StaffHasPermission returns whether the authorized caller's role (as set by
+// RequirePermission/RequireStaffToken) includes permission - e.g. checking
+// for "access_backoffice" to decide whether a Manager may act on another
+// staff member's record, versus an ordinary Staff member who may only act on
+// their own.
+func StaffHasPermission(c *gin.Context, permission string) bool {
+	v, ok := c.Get(ContextStaffPermissions)
+	if !ok {
+		return false
+	}
+	perms, ok := v.([]string)
+	return ok && slices.Contains(perms, permission)
+}
+
+// ManagerApproved checks the optional X-Manager-Approval-Token for a valid,
+// unexpired manager elevation (identity.Service.VerifyManagerPIN) granting
+// permission - the escape hatch for a staff member who lacks permission
+// themselves (e.g. a plain cashier applying a manual discount, voiding a
+// sale, opening the drawer without a sale) but has a manager approve it at
+// the terminal. An absent, invalid, expired, or non-granting token is never
+// itself an error here - it just returns false, so the caller falls back to
+// rejecting on the staff's own lack of permission (via StaffHasPermission).
+func ManagerApproved(c *gin.Context, jwtSecret []byte, permission string) bool {
+	token := c.GetHeader(managerApprovalTokenHeader)
+	if token == "" {
+		return false
+	}
+	claims, err := authtoken.ParseStaffToken(jwtSecret, token)
+	if err != nil {
+		return false
+	}
+	return slices.Contains(claims.Permissions, permission)
 }

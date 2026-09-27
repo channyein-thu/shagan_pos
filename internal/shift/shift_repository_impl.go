@@ -3,6 +3,7 @@ package shift
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -142,8 +143,25 @@ func (r *RepositoryImpl) GetShift(ctx context.Context, scope AccessScope, id uin
 	return getShiftInScope(r.db.WithContext(ctx), scope, id, false)
 }
 
-// CloseShift backs `POST /shifts/:id/close`. Writes reconciliation row(s) as a side effect
-func (r *RepositoryImpl) CloseShift(ctx context.Context, scope AccessScope, id uint, closedAt time.Time) (*Shift, error) {
+// CloseShift backs `POST /shifts/:id/close`. Writes reconciliation row(s) as
+// a side effect. Only the shift's own staff member may call this - see
+// closeShift.
+func (r *RepositoryImpl) CloseShift(ctx context.Context, scope AccessScope, id uint, closedAt time.Time, staffID uint, in CloseShiftRequest) (*Shift, error) {
+	return r.closeShift(ctx, scope, id, closedAt, staffID, &staffID, in)
+}
+
+// ForceCloseShift backs `POST /shifts/:id/force-close`. Same reconciliation
+// logic as CloseShift, but skips the "same staff who opened it" check - see
+// closeShift.
+func (r *RepositoryImpl) ForceCloseShift(ctx context.Context, scope AccessScope, id uint, closedAt time.Time, closedByStaffID uint, in CloseShiftRequest) (*Shift, error) {
+	return r.closeShift(ctx, scope, id, closedAt, closedByStaffID, nil, in)
+}
+
+// closeShift is the shared transaction behind CloseShift/ForceCloseShift.
+// requireOpenerStaffID, when non-nil, must match the shift's own StaffID -
+// omitted entirely for a force-close, whose whole point is bypassing that
+// check. closedByStaffID is always recorded, whichever path was taken.
+func (r *RepositoryImpl) closeShift(ctx context.Context, scope AccessScope, id uint, closedAt time.Time, closedByStaffID uint, requireOpenerStaffID *uint, in CloseShiftRequest) (*Shift, error) {
 	var closed Shift
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		found, err := getShiftInScope(tx, scope, id, true)
@@ -153,6 +171,9 @@ func (r *RepositoryImpl) CloseShift(ctx context.Context, scope AccessScope, id u
 		closed = *found
 		if closed.Status != ShiftStatusOpen {
 			return common.ConflictError("shift is already closed")
+		}
+		if requireOpenerStaffID != nil && closed.StaffID != *requireOpenerStaffID {
+			return common.ForbiddenError("only the staff member who opened this shift may close it")
 		}
 
 		var openSales int64
@@ -194,19 +215,39 @@ func (r *RepositoryImpl) CloseShift(ctx context.Context, scope AccessScope, id u
 			ReconciliationMethodMobile,
 			ReconciliationMethodOther,
 		}
+		// Only cash is physically counted at close - card/QR/mobile-wallet
+		// payments settle electronically, so they're trusted to match what
+		// was recorded (Counted == Expected, Difference always zero). Cash
+		// uses what was actually counted in the drawer; a non-zero
+		// difference requires a reason, since that's the one number that can
+		// genuinely be short or over.
+		expectedCash := expectedByMethod[ReconciliationMethodCash]
+		cashDifference := in.ClosingCash.Sub(expectedCash)
+		if !cashDifference.IsZero() && strings.TrimSpace(in.Reason) == "" {
+			return common.BadRequestError("reason is required when closing_cash does not match the expected cash total")
+		}
+
 		reconciliations := make([]ShiftReconciliation, 0, len(expectedByMethod))
 		for _, method := range orderedMethods {
 			expected, exists := expectedByMethod[method]
 			if !exists {
 				continue
 			}
+			counted := expected
+			difference := decimal.Zero
+			reason := ""
+			if method == ReconciliationMethodCash {
+				counted = in.ClosingCash
+				difference = cashDifference
+				reason = strings.TrimSpace(in.Reason)
+			}
 			reconciliations = append(reconciliations, ShiftReconciliation{
 				ShiftID:    closed.ID,
 				Method:     method,
 				Expected:   expected,
-				Counted:    expected,
-				Difference: decimal.Zero,
-				Reason:     "",
+				Counted:    counted,
+				Difference: difference,
+				Reason:     reason,
 			})
 		}
 		if err := tx.Create(&reconciliations).Error; err != nil {
@@ -215,11 +256,12 @@ func (r *RepositoryImpl) CloseShift(ctx context.Context, scope AccessScope, id u
 
 		if err := tx.Model(&Shift{}).
 			Where("id = ? AND status = ?", closed.ID, ShiftStatusOpen).
-			Updates(map[string]any{"status": ShiftStatusClosed, "closed_at": closedAt}).Error; err != nil {
+			Updates(map[string]any{"status": ShiftStatusClosed, "closed_at": closedAt, "closed_by_staff_id": closedByStaffID}).Error; err != nil {
 			return err
 		}
 		closed.Status = ShiftStatusClosed
 		closed.ClosedAt = &closedAt
+		closed.ClosedByStaffID = &closedByStaffID
 		return nil
 	})
 	if err != nil {
@@ -404,12 +446,15 @@ func (r *RepositoryImpl) CreateExpense(ctx context.Context, scope AccessScope, i
 }
 
 // UpdateExpense backs `PATCH /expenses/:id`.
-func (r *RepositoryImpl) UpdateExpense(ctx context.Context, scope AccessScope, id uint, in UpdateExpenseRequest) (*Expense, error) {
+func (r *RepositoryImpl) UpdateExpense(ctx context.Context, scope AccessScope, id uint, actor ExpenseActor, in UpdateExpenseRequest) (*Expense, error) {
 	var expense Expense
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		found, err := getExpenseInScope(tx, scope, id, true)
 		if err != nil {
 			return err
+		}
+		if !actor.CanManageAny && found.CreatedBy != actor.StaffID {
+			return common.ForbiddenError("only the staff member who logged this expense, or a manager, may modify it")
 		}
 		expense = *found
 		effectiveBranchID := expense.BranchID
@@ -455,11 +500,14 @@ func (r *RepositoryImpl) UpdateExpense(ctx context.Context, scope AccessScope, i
 }
 
 // DeleteExpense backs `DELETE /expenses/:id`.
-func (r *RepositoryImpl) DeleteExpense(ctx context.Context, scope AccessScope, id uint) error {
+func (r *RepositoryImpl) DeleteExpense(ctx context.Context, scope AccessScope, id uint, actor ExpenseActor) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		expense, err := getExpenseInScope(tx, scope, id, true)
 		if err != nil {
 			return err
+		}
+		if !actor.CanManageAny && expense.CreatedBy != actor.StaffID {
+			return common.ForbiddenError("only the staff member who logged this expense, or a manager, may delete it")
 		}
 		return tx.Delete(expense).Error
 	})

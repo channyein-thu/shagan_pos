@@ -34,6 +34,7 @@ func Run(db *gorm.DB) error {
 		{Code: "apply_manual_discount", Name: "Apply a manual discount at time of sale", Category: "sales"},
 		{Code: "approve_void", Name: "Approve a void", Category: "sales"},
 		{Code: "approve_return", Name: "Approve a return", Category: "sales"},
+		{Code: "approve_exchange", Name: "Approve an exchange", Category: "sales"},
 	}
 	permissions := make(map[string]identity.Permission, len(permissionRows))
 	for _, p := range permissionRows {
@@ -49,7 +50,7 @@ func Run(db *gorm.DB) error {
 	grants := map[string][]string{
 		"staff":       {"access_pos_portal"},
 		"super_staff": {"access_pos_portal", "open_drawer_no_sale", "apply_manual_discount"},
-		"manager":     {"access_pos_portal", "access_backoffice", "apply_manual_discount", "approve_void", "approve_return"},
+		"manager":     {"access_pos_portal", "access_backoffice", "apply_manual_discount", "approve_void", "approve_return", "approve_exchange"},
 	}
 	for roleCode, permCodes := range grants {
 		role := roles[roleCode]

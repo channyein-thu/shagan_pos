@@ -3,6 +3,7 @@ package shift
 import (
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 )
 
@@ -36,7 +37,14 @@ type Shift struct {
 	OpenedAt    time.Time       `gorm:"not null" json:"opened_at"`
 	OpeningCash decimal.Decimal `gorm:"type:decimal(10,2);not null" json:"opening_cash"`
 	ClosedAt    *time.Time      `json:"closed_at"`
-	Status      ShiftStatus     `gorm:"type:varchar(30);not null" json:"status"` // one of ShiftStatus* constants below (TODO: confirm real values)
+	// ClosedByStaffID records who actually performed the close - equal to
+	// StaffID for a normal close (only the shift's own staff may call
+	// CloseShift), or a different staff's ID for a manager's
+	// ForceCloseShift override (e.g. the original staff is unexpectedly
+	// unavailable). Comparing the two after the fact is how a force-close
+	// shows up distinctly, without a separate boolean flag.
+	ClosedByStaffID *uint       `gorm:"index" json:"closed_by_staff_id"`
+	Status          ShiftStatus `gorm:"type:varchar(30);not null" json:"status"` // one of ShiftStatus* constants below (TODO: confirm real values)
 }
 
 // ShiftReconciliation maps to the "Shifts_reconciliations" table in the ERD.
@@ -52,12 +60,12 @@ type ShiftReconciliation struct {
 
 // DrawerEvent maps to the "drawer_events" table in the ERD.
 type DrawerEvent struct {
-	ID        uint      `gorm:"primaryKey;autoIncrement" json:"id"`
-	ShiftID   uint      `gorm:"index;not null" json:"shift_id"`
-	StaffID   uint      `gorm:"index;not null" json:"staff_id"`
-	Reason    string    `gorm:"not null" json:"reason"`
-	SaleID    *uint     `gorm:"index" json:"sale_id"` // TODO: ERD types this as int but Sales.id is uuid - likely should be uuid too, confirm with source ERD
-	CreatedAt time.Time `gorm:"autoCreateTime;not null" json:"created_at"`
+	ID        uint       `gorm:"primaryKey;autoIncrement" json:"id"`
+	ShiftID   uint       `gorm:"index;not null" json:"shift_id"`
+	StaffID   uint       `gorm:"index;not null" json:"staff_id"`
+	Reason    string     `gorm:"not null" json:"reason"`
+	SaleID    *uuid.UUID `gorm:"type:uuid;index" json:"sale_id"`
+	CreatedAt time.Time  `gorm:"autoCreateTime;not null" json:"created_at"`
 }
 
 // Expense maps to the "expenses" table in the ERD.
