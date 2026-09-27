@@ -65,15 +65,39 @@ func (s *Service) GetShift(ctx context.Context, scope AccessScope, id uint) (*Sh
 }
 
 func (s *Service) CloseShift(ctx context.Context, scope AccessScope, id uint, staffID uint, in CloseShiftRequest) (*Shift, error) {
-	if in.ClosingCash.IsNegative() {
-		return nil, common.ValidationError("validation error", []common.FieldError{{Field: "ClosingCash", Message: "must be zero or greater"}})
-	} else if !in.ClosingCash.Round(2).Equal(in.ClosingCash) {
-		return nil, common.ValidationError("validation error", []common.FieldError{{Field: "ClosingCash", Message: "must have at most 2 decimal places"}})
-	} else if in.ClosingCash.GreaterThanOrEqual(maxOpeningCash) {
-		return nil, common.ValidationError("validation error", []common.FieldError{{Field: "ClosingCash", Message: "must be less than 100000000.00"}})
+	if err := validateClosingCash(in.ClosingCash); err != nil {
+		return nil, err
 	}
 	in.Reason = strings.TrimSpace(in.Reason)
 	return s.repo.CloseShift(ctx, scope, id, s.now().UTC(), staffID, in)
+}
+
+// ForceCloseShift is CloseShift's Manager-only escape hatch. Unlike a normal
+// close, Reason is mandatory here regardless of whether closing_cash matches
+// the expected total - the override itself needs justification, not just a
+// cash discrepancy.
+func (s *Service) ForceCloseShift(ctx context.Context, scope AccessScope, id uint, closedByStaffID uint, in CloseShiftRequest) (*Shift, error) {
+	if err := validateClosingCash(in.ClosingCash); err != nil {
+		return nil, err
+	}
+	in.Reason = strings.TrimSpace(in.Reason)
+	if in.Reason == "" {
+		return nil, common.ValidationError("validation error", []common.FieldError{{Field: "Reason", Message: "required for a force-close"}})
+	}
+	return s.repo.ForceCloseShift(ctx, scope, id, s.now().UTC(), closedByStaffID, in)
+}
+
+func validateClosingCash(closingCash decimal.Decimal) error {
+	switch {
+	case closingCash.IsNegative():
+		return common.ValidationError("validation error", []common.FieldError{{Field: "ClosingCash", Message: "must be zero or greater"}})
+	case !closingCash.Round(2).Equal(closingCash):
+		return common.ValidationError("validation error", []common.FieldError{{Field: "ClosingCash", Message: "must have at most 2 decimal places"}})
+	case closingCash.GreaterThanOrEqual(maxOpeningCash):
+		return common.ValidationError("validation error", []common.FieldError{{Field: "ClosingCash", Message: "must be less than 100000000.00"}})
+	default:
+		return nil
+	}
 }
 
 func (s *Service) GetShiftSummary(ctx context.Context, scope AccessScope, id uint) (map[string]any, error) {

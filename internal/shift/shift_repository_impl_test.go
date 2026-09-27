@@ -412,6 +412,8 @@ func TestRepository_CloseShift_ClosesAtomicallyAndWritesPaymentSnapshot(t *testi
 	require.Equal(t, ShiftStatusClosed, got.Status)
 	require.NotNil(t, got.ClosedAt)
 	require.Equal(t, closedAt, *got.ClosedAt)
+	require.NotNil(t, got.ClosedByStaffID)
+	require.Equal(t, staff.ID, *got.ClosedByStaffID)
 
 	var reconciliations []ShiftReconciliation
 	require.NoError(t, db.Where("shift_id = ?", shift.ID).Find(&reconciliations).Error)
@@ -518,6 +520,33 @@ func TestRepository_CloseShift_RejectsWhenCloserIsNotTheStaffWhoOpenedIt(t *test
 	require.NoError(t, db.First(&persisted, shift.ID).Error)
 	require.Equal(t, ShiftStatusOpen, persisted.Status)
 	require.Equal(t, int64(0), countReconciliations(t, db, shift.ID))
+}
+
+func TestRepository_ForceCloseShift_BypassesStaffMatchAndRecordsCloser(t *testing.T) {
+	db := newOpenShiftTestDB(t)
+	branch, staff, device := seedActiveOpenShiftResources(t, db, 7)
+	manager := identity.Staff{BranchID: branch.ID, Name: "Manager", RoleID: 3, PinHash: "hash", Phone: "3", Status: identity.StaffStatusActive}
+	require.NoError(t, db.Create(&manager).Error)
+	shift := Shift{
+		BranchID: branch.ID, StaffID: staff.ID, DeviceID: device.ID,
+		OpenedAt: time.Now().UTC(), OpeningCash: decimal.NewFromInt(100), Status: ShiftStatusOpen,
+	}
+	require.NoError(t, db.Create(&shift).Error)
+
+	got, err := NewRepository(db).ForceCloseShift(context.Background(), AccessScope{OrgID: 7}, shift.ID, time.Now().UTC(), manager.ID,
+		CloseShiftRequest{ClosingCash: decimal.NewFromInt(100), Reason: "staff called in sick"})
+
+	require.NoError(t, err)
+	require.Equal(t, ShiftStatusClosed, got.Status)
+	require.Equal(t, staff.ID, got.StaffID)
+	require.NotNil(t, got.ClosedByStaffID)
+	require.Equal(t, manager.ID, *got.ClosedByStaffID)
+
+	var persisted Shift
+	require.NoError(t, db.First(&persisted, shift.ID).Error)
+	require.Equal(t, ShiftStatusClosed, persisted.Status)
+	require.NotNil(t, persisted.ClosedByStaffID)
+	require.Equal(t, manager.ID, *persisted.ClosedByStaffID)
 }
 
 func TestRepository_CloseShift_RejectsOpenSaleAndRollsBack(t *testing.T) {

@@ -6,13 +6,24 @@ import (
 	"github.com/google/uuid"
 )
 
+// SaleActor identifies the authenticated staff member ringing up a sale
+// (derived from the verified X-Staff-Token, never client input), and
+// whether their role's granted permissions let them apply a manual
+// discount at all - checked against apply_manual_discount, same permission
+// shift.ExpenseActor checks access_backoffice against.
+type SaleActor struct {
+	StaffID                uint
+	CanApplyManualDiscount bool
+}
+
 // Interface defines the sales domain's use cases.
 type Interface interface {
 	// CreateSale derives Subtotal/Discount/Tax/Total from in.Items and
 	// validates in.Payments sums to that Total - see Service.CreateSale.
 	// branchID comes from the caller's pos-device access token, never
-	// client input.
-	CreateSale(ctx context.Context, orgID uint, branchID uint, in CreateSaleRequest) (*Sale, error)
+	// client input. Rejects (403) if any item carries a discount and actor
+	// lacks CanApplyManualDiscount.
+	CreateSale(ctx context.Context, orgID uint, branchID uint, actor SaleActor, in CreateSaleRequest) (*Sale, error)
 	ListSales(ctx context.Context, orgID uint) ([]Sale, error)
 	GetSale(ctx context.Context, orgID uint, id uuid.UUID) (*Sale, error)
 	// GetSaleReceipt and ReprintSale return the same bundle - a receipt's

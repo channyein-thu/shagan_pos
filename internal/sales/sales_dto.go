@@ -53,11 +53,15 @@ type CreateSalePaymentRequest struct {
 // derived Total) rather than trusting client-computed totals. Status and
 // CompletedAt are also server-owned - creating a sale always completes it
 // immediately, same reasoning as identity.OpenShiftRequest's lifecycle
-// fields.
+// fields. StaffID isn't binding:"required" for the same reason it isn't on
+// shift.OpenShiftRequest - it's always overwritten from the verified
+// X-Staff-Token, never a client-supplied staff id (see cmd/api/sales.go's
+// CreateSale handler). That verified identity is also what
+// Service.CreateSale checks apply_manual_discount against.
 type CreateSaleRequest struct {
 	ID         uuid.UUID                  `json:"id" binding:"required"`
 	ShiftID    uint                       `json:"shift_id" binding:"required"`
-	StaffID    uint                       `json:"staff_id" binding:"required"`
+	StaffID    uint                       `json:"staff_id"`
 	DeviceID   uint                       `json:"device_id" binding:"required"`
 	CustomerID *uint                      `json:"customer_id"`
 	Tax        decimal.Decimal            `json:"tax"`

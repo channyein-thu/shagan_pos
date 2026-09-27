@@ -73,7 +73,8 @@ func TestService_CreateSale_HappyPath_DerivesTotalsAndPersistsAtomically(t *test
 		return len(payments) == 1 && payments[0].SaleID == saleID && payments[0].Amount.Equal(decimal.NewFromInt(2050))
 	})).Return(nil).Once()
 
-	got, err := svc.CreateSale(context.Background(), 7, 3, in)
+	actor := SaleActor{StaffID: 14, CanApplyManualDiscount: true}
+	got, err := svc.CreateSale(context.Background(), 7, 3, actor, in)
 	require.NoError(t, err)
 	require.True(t, got.Total.Equal(decimal.NewFromInt(2050)))
 }
@@ -101,7 +102,7 @@ func TestService_CreateSale_UsesPriceOverrideWhenSet(t *testing.T) {
 	repo.EXPECT().CreateSaleItems(mock.Anything, mock.Anything).Return(nil).Once()
 	repo.EXPECT().CreatePayments(mock.Anything, mock.Anything).Return(nil).Once()
 
-	_, err := svc.CreateSale(context.Background(), 7, 3, in)
+	_, err := svc.CreateSale(context.Background(), 7, 3, SaleActor{StaffID: 14}, in)
 	require.NoError(t, err)
 }
 
@@ -116,7 +117,41 @@ func TestService_CreateSale_PaymentsMismatch_RejectsWithoutOpeningTransaction(t 
 		Payments: []CreateSalePaymentRequest{{Method: PaymentMethodCash, Amount: decimal.NewFromInt(500)}},
 	}
 
-	_, err := svc.CreateSale(context.Background(), 7, 3, in)
+	_, err := svc.CreateSale(context.Background(), 7, 3, SaleActor{StaffID: 14}, in)
+	requireRestErrorStatus(t, err, http.StatusBadRequest)
+	repo.AssertNotCalled(t, "RequireOpenShift", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	repo.AssertNotCalled(t, "CreateSale", mock.Anything, mock.Anything)
+}
+
+func TestService_CreateSale_DiscountWithoutPermission_RejectsWithoutOpeningTransaction(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo)
+
+	in := CreateSaleRequest{
+		ID:      uuid.New(),
+		ShiftID: 9, StaffID: 14, DeviceID: 3,
+		Items:    []CreateSaleItemRequest{{ProductID: 1, NameSnapshot: "Rice 5kg", UnitPrice: decimal.NewFromInt(1000), Qty: 1, Discount: decimal.NewFromInt(50)}},
+		Payments: []CreateSalePaymentRequest{{Method: PaymentMethodCash, Amount: decimal.NewFromInt(950)}},
+	}
+
+	_, err := svc.CreateSale(context.Background(), 7, 3, SaleActor{StaffID: 14, CanApplyManualDiscount: false}, in)
+	requireRestErrorStatus(t, err, http.StatusForbidden)
+	repo.AssertNotCalled(t, "RequireOpenShift", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	repo.AssertNotCalled(t, "CreateSale", mock.Anything, mock.Anything)
+}
+
+func TestService_CreateSale_NegativeItemDiscount_RejectsWithoutOpeningTransaction(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo)
+
+	in := CreateSaleRequest{
+		ID:      uuid.New(),
+		ShiftID: 9, StaffID: 14, DeviceID: 3,
+		Items:    []CreateSaleItemRequest{{ProductID: 1, NameSnapshot: "Rice 5kg", UnitPrice: decimal.NewFromInt(1000), Qty: 1, Discount: decimal.NewFromInt(-10)}},
+		Payments: []CreateSalePaymentRequest{{Method: PaymentMethodCash, Amount: decimal.NewFromInt(1010)}},
+	}
+
+	_, err := svc.CreateSale(context.Background(), 7, 3, SaleActor{StaffID: 14, CanApplyManualDiscount: true}, in)
 	requireRestErrorStatus(t, err, http.StatusBadRequest)
 	repo.AssertNotCalled(t, "RequireOpenShift", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	repo.AssertNotCalled(t, "CreateSale", mock.Anything, mock.Anything)
@@ -136,7 +171,7 @@ func TestService_CreateSale_ShiftNotOpen_PropagatesErrorWithoutPersisting(t *tes
 	repo.EXPECT().RequireOpenShift(mock.Anything, uint(7), uint(3), uint(9)).
 		Return(common.NotFoundError("shift not found, not open, or doesn't belong to this branch")).Once()
 
-	_, err := svc.CreateSale(context.Background(), 7, 3, in)
+	_, err := svc.CreateSale(context.Background(), 7, 3, SaleActor{StaffID: 14}, in)
 	requireRestErrorStatus(t, err, http.StatusNotFound)
 	repo.AssertNotCalled(t, "CreateSale", mock.Anything, mock.Anything)
 }
