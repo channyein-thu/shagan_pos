@@ -2,6 +2,7 @@ package inventory
 
 import (
 	"context"
+	"errors"
 
 	"gorm.io/gorm"
 
@@ -54,6 +55,35 @@ func (r *RepositoryImpl) ListInventoryLedger(ctx context.Context, orgID uint, br
 		return nil, err
 	}
 	return entries, nil
+}
+
+// GetStockLevel backs the find-or-create step for crediting stock.
+func (r *RepositoryImpl) GetStockLevel(db *gorm.DB, productID uint, branchID uint) (*StockLevel, error) {
+	var level StockLevel
+	err := db.Where("product_id = ? AND branch_id = ?", productID, branchID).First(&level).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &level, nil
+}
+
+// CreateStockLevel backs the first-ever-stock-movement path. Plain insert.
+func (r *RepositoryImpl) CreateStockLevel(db *gorm.DB, level *StockLevel) error {
+	return db.Create(level).Error
+}
+
+// UpdateStockLevelQty backs the already-exists path. Plain write.
+func (r *RepositoryImpl) UpdateStockLevelQty(db *gorm.DB, id uint, qty int) error {
+	return db.Model(&StockLevel{}).Where("id = ?", id).Update("qty", qty).Error
+}
+
+// CreateInventoryLedgerEntry backs every audit-trail write in this domain.
+// Plain insert.
+func (r *RepositoryImpl) CreateInventoryLedgerEntry(db *gorm.DB, entry *InventoryLedger) error {
+	return db.Create(entry).Error
 }
 
 // CreateStockAdjustment backs `POST /inventory/adjustments`. Writes a ledger row as a side effect

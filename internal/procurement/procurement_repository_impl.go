@@ -68,27 +68,80 @@ func (r *RepositoryImpl) DeleteSupplier(ctx context.Context, id uint) error {
 	return r.db.WithContext(ctx).Delete(&Supplier{}, id).Error
 }
 
-// ListPurchaseOrders backs `GET /purchase-orders`.
-func (r *RepositoryImpl) ListPurchaseOrders(ctx context.Context) ([]PurchaseOrder, error) {
-	return nil, common.ErrNotImplemented
+// orgSupplierIDs backs ListPurchaseOrders/GetPurchaseOrder's org-scoping -
+// PurchaseOrder carries no OrgID of its own, only SupplierID, so this
+// mirrors identity's orgBranchIDs: a same-domain subquery, not a
+// cross-domain dependency (Supplier lives in this same package).
+func (r *RepositoryImpl) orgSupplierIDs(ctx context.Context, orgID uint) *gorm.DB {
+	return r.db.WithContext(ctx).Model(&Supplier{}).Where("org_id = ?", orgID).Select("id")
 }
 
-// CreatePurchaseOrder backs `POST /purchase-orders`. Also writes purchase_order_items
-func (r *RepositoryImpl) CreatePurchaseOrder(ctx context.Context, in CreatePurchaseOrderRequest) (*PurchaseOrder, error) {
-	return nil, common.ErrNotImplemented
+// ListPurchaseOrders backs `GET /purchase-orders`, scoped to orgID.
+func (r *RepositoryImpl) ListPurchaseOrders(ctx context.Context, orgID uint) ([]PurchaseOrder, error) {
+	var orders []PurchaseOrder
+	if err := r.db.WithContext(ctx).Where("supplier_id IN (?)", r.orgSupplierIDs(ctx, orgID)).Find(&orders).Error; err != nil {
+		return nil, err
+	}
+	return orders, nil
 }
 
-// GetPurchaseOrder backs `GET /purchase-orders/:id`.
-func (r *RepositoryImpl) GetPurchaseOrder(ctx context.Context, id uint) (*PurchaseOrder, error) {
-	return nil, common.ErrNotImplemented
+// CreatePurchaseOrder backs Service.CreatePurchaseOrder's first step. Plain
+// insert.
+func (r *RepositoryImpl) CreatePurchaseOrder(db *gorm.DB, po *PurchaseOrder) error {
+	return db.Create(po).Error
 }
 
-// UpdatePurchaseOrder backs `PATCH /purchase-orders/:id`. Status transitions
-func (r *RepositoryImpl) UpdatePurchaseOrder(ctx context.Context, id uint, in UpdatePurchaseOrderRequest) (*PurchaseOrder, error) {
-	return nil, common.ErrNotImplemented
+// CreatePurchaseOrderItems backs Service.CreatePurchaseOrder's second step.
+// Plain slice-insert.
+func (r *RepositoryImpl) CreatePurchaseOrderItems(db *gorm.DB, items []PurchaseOrderItem) error {
+	return db.Create(&items).Error
 }
 
-// CreateGoodsReceipt backs `POST /purchase-orders/:id/receipts`. Posting increases stock + writes ledger
-func (r *RepositoryImpl) CreateGoodsReceipt(ctx context.Context, id uint, in CreateGoodsReceiptRequest) (*GoodsReceipt, error) {
-	return nil, common.ErrNotImplemented
+// GetPurchaseOrder backs `GET /purchase-orders/:id`, scoped to orgID.
+func (r *RepositoryImpl) GetPurchaseOrder(ctx context.Context, orgID uint, id uint) (*PurchaseOrder, error) {
+	var po PurchaseOrder
+	err := r.db.WithContext(ctx).
+		Where("id = ? AND supplier_id IN (?)", id, r.orgSupplierIDs(ctx, orgID)).
+		First(&po).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, common.NotFoundError("purchase order not found")
+		}
+		return nil, err
+	}
+	return &po, nil
+}
+
+// ListPurchaseOrderItemsByPoID backs Service.GetPurchaseOrder/
+// Service.CreateGoodsReceipt's item lookups.
+func (r *RepositoryImpl) ListPurchaseOrderItemsByPoID(ctx context.Context, poID uint) ([]PurchaseOrderItem, error) {
+	var items []PurchaseOrderItem
+	if err := r.db.WithContext(ctx).Where("po_id = ?", poID).Find(&items).Error; err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+// UpdatePurchaseOrder backs `PATCH /purchase-orders/:id`. Plain write -
+// updates is already decided by the service.
+func (r *RepositoryImpl) UpdatePurchaseOrder(ctx context.Context, id uint, updates map[string]any) error {
+	return r.db.WithContext(ctx).Model(&PurchaseOrder{}).Where("id = ?", id).Updates(updates).Error
+}
+
+// UpdatePurchaseOrderStatus backs Service.CreateGoodsReceipt's final step.
+// Plain write.
+func (r *RepositoryImpl) UpdatePurchaseOrderStatus(db *gorm.DB, id uint, status PurchaseOrderStatus) error {
+	return db.Model(&PurchaseOrder{}).Where("id = ?", id).Update("status", status).Error
+}
+
+// CreateGoodsReceipt backs Service.CreateGoodsReceipt's first step. Plain
+// insert.
+func (r *RepositoryImpl) CreateGoodsReceipt(db *gorm.DB, receipt *GoodsReceipt) error {
+	return db.Create(receipt).Error
+}
+
+// CreateGoodsReceiptItems backs Service.CreateGoodsReceipt's second step.
+// Plain slice-insert.
+func (r *RepositoryImpl) CreateGoodsReceiptItems(db *gorm.DB, items []GoodsReceiptItem) error {
+	return db.Create(&items).Error
 }

@@ -68,3 +68,9 @@ packages:
       Repository:
         config:
           filename: "mock_procurement_repository_test.go"
+      ProductLookup:
+        config:
+          filename: "mock_procurement_product_lookup_test.go"
+      InventoryWriter:
+        config:
+          filename: "mock_procurement_inventory_writer_test.go"

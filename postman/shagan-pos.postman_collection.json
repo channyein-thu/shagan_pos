@@ -3020,7 +3020,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "purchase-orders"]
             },
-            "description": "ListPurchaseOrders"
+            "description": "Lists purchase orders in the caller's org. No query params - org_id comes from the token (resolved via the caller's own suppliers, since PurchaseOrder has no org_id column of its own). Returns bare headers only - no items array (see GetPurchaseOrder for that)."
           },
           "response": []
         },
@@ -3042,7 +3042,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{}",
+              "raw": "{\n  \"po_number\": \"PO-1001\",\n  \"supplier_id\": 1,\n  \"items\": [\n    {\n      \"product_id\": 1,\n      \"ordered_qty\": 10,\n      \"unit_cost\": \"2.50\"\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3054,7 +3054,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "purchase-orders"]
             },
-            "description": "Also writes purchase_order_items"
+            "description": "Also writes purchase_order_items. supplier_id and every item's product_id must belong to your own org. total is computed from items (sum of ordered_qty*unit_cost) - don't send it. status/created_by aren't accepted either - a new order always starts at \"submitted\"; created_by is the authenticated caller's own user ID."
           },
           "response": []
         },
@@ -3080,7 +3080,7 @@
                 }
               ]
             },
-            "description": "GetPurchaseOrder"
+            "description": "Org-scoped. Unlike ListPurchaseOrders, includes an \"items\" array (the order's line items) - a detail view needs to show what was ordered."
           },
           "response": []
         },
@@ -3102,7 +3102,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{}",
+              "raw": "{\n  \"status\": \"approved\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3120,7 +3120,7 @@
                 }
               ]
             },
-            "description": "Status transitions"
+            "description": "Status transitions: one of draft, submitted, approved, cancelled - NOT received (409). Marking an order received only happens via CreateGoodsReceipt, which requires an actual reconciled receipt. Blocked with 409 once the order is already received or cancelled (terminal states). supplier_id, if sent, must belong to your own org. total/created_by aren't editable here."
           },
           "response": []
         },
@@ -3142,7 +3142,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{}",
+              "raw": "{\n  \"received_at\": \"2026-10-13T09:00:00Z\",\n  \"items\": [\n    {\n      \"po_item_id\": 1,\n      \"received_qty\": 8,\n      \"variance_note\": \"2 units damaged in transit\"\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3160,7 +3160,7 @@
                 }
               ]
             },
-            "description": "Posting increases stock + writes ledger"
+            "description": "Posting increases stock (by received_qty only - never ordered_qty) + writes one inventory ledger entry per item, then marks the purchase order received. po_item_id must belong to this order. variance_note is required whenever received_qty differs from that item's ordered_qty (the lost/extra amount is recorded there, traceable from the ledger entry - not written as a second phantom ledger row). received_qty of 0 is valid (total loss). Blocked with 409 if this order is already received or cancelled. received_by isn't accepted - it's the authenticated caller's own user ID. total_amount/variance_count aren't accepted either - both are computed from items."
           },
           "response": []
         }
