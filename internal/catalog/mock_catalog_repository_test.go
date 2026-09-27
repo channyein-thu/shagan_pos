@@ -23,6 +23,63 @@ func (_m *MockRepository) EXPECT() *MockRepository_Expecter {
 	return &MockRepository_Expecter{mock: &_m.Mock}
 }
 
+// ComboItemsExistForProduct provides a mock function with given fields: ctx, productID
+func (_m *MockRepository) ComboItemsExistForProduct(ctx context.Context, productID uint) (bool, error) {
+	ret := _m.Called(ctx, productID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ComboItemsExistForProduct")
+	}
+
+	var r0 bool
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, uint) (bool, error)); ok {
+		return rf(ctx, productID)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, uint) bool); ok {
+		r0 = rf(ctx, productID)
+	} else {
+		r0 = ret.Get(0).(bool)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, uint) error); ok {
+		r1 = rf(ctx, productID)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// MockRepository_ComboItemsExistForProduct_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ComboItemsExistForProduct'
+type MockRepository_ComboItemsExistForProduct_Call struct {
+	*mock.Call
+}
+
+// ComboItemsExistForProduct is a helper method to define mock.On call
+//   - ctx context.Context
+//   - productID uint
+func (_e *MockRepository_Expecter) ComboItemsExistForProduct(ctx interface{}, productID interface{}) *MockRepository_ComboItemsExistForProduct_Call {
+	return &MockRepository_ComboItemsExistForProduct_Call{Call: _e.mock.On("ComboItemsExistForProduct", ctx, productID)}
+}
+
+func (_c *MockRepository_ComboItemsExistForProduct_Call) Run(run func(ctx context.Context, productID uint)) *MockRepository_ComboItemsExistForProduct_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(uint))
+	})
+	return _c
+}
+
+func (_c *MockRepository_ComboItemsExistForProduct_Call) Return(_a0 bool, _a1 error) *MockRepository_ComboItemsExistForProduct_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *MockRepository_ComboItemsExistForProduct_Call) RunAndReturn(run func(context.Context, uint) (bool, error)) *MockRepository_ComboItemsExistForProduct_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // CreateCategory provides a mock function with given fields: ctx, category
 func (_m *MockRepository) CreateCategory(ctx context.Context, category *Category) error {
 	ret := _m.Called(ctx, category)
@@ -352,17 +409,17 @@ func (_c *MockRepository_DeleteCategory_Call) RunAndReturn(run func(context.Cont
 	return _c
 }
 
-// DeleteCombo provides a mock function with given fields: ctx, id
-func (_m *MockRepository) DeleteCombo(ctx context.Context, id uint) error {
-	ret := _m.Called(ctx, id)
+// DeleteCombo provides a mock function with given fields: db, id
+func (_m *MockRepository) DeleteCombo(db *gorm.DB, id uint) error {
+	ret := _m.Called(db, id)
 
 	if len(ret) == 0 {
 		panic("no return value specified for DeleteCombo")
 	}
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, uint) error); ok {
-		r0 = rf(ctx, id)
+	if rf, ok := ret.Get(0).(func(*gorm.DB, uint) error); ok {
+		r0 = rf(db, id)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -376,15 +433,15 @@ type MockRepository_DeleteCombo_Call struct {
 }
 
 // DeleteCombo is a helper method to define mock.On call
-//   - ctx context.Context
+//   - db *gorm.DB
 //   - id uint
-func (_e *MockRepository_Expecter) DeleteCombo(ctx interface{}, id interface{}) *MockRepository_DeleteCombo_Call {
-	return &MockRepository_DeleteCombo_Call{Call: _e.mock.On("DeleteCombo", ctx, id)}
+func (_e *MockRepository_Expecter) DeleteCombo(db interface{}, id interface{}) *MockRepository_DeleteCombo_Call {
+	return &MockRepository_DeleteCombo_Call{Call: _e.mock.On("DeleteCombo", db, id)}
 }
 
-func (_c *MockRepository_DeleteCombo_Call) Run(run func(ctx context.Context, id uint)) *MockRepository_DeleteCombo_Call {
+func (_c *MockRepository_DeleteCombo_Call) Run(run func(db *gorm.DB, id uint)) *MockRepository_DeleteCombo_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(uint))
+		run(args[0].(*gorm.DB), args[1].(uint))
 	})
 	return _c
 }
@@ -394,22 +451,116 @@ func (_c *MockRepository_DeleteCombo_Call) Return(_a0 error) *MockRepository_Del
 	return _c
 }
 
-func (_c *MockRepository_DeleteCombo_Call) RunAndReturn(run func(context.Context, uint) error) *MockRepository_DeleteCombo_Call {
+func (_c *MockRepository_DeleteCombo_Call) RunAndReturn(run func(*gorm.DB, uint) error) *MockRepository_DeleteCombo_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
-// DeleteProduct provides a mock function with given fields: ctx, id
-func (_m *MockRepository) DeleteProduct(ctx context.Context, id uint) error {
-	ret := _m.Called(ctx, id)
+// DeleteComboImagesByComboID provides a mock function with given fields: db, comboID
+func (_m *MockRepository) DeleteComboImagesByComboID(db *gorm.DB, comboID uint) error {
+	ret := _m.Called(db, comboID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DeleteComboImagesByComboID")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(*gorm.DB, uint) error); ok {
+		r0 = rf(db, comboID)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// MockRepository_DeleteComboImagesByComboID_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DeleteComboImagesByComboID'
+type MockRepository_DeleteComboImagesByComboID_Call struct {
+	*mock.Call
+}
+
+// DeleteComboImagesByComboID is a helper method to define mock.On call
+//   - db *gorm.DB
+//   - comboID uint
+func (_e *MockRepository_Expecter) DeleteComboImagesByComboID(db interface{}, comboID interface{}) *MockRepository_DeleteComboImagesByComboID_Call {
+	return &MockRepository_DeleteComboImagesByComboID_Call{Call: _e.mock.On("DeleteComboImagesByComboID", db, comboID)}
+}
+
+func (_c *MockRepository_DeleteComboImagesByComboID_Call) Run(run func(db *gorm.DB, comboID uint)) *MockRepository_DeleteComboImagesByComboID_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(*gorm.DB), args[1].(uint))
+	})
+	return _c
+}
+
+func (_c *MockRepository_DeleteComboImagesByComboID_Call) Return(_a0 error) *MockRepository_DeleteComboImagesByComboID_Call {
+	_c.Call.Return(_a0)
+	return _c
+}
+
+func (_c *MockRepository_DeleteComboImagesByComboID_Call) RunAndReturn(run func(*gorm.DB, uint) error) *MockRepository_DeleteComboImagesByComboID_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// DeleteComboItemsByComboID provides a mock function with given fields: db, comboID
+func (_m *MockRepository) DeleteComboItemsByComboID(db *gorm.DB, comboID uint) error {
+	ret := _m.Called(db, comboID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DeleteComboItemsByComboID")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(*gorm.DB, uint) error); ok {
+		r0 = rf(db, comboID)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// MockRepository_DeleteComboItemsByComboID_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DeleteComboItemsByComboID'
+type MockRepository_DeleteComboItemsByComboID_Call struct {
+	*mock.Call
+}
+
+// DeleteComboItemsByComboID is a helper method to define mock.On call
+//   - db *gorm.DB
+//   - comboID uint
+func (_e *MockRepository_Expecter) DeleteComboItemsByComboID(db interface{}, comboID interface{}) *MockRepository_DeleteComboItemsByComboID_Call {
+	return &MockRepository_DeleteComboItemsByComboID_Call{Call: _e.mock.On("DeleteComboItemsByComboID", db, comboID)}
+}
+
+func (_c *MockRepository_DeleteComboItemsByComboID_Call) Run(run func(db *gorm.DB, comboID uint)) *MockRepository_DeleteComboItemsByComboID_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(*gorm.DB), args[1].(uint))
+	})
+	return _c
+}
+
+func (_c *MockRepository_DeleteComboItemsByComboID_Call) Return(_a0 error) *MockRepository_DeleteComboItemsByComboID_Call {
+	_c.Call.Return(_a0)
+	return _c
+}
+
+func (_c *MockRepository_DeleteComboItemsByComboID_Call) RunAndReturn(run func(*gorm.DB, uint) error) *MockRepository_DeleteComboItemsByComboID_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// DeleteProduct provides a mock function with given fields: db, id
+func (_m *MockRepository) DeleteProduct(db *gorm.DB, id uint) error {
+	ret := _m.Called(db, id)
 
 	if len(ret) == 0 {
 		panic("no return value specified for DeleteProduct")
 	}
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, uint) error); ok {
-		r0 = rf(ctx, id)
+	if rf, ok := ret.Get(0).(func(*gorm.DB, uint) error); ok {
+		r0 = rf(db, id)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -423,15 +574,15 @@ type MockRepository_DeleteProduct_Call struct {
 }
 
 // DeleteProduct is a helper method to define mock.On call
-//   - ctx context.Context
+//   - db *gorm.DB
 //   - id uint
-func (_e *MockRepository_Expecter) DeleteProduct(ctx interface{}, id interface{}) *MockRepository_DeleteProduct_Call {
-	return &MockRepository_DeleteProduct_Call{Call: _e.mock.On("DeleteProduct", ctx, id)}
+func (_e *MockRepository_Expecter) DeleteProduct(db interface{}, id interface{}) *MockRepository_DeleteProduct_Call {
+	return &MockRepository_DeleteProduct_Call{Call: _e.mock.On("DeleteProduct", db, id)}
 }
 
-func (_c *MockRepository_DeleteProduct_Call) Run(run func(ctx context.Context, id uint)) *MockRepository_DeleteProduct_Call {
+func (_c *MockRepository_DeleteProduct_Call) Run(run func(db *gorm.DB, id uint)) *MockRepository_DeleteProduct_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(uint))
+		run(args[0].(*gorm.DB), args[1].(uint))
 	})
 	return _c
 }
@@ -441,7 +592,7 @@ func (_c *MockRepository_DeleteProduct_Call) Return(_a0 error) *MockRepository_D
 	return _c
 }
 
-func (_c *MockRepository_DeleteProduct_Call) RunAndReturn(run func(context.Context, uint) error) *MockRepository_DeleteProduct_Call {
+func (_c *MockRepository_DeleteProduct_Call) RunAndReturn(run func(*gorm.DB, uint) error) *MockRepository_DeleteProduct_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -549,6 +700,66 @@ func (_c *MockRepository_GetCategory_Call) Return(_a0 *Category, _a1 error) *Moc
 }
 
 func (_c *MockRepository_GetCategory_Call) RunAndReturn(run func(context.Context, uint, uint) (*Category, error)) *MockRepository_GetCategory_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetCombo provides a mock function with given fields: ctx, orgID, id
+func (_m *MockRepository) GetCombo(ctx context.Context, orgID uint, id uint) (*Combo, error) {
+	ret := _m.Called(ctx, orgID, id)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetCombo")
+	}
+
+	var r0 *Combo
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, uint, uint) (*Combo, error)); ok {
+		return rf(ctx, orgID, id)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, uint, uint) *Combo); ok {
+		r0 = rf(ctx, orgID, id)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*Combo)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, uint, uint) error); ok {
+		r1 = rf(ctx, orgID, id)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// MockRepository_GetCombo_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetCombo'
+type MockRepository_GetCombo_Call struct {
+	*mock.Call
+}
+
+// GetCombo is a helper method to define mock.On call
+//   - ctx context.Context
+//   - orgID uint
+//   - id uint
+func (_e *MockRepository_Expecter) GetCombo(ctx interface{}, orgID interface{}, id interface{}) *MockRepository_GetCombo_Call {
+	return &MockRepository_GetCombo_Call{Call: _e.mock.On("GetCombo", ctx, orgID, id)}
+}
+
+func (_c *MockRepository_GetCombo_Call) Run(run func(ctx context.Context, orgID uint, id uint)) *MockRepository_GetCombo_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(uint), args[2].(uint))
+	})
+	return _c
+}
+
+func (_c *MockRepository_GetCombo_Call) Return(_a0 *Combo, _a1 error) *MockRepository_GetCombo_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *MockRepository_GetCombo_Call) RunAndReturn(run func(context.Context, uint, uint) (*Combo, error)) *MockRepository_GetCombo_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -729,6 +940,65 @@ func (_c *MockRepository_ListCategories_Call) Return(_a0 []Category, _a1 error) 
 }
 
 func (_c *MockRepository_ListCategories_Call) RunAndReturn(run func(context.Context, uint) ([]Category, error)) *MockRepository_ListCategories_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ListComboImagesByComboIDs provides a mock function with given fields: ctx, comboIDs
+func (_m *MockRepository) ListComboImagesByComboIDs(ctx context.Context, comboIDs []uint) ([]ComboImage, error) {
+	ret := _m.Called(ctx, comboIDs)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListComboImagesByComboIDs")
+	}
+
+	var r0 []ComboImage
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, []uint) ([]ComboImage, error)); ok {
+		return rf(ctx, comboIDs)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, []uint) []ComboImage); ok {
+		r0 = rf(ctx, comboIDs)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]ComboImage)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, []uint) error); ok {
+		r1 = rf(ctx, comboIDs)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// MockRepository_ListComboImagesByComboIDs_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListComboImagesByComboIDs'
+type MockRepository_ListComboImagesByComboIDs_Call struct {
+	*mock.Call
+}
+
+// ListComboImagesByComboIDs is a helper method to define mock.On call
+//   - ctx context.Context
+//   - comboIDs []uint
+func (_e *MockRepository_Expecter) ListComboImagesByComboIDs(ctx interface{}, comboIDs interface{}) *MockRepository_ListComboImagesByComboIDs_Call {
+	return &MockRepository_ListComboImagesByComboIDs_Call{Call: _e.mock.On("ListComboImagesByComboIDs", ctx, comboIDs)}
+}
+
+func (_c *MockRepository_ListComboImagesByComboIDs_Call) Run(run func(ctx context.Context, comboIDs []uint)) *MockRepository_ListComboImagesByComboIDs_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].([]uint))
+	})
+	return _c
+}
+
+func (_c *MockRepository_ListComboImagesByComboIDs_Call) Return(_a0 []ComboImage, _a1 error) *MockRepository_ListComboImagesByComboIDs_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *MockRepository_ListComboImagesByComboIDs_Call) RunAndReturn(run func(context.Context, []uint) ([]ComboImage, error)) *MockRepository_ListComboImagesByComboIDs_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -1016,34 +1286,22 @@ func (_c *MockRepository_UpdateCategory_Call) RunAndReturn(run func(context.Cont
 	return _c
 }
 
-// UpdateCombo provides a mock function with given fields: ctx, id, in
-func (_m *MockRepository) UpdateCombo(ctx context.Context, id uint, in UpdateComboRequest) (*Combo, error) {
-	ret := _m.Called(ctx, id, in)
+// UpdateCombo provides a mock function with given fields: db, id, updates
+func (_m *MockRepository) UpdateCombo(db *gorm.DB, id uint, updates map[string]interface{}) error {
+	ret := _m.Called(db, id, updates)
 
 	if len(ret) == 0 {
 		panic("no return value specified for UpdateCombo")
 	}
 
-	var r0 *Combo
-	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, uint, UpdateComboRequest) (*Combo, error)); ok {
-		return rf(ctx, id, in)
-	}
-	if rf, ok := ret.Get(0).(func(context.Context, uint, UpdateComboRequest) *Combo); ok {
-		r0 = rf(ctx, id, in)
+	var r0 error
+	if rf, ok := ret.Get(0).(func(*gorm.DB, uint, map[string]interface{}) error); ok {
+		r0 = rf(db, id, updates)
 	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*Combo)
-		}
+		r0 = ret.Error(0)
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, uint, UpdateComboRequest) error); ok {
-		r1 = rf(ctx, id, in)
-	} else {
-		r1 = ret.Error(1)
-	}
-
-	return r0, r1
+	return r0
 }
 
 // MockRepository_UpdateCombo_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdateCombo'
@@ -1052,26 +1310,26 @@ type MockRepository_UpdateCombo_Call struct {
 }
 
 // UpdateCombo is a helper method to define mock.On call
-//   - ctx context.Context
+//   - db *gorm.DB
 //   - id uint
-//   - in UpdateComboRequest
-func (_e *MockRepository_Expecter) UpdateCombo(ctx interface{}, id interface{}, in interface{}) *MockRepository_UpdateCombo_Call {
-	return &MockRepository_UpdateCombo_Call{Call: _e.mock.On("UpdateCombo", ctx, id, in)}
+//   - updates map[string]interface{}
+func (_e *MockRepository_Expecter) UpdateCombo(db interface{}, id interface{}, updates interface{}) *MockRepository_UpdateCombo_Call {
+	return &MockRepository_UpdateCombo_Call{Call: _e.mock.On("UpdateCombo", db, id, updates)}
 }
 
-func (_c *MockRepository_UpdateCombo_Call) Run(run func(ctx context.Context, id uint, in UpdateComboRequest)) *MockRepository_UpdateCombo_Call {
+func (_c *MockRepository_UpdateCombo_Call) Run(run func(db *gorm.DB, id uint, updates map[string]interface{})) *MockRepository_UpdateCombo_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(uint), args[2].(UpdateComboRequest))
+		run(args[0].(*gorm.DB), args[1].(uint), args[2].(map[string]interface{}))
 	})
 	return _c
 }
 
-func (_c *MockRepository_UpdateCombo_Call) Return(_a0 *Combo, _a1 error) *MockRepository_UpdateCombo_Call {
-	_c.Call.Return(_a0, _a1)
+func (_c *MockRepository_UpdateCombo_Call) Return(_a0 error) *MockRepository_UpdateCombo_Call {
+	_c.Call.Return(_a0)
 	return _c
 }
 
-func (_c *MockRepository_UpdateCombo_Call) RunAndReturn(run func(context.Context, uint, UpdateComboRequest) (*Combo, error)) *MockRepository_UpdateCombo_Call {
+func (_c *MockRepository_UpdateCombo_Call) RunAndReturn(run func(*gorm.DB, uint, map[string]interface{}) error) *MockRepository_UpdateCombo_Call {
 	_c.Call.Return(run)
 	return _c
 }

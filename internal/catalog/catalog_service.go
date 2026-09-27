@@ -44,13 +44,27 @@ type Interface interface {
 	// new one is successfully created, same failure-cleanup reasoning as
 	// CreateProduct's image handling.
 	UpdateProduct(ctx context.Context, orgID uint, id uint, in UpdateProductRequest, file io.ReadSeeker, fileSize int64, contentType, filename string) (*Product, error)
-	DeleteProduct(ctx context.Context, id uint) error
+	// DeleteProduct confirms the product exists AND belongs to orgID before
+	// touching anything (not-found-not-forbidden, same reasoning as
+	// UpdateProduct), then blocks the delete with common.ConflictError if
+	// any combo still references it via ComboItem - deleting out from
+	// under a combo would leave it bundling a product that no longer
+	// exists, same reasoning as DeleteCategory. The product's own
+	// ProductImage row(s) and their storage objects are removed as part of
+	// the delete (they belong to the product, not a separate concern that
+	// should block it) - the DB rows atomically with the product row, the
+	// storage objects best-effort afterward, same cleanup-after-commit
+	// reasoning as UpdateProduct's image replace.
+	DeleteProduct(ctx context.Context, orgID uint, id uint) error
 	ListCategories(ctx context.Context, orgID uint) ([]Category, error)
 	CreateCategory(ctx context.Context, orgID uint, in CreateCategoryRequest) (*Category, error)
 	UpdateCategory(ctx context.Context, orgID uint, id uint, in UpdateCategoryRequest) (*Category, error)
 	DeleteCategory(ctx context.Context, orgID uint, id uint) error
 	UploadMedia(ctx context.Context) (*ProductImage, error)
-	ListCombos(ctx context.Context, orgID uint) ([]Combo, error)
+	// ListCombos returns ComboResult, not bare Combo - each result's Images
+	// carry a temporary signed URL, not just a StorageKey, same reasoning
+	// as ListProducts.
+	ListCombos(ctx context.Context, orgID uint) ([]ComboResult, error)
 	// CreateCombo requires at least one item (see CreateComboRequest) - a
 	// combo without any bundled products should never exist. Each item's
 	// ProductID must belong to orgID (not-found-not-forbidden, same as
@@ -59,6 +73,23 @@ type Interface interface {
 	// contentType/filename) when the request didn't include an image; a
 	// combo can exist without one.
 	CreateCombo(ctx context.Context, orgID uint, in CreateComboRequest, file io.ReadSeeker, fileSize int64, contentType, filename string) (*Combo, error)
-	UpdateCombo(ctx context.Context, id uint, in UpdateComboRequest) (*Combo, error)
-	DeleteCombo(ctx context.Context, id uint) error
+	// UpdateCombo confirms the combo exists AND belongs to orgID before
+	// touching anything (not-found-not-forbidden, same reasoning as
+	// UpdateCategory/UpdateProduct). Price/ExpiresAt, if present, are
+	// validated against the resulting combined state (existing values for
+	// any field not present in the request), same reasoning as
+	// UpdateProduct. file is optional (nil when the request didn't include
+	// one) - when present, it entirely replaces the combo's existing
+	// image, same failure-cleanup reasoning as UpdateProduct's image
+	// handling. Doesn't support editing Items yet.
+	UpdateCombo(ctx context.Context, orgID uint, id uint, in UpdateComboRequest, file io.ReadSeeker, fileSize int64, contentType, filename string) (*Combo, error)
+	// DeleteCombo confirms the combo exists AND belongs to orgID before
+	// touching anything (not-found-not-forbidden, same reasoning as
+	// UpdateCombo). Unlike DeleteProduct, there's currently nothing outside
+	// the combo that can reference it (no Sales/order-history domain yet),
+	// so there's no referential-integrity gate to check - only the combo's
+	// own ComboItem/ComboImage rows and image storage object are cleaned
+	// up as part of the delete, same reasoning as DeleteProduct's
+	// ProductImage cleanup.
+	DeleteCombo(ctx context.Context, orgID uint, id uint) error
 }

@@ -1888,7 +1888,7 @@
                     }
                   ]
                 },
-                "description": "Soft delete only"
+                "description": "Hard delete, scoped to the caller's org. Blocked with 409 if any combo still bundles this product (create a combo referencing it via CreateCombo to test that path). On success, also removes the product's own image and its storage object - 204 No Content, no body."
               },
               "response": []
             }
@@ -1956,21 +1956,22 @@
                     "key": "Authorization",
                     "value": "Bearer {{token}}",
                     "type": "text"
-                  },
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json",
-                    "type": "text"
                   }
                 ],
                 "body": {
-                  "mode": "raw",
-                  "raw": "{}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "name",
+                      "value": "Brunch Combo",
+                      "type": "text"
+                    },
+                    {
+                      "key": "price",
+                      "value": "6.00",
+                      "type": "text"
                     }
-                  }
+                  ]
                 },
                 "url": {
                   "raw": "{{baseUrl}}/api/v1/combos/:id",
@@ -1983,7 +1984,7 @@
                     }
                   ]
                 },
-                "description": "UpdateCombo"
+                "description": "Multipart upload, scoped to the caller's org (org_id can never be reassigned via this endpoint). Every field is optional - only send what you want to change. price/expires_at are validated against the resulting combined state (existing values fill in for anything not sent). To also replace the image, add an \"image\" file field yourself and attach a real file - do NOT add an empty/unselected file field, since Postman has a bug (EISDIR) where a present-but-empty file field breaks the request; only add the row when you're attaching an actual file. Doesn't support editing items yet - only the combo's own fields and its image."
               },
               "response": []
             },
@@ -2009,7 +2010,7 @@
                     }
                   ]
                 },
-                "description": "DeleteCombo"
+                "description": "Hard delete, scoped to the caller's org. Nothing currently blocks this (no Sales/order-history domain yet referencing combos) - also removes the combo's own items and image. 204 No Content, no body."
               },
               "response": []
             },
@@ -2029,7 +2030,7 @@
                   "host": ["{{baseUrl}}"],
                   "path": ["api", "v1", "combos"]
                 },
-                "description": "ListCombos"
+                "description": "Lists combos in the caller's org. No query params - org_id comes from the token. Each combo now includes an \"images\" array (id, url, width, height) - url is a temporary presigned link valid for 15 minutes, so re-fetch the list if it expires."
               },
               "response": []
             }
@@ -2173,11 +2174,23 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/stock-levels",
+              "raw": "{{baseUrl}}/api/v1/stock-levels?branch_id=1&product_id=1",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "stock-levels"]
+              "path": ["api", "v1", "stock-levels"],
+              "query": [
+                {
+                  "key": "branch_id",
+                  "value": "1",
+                  "description": "Optional - owner/service_center only (a pos-device token's own branch always wins instead). Must belong to your own org."
+                },
+                {
+                  "key": "product_id",
+                  "value": "1",
+                  "description": "Optional - narrows to one product."
+                }
+              ]
             },
-            "description": "Filter by product/branch"
+            "description": "Lists stock levels in the caller's org. Restricted to the caller's own branch when the token carries one (a pos device) - org-wide otherwise, same reasoning as ListProducts. Both query params are optional - omit either to leave that dimension unfiltered."
           },
           "response": []
         },
@@ -2213,11 +2226,23 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/inventory/ledger",
+              "raw": "{{baseUrl}}/api/v1/inventory/ledger?branch_id=1&product_id=1",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "inventory", "ledger"]
+              "path": ["api", "v1", "inventory", "ledger"],
+              "query": [
+                {
+                  "key": "branch_id",
+                  "value": "1",
+                  "description": "Optional - a pos-device token's own branch always wins instead."
+                },
+                {
+                  "key": "product_id",
+                  "value": "1",
+                  "description": "Optional - narrows to one product."
+                }
+              ]
             },
-            "description": "Read-only - never written directly by a client"
+            "description": "Read-only audit trail - never written directly by a client. Org-scoped, both query params optional. Ordered oldest-first, since each row's balance_after only reads as a running balance in chronological order."
           },
           "response": []
         },
@@ -2981,7 +3006,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "suppliers"]
             },
-            "description": "ListSuppliers"
+            "description": "Lists suppliers in the caller's org. No query params - org_id comes from the token."
           },
           "response": []
         },
@@ -3003,7 +3028,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{}",
+              "raw": "{\n  \"name\": \"Acme Foods\",\n  \"phone\": \"0123456789\",\n  \"address\": \"123 Main St\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3015,7 +3040,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "suppliers"]
             },
-            "description": "CreateSupplier"
+            "description": "Creates a supplier in the caller's org (org_id comes from the token, never the body). last_order_at isn't client-settable - it's stamped at creation, then later updated whenever a real purchase order is placed with this supplier."
           },
           "response": []
         },
@@ -3037,7 +3062,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{}",
+              "raw": "{\n  \"name\": \"Acme Foods Ltd\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3055,7 +3080,7 @@
                 }
               ]
             },
-            "description": "UpdateSupplier"
+            "description": "Partial update, scoped to the caller's org. Every field is optional - only send what you want to change. last_order_at can't be changed via this endpoint - it's system-managed."
           },
           "response": []
         },
@@ -3081,7 +3106,7 @@
                 }
               ]
             },
-            "description": "DeleteSupplier"
+            "description": "Hard delete, scoped to the caller's org. Blocked with 409 if any purchase order still references this supplier. 204 No Content, no body."
           },
           "response": []
         },
@@ -3101,7 +3126,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "purchase-orders"]
             },
-            "description": "ListPurchaseOrders"
+            "description": "Lists purchase orders in the caller's org. No query params - org_id comes from the token (resolved via the caller's own suppliers, since PurchaseOrder has no org_id column of its own). Returns bare headers only - no items array (see GetPurchaseOrder for that)."
           },
           "response": []
         },
@@ -3123,7 +3148,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{}",
+              "raw": "{\n  \"po_number\": \"PO-1001\",\n  \"supplier_id\": 1,\n  \"items\": [\n    {\n      \"product_id\": 1,\n      \"ordered_qty\": 10,\n      \"unit_cost\": \"2.50\"\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3135,7 +3160,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "purchase-orders"]
             },
-            "description": "Also writes purchase_order_items"
+            "description": "Also writes purchase_order_items. supplier_id and every item's product_id must belong to your own org. total is computed from items (sum of ordered_qty*unit_cost) - don't send it. status/created_by aren't accepted either - a new order always starts at \"submitted\"; created_by is the authenticated caller's own user ID."
           },
           "response": []
         },
@@ -3161,7 +3186,7 @@
                 }
               ]
             },
-            "description": "GetPurchaseOrder"
+            "description": "Org-scoped. Unlike ListPurchaseOrders, includes an \"items\" array (the order's line items) - a detail view needs to show what was ordered."
           },
           "response": []
         },
@@ -3183,7 +3208,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{}",
+              "raw": "{\n  \"status\": \"approved\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3201,7 +3226,7 @@
                 }
               ]
             },
-            "description": "Status transitions"
+            "description": "Status transitions: one of draft, submitted, approved, cancelled - NOT received (409). Marking an order received only happens via CreateGoodsReceipt, which requires an actual reconciled receipt. Blocked with 409 once the order is already received or cancelled (terminal states). supplier_id, if sent, must belong to your own org. total/created_by aren't editable here."
           },
           "response": []
         },
@@ -3223,7 +3248,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{}",
+              "raw": "{\n  \"received_at\": \"2026-10-13T09:00:00Z\",\n  \"items\": [\n    {\n      \"po_item_id\": 1,\n      \"received_qty\": 8,\n      \"variance_note\": \"2 units damaged in transit\"\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3241,7 +3266,7 @@
                 }
               ]
             },
-            "description": "Posting increases stock + writes ledger"
+            "description": "Posting increases stock (by received_qty only - never ordered_qty) + writes one inventory ledger entry per item, then marks the purchase order received. po_item_id must belong to this order. variance_note is required whenever received_qty differs from that item's ordered_qty (the lost/extra amount is recorded there, traceable from the ledger entry - not written as a second phantom ledger row). received_qty of 0 is valid (total loss). Blocked with 409 if this order is already received or cancelled. received_by isn't accepted - it's the authenticated caller's own user ID. total_amount/variance_count aren't accepted either - both are computed from items."
           },
           "response": []
         }

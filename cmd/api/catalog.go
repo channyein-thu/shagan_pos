@@ -328,14 +328,19 @@ func (a *CatalogAPI) UpdateProduct(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// DeleteProduct handles `DELETE /products/:id`. Soft delete only
+// DeleteProduct handles `DELETE /products/:id`. Hard delete, blocked if any
+// combo still references the product.
 func (a *CatalogAPI) DeleteProduct(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
-	if err := a.service.DeleteProduct(c.Request.Context(), uint(idVal)); err != nil {
+	if err := a.service.DeleteProduct(c.Request.Context(), orgID, uint(idVal)); err != nil {
 		common.HandleError(c, err)
 		return
 	}
@@ -520,19 +525,60 @@ func (a *CatalogAPI) CreateCombo(c *gin.Context) {
 	c.JSON(http.StatusCreated, result)
 }
 
-// UpdateCombo handles `PATCH /combos/:id`.
+// UpdateCombo handles `PATCH /combos/:id`. Multipart form: name, price,
+// expires_at (RFC3339) are all optional (send only what changed), plus an
+// optional "image" file that entirely replaces the combo's existing photo -
+// same reasoning as UpdateProduct's. Doesn't support editing items yet.
 func (a *CatalogAPI) UpdateCombo(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
+
 	var in catalog.UpdateComboRequest
-	if err := c.ShouldBindJSON(&in); err != nil {
-		common.HandleError(c, common.BadRequestError(err.Error()))
-		return
+	if v, ok := c.GetPostForm("name"); ok {
+		in.Name = &v
 	}
-	result, err := a.service.UpdateCombo(c.Request.Context(), uint(idVal), in)
+	if v, ok := c.GetPostForm("price"); ok {
+		price, err := decimal.NewFromString(v)
+		if err != nil {
+			common.HandleError(c, common.BadRequestError("invalid price"))
+			return
+		}
+		in.Price = &price
+	}
+	if v, ok := c.GetPostForm("expires_at"); ok {
+		expiresAt, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			common.HandleError(c, common.BadRequestError("invalid expires_at"))
+			return
+		}
+		in.ExpiresAt = &expiresAt
+	}
+
+	// image is optional - only read it when the caller actually attached one.
+	var file io.ReadSeeker
+	var fileSize int64
+	var contentType, filename string
+	if fileHeader, err := c.FormFile("image"); err == nil {
+		f, err := fileHeader.Open()
+		if err != nil {
+			common.HandleError(c, common.BadRequestError("could not read image"))
+			return
+		}
+		defer f.Close()
+		file = f
+		fileSize = fileHeader.Size
+		contentType = fileHeader.Header.Get("Content-Type")
+		filename = fileHeader.Filename
+	}
+
+	result, err := a.service.UpdateCombo(c.Request.Context(), orgID, uint(idVal), in, file, fileSize, contentType, filename)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -540,14 +586,19 @@ func (a *CatalogAPI) UpdateCombo(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// DeleteCombo handles `DELETE /combos/:id`.
+// DeleteCombo handles `DELETE /combos/:id`. Hard delete - also removes the
+// combo's own items and image.
 func (a *CatalogAPI) DeleteCombo(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
-	if err := a.service.DeleteCombo(c.Request.Context(), uint(idVal)); err != nil {
+	if err := a.service.DeleteCombo(c.Request.Context(), orgID, uint(idVal)); err != nil {
 		common.HandleError(c, err)
 		return
 	}

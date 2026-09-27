@@ -47,6 +47,10 @@ packages:
       Repository:
         config:
           filename: "mock_customer_repository_test.go"
+  shagan_pos/internal/inventory:
+    config:
+      dir: "internal/inventory"
+      outpkg: inventory
   shagan_pos/internal/sales:
     config:
       dir: "internal/sales"
@@ -55,4 +59,23 @@ packages:
     interfaces:
       Repository:
         config:
+          filename: "mock_inventory_repository_test.go"
+      BranchLookup:
+        config:
+          filename: "mock_inventory_branch_lookup_test.go"
+  shagan_pos/internal/procurement:
+    config:
+      dir: "internal/procurement"
+      outpkg: procurement
+      inpackage: true
+    interfaces:
+      Repository:
+        config:
+          filename: "mock_procurement_repository_test.go"
+      ProductLookup:
+        config:
+          filename: "mock_procurement_product_lookup_test.go"
+      InventoryWriter:
+        config:
+          filename: "mock_procurement_inventory_writer_test.go"
           filename: "mock_sales_repository_test.go"

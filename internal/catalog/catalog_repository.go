@@ -60,7 +60,20 @@ type Repository interface {
 	// before the new one is created. Plain delete, same
 	// db-is-either-plain-or-in-flight-transaction reasoning as CreateProduct.
 	DeleteProductImagesByProductID(db *gorm.DB, productID uint) error
-	DeleteProduct(ctx context.Context, id uint) error
+	// ComboItemsExistForProduct backs Service.DeleteProduct's
+	// referential-integrity check - a plain existence query. Whether that
+	// should block the delete is the service's call, not this one's, same
+	// reasoning as ProductsExistForCategory.
+	ComboItemsExistForProduct(ctx context.Context, productID uint) (bool, error)
+	// DeleteProduct is a hard delete - Product has no status field to
+	// deactivate instead (unlike Staff/Branch/Device). Existence/ownership
+	// was already confirmed by a prior GetProduct call, and referential
+	// integrity by a prior ComboItemsExistForProduct call. db is either the
+	// repository's normal connection or an in-flight transaction handed
+	// down by the caller - Service.DeleteProduct runs this and
+	// DeleteProductImagesByProductID inside one db.Transaction, so a
+	// product row is never left with dangling ProductImage rows.
+	DeleteProduct(db *gorm.DB, id uint) error
 	// ListCategories backs `GET /categories`, scoped to the authenticated
 	// caller's own organization - same reasoning as identity's
 	// org-scoped lists (e.g. ListBranches).
@@ -93,6 +106,12 @@ type Repository interface {
 	// own organization - same reasoning as identity's org-scoped lists
 	// (e.g. ListBranches).
 	ListCombos(ctx context.Context, orgID uint) ([]Combo, error)
+	// GetCombo backs Service.UpdateCombo's existence/ownership check.
+	// Scoped to orgID - returns common.NotFoundError for a combo that
+	// exists but belongs to a different org, same as one that doesn't exist
+	// at all, so a caller can never distinguish "not mine" from "doesn't
+	// exist" by probing IDs (same reasoning as GetCategory/GetProduct).
+	GetCombo(ctx context.Context, orgID uint, id uint) (*Combo, error)
 	// CreateCombo backs Service.CreateCombo's first step. Plain insert -
 	// GORM sets the row's ID on the pointer it's given. Mapping the
 	// request/orgID into a Combo, and validating it, happens in the
@@ -111,6 +130,40 @@ type Repository interface {
 	// insert, same db-is-either-plain-or-in-flight-transaction reasoning as
 	// CreateCombo above.
 	CreateComboImage(db *gorm.DB, image *ComboImage) error
-	UpdateCombo(ctx context.Context, id uint, in UpdateComboRequest) (*Combo, error)
-	DeleteCombo(ctx context.Context, id uint) error
+	// ListComboImagesByComboIDs backs Service.ListCombos' image lookup and
+	// Service.UpdateCombo's image-replace step (a single-element slice) - a
+	// plain query, no business decision about which combos the caller is
+	// allowed to see (that's already been decided by the caller), same
+	// reasoning as ListProductImagesByProductIDs.
+	ListComboImagesByComboIDs(ctx context.Context, comboIDs []uint) ([]ComboImage, error)
+	// UpdateCombo applies updates (already decided by the service - which
+	// fields changed, in what shape) to the combo identified by id. Plain
+	// write - existence/ownership was already confirmed by a prior
+	// GetCombo call, same reasoning as UpdateCategory/UpdateProduct. db is
+	// either the repository's normal connection or an in-flight
+	// transaction handed down by the caller - Service.UpdateCombo runs
+	// this and, when the request includes a new image,
+	// DeleteComboImagesByComboID/CreateComboImage inside one
+	// db.Transaction, same reasoning as UpdateProduct.
+	UpdateCombo(db *gorm.DB, id uint, updates map[string]any) error
+	// DeleteComboImagesByComboID backs Service.UpdateCombo's image-replace
+	// step - removes the combo's existing image row(s) before the new one
+	// is created. Plain delete, same
+	// db-is-either-plain-or-in-flight-transaction reasoning as UpdateCombo.
+	DeleteComboImagesByComboID(db *gorm.DB, comboID uint) error
+	// DeleteComboItemsByComboID backs Service.DeleteCombo's cleanup step -
+	// ComboItem belongs to the combo (not a separate concern that should
+	// block deleting it, same reasoning as ProductImage/Product), so it's
+	// removed as part of the same delete rather than blocking on it. Plain
+	// delete, same db-is-either-plain-or-in-flight-transaction reasoning as
+	// DeleteComboImagesByComboID.
+	DeleteComboItemsByComboID(db *gorm.DB, comboID uint) error
+	// DeleteCombo is a hard delete - Combo has no status field to
+	// deactivate instead (unlike Staff/Branch/Device). Existence/ownership
+	// was already confirmed by a prior GetCombo call. db is either the
+	// repository's normal connection or an in-flight transaction handed
+	// down by the caller - Service.DeleteCombo runs this and
+	// DeleteComboImagesByComboID/DeleteComboItemsByComboID inside one
+	// db.Transaction, same reasoning as DeleteProduct.
+	DeleteCombo(db *gorm.DB, id uint) error
 }
