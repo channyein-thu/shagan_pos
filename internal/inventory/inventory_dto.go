@@ -1,32 +1,43 @@
 package inventory
 
-// CreateStockAdjustmentRequest is the request body for the endpoint that creates or updates a StockAdjustment.
-// TODO: fields mirroring org/branch/staff/device ownership (e.g. OrgID, BranchID, StaffID)
-// likely belong to the authenticated session/context, not client input - review before use.
+// CreateStockAdjustmentRequest is the request body for `POST
+// /inventory/adjustments`. BranchID isn't here - the adjustment always
+// applies to the branch in.ProductID's own Product row belongs to (a
+// product lives at exactly one branch), never a client-supplied one.
+// ActorID isn't here either - it's the authenticated caller's own user ID,
+// never client input, same reasoning as procurement.CreateGoodsReceiptRequest.
 type CreateStockAdjustmentRequest struct {
 	ProductID uint   `json:"product_id" binding:"required"`
-	BranchID  uint   `json:"branch_id" binding:"required"`
 	Delta     int    `json:"delta" binding:"required"`
 	Reason    string `json:"reason" binding:"required"`
-	ActorID   uint   `json:"actor_id" binding:"required"`
 }
 
-// CreateStockTransferRequest is the request body for the endpoint that creates or updates a StockTransfer.
-// TODO: fields mirroring org/branch/staff/device ownership (e.g. OrgID, BranchID, StaffID)
-// likely belong to the authenticated session/context, not client input - review before use.
+// CreateStockTransferItemRequest is one product line within
+// CreateStockTransferRequest.
+type CreateStockTransferItemRequest struct {
+	ProductID uint `json:"product_id" binding:"required"`
+	Qty       int  `json:"qty" binding:"required,gt=0"`
+}
+
+// CreateStockTransferRequest is the request body for `POST
+// /stock-transfers`. Status isn't here - a new transfer always starts at
+// TransferStatusPending; moving it along the lifecycle happens via
+// UpdateStockTransfer. ActorID isn't here either - it's the authenticated
+// caller's own user ID, never client input. Items must contain at least one
+// entry - a transfer moving nothing isn't meaningful.
 type CreateStockTransferRequest struct {
-	FromBranch uint           `json:"from_branch" binding:"required"`
-	ToBranch   uint           `json:"to_branch" binding:"required"`
-	Status     TransferStatus `json:"status" binding:"required"`
-	ActorID    uint           `json:"actor_id" binding:"required"`
+	FromBranch uint                             `json:"from_branch" binding:"required"`
+	ToBranch   uint                             `json:"to_branch" binding:"required"`
+	Items      []CreateStockTransferItemRequest `json:"items" binding:"required,min=1,dive"`
 }
 
-// UpdateStockTransferRequest is the request body for the endpoint that creates or updates a StockTransfer.
-// TODO: fields mirroring org/branch/staff/device ownership (e.g. OrgID, BranchID, StaffID)
-// likely belong to the authenticated session/context, not client input - review before use.
+// UpdateStockTransferRequest is the request body for `PATCH
+// /stock-transfers/:id`. Only Status can change - FromBranch/ToBranch/Items
+// are fixed at creation (moving stock from a branch that was never the
+// sender, or between branches that don't match what was actually created,
+// isn't a "transfer update", it's a different transfer). See
+// Service.UpdateStockTransfer for what moving to TransferStatusCompleted
+// actually does.
 type UpdateStockTransferRequest struct {
-	FromBranch *uint           `json:"from_branch" binding:"omitempty"`
-	ToBranch   *uint           `json:"to_branch" binding:"omitempty"`
-	Status     *TransferStatus `json:"status" binding:"omitempty"`
-	ActorID    *uint           `json:"actor_id" binding:"omitempty"`
+	Status TransferStatus `json:"status" binding:"required,oneof=in_transit completed cancelled"`
 }

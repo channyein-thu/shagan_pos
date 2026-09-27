@@ -37,7 +37,6 @@ func (a *CatalogAPI) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.POST("/categories", a.CreateCategory)
 	rg.PATCH("/categories/:id", a.UpdateCategory)
 	rg.DELETE("/categories/:id", a.DeleteCategory)
-	rg.POST("/media", a.UploadMedia)
 	rg.GET("/combos", a.ListCombos)
 	rg.POST("/combos", a.CreateCombo)
 	rg.PATCH("/combos/:id", a.UpdateCombo)
@@ -420,16 +419,6 @@ func (a *CatalogAPI) DeleteCategory(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
-}
-
-// UploadMedia handles `POST /media`. Upload; returns storage_key
-func (a *CatalogAPI) UploadMedia(c *gin.Context) {
-	result, err := a.service.UploadMedia(c.Request.Context())
-	if err != nil {
-		common.HandleError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, result)
 }
 
 // ListCombos handles `GET /combos`.

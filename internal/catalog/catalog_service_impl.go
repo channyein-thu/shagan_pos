@@ -477,10 +477,6 @@ func (s *Service) DeleteCategory(ctx context.Context, orgID uint, id uint) error
 	return s.repo.DeleteCategory(ctx, id)
 }
 
-func (s *Service) UploadMedia(ctx context.Context) (*ProductImage, error) {
-	return s.repo.UploadMedia(ctx)
-}
-
 func (s *Service) ListCombos(ctx context.Context, orgID uint) ([]ComboResult, error) {
 	combos, err := s.repo.ListCombos(ctx, orgID)
 	if err != nil {

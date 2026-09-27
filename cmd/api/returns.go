@@ -8,31 +8,60 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"shagan_pos/internal/audit"
 	"shagan_pos/internal/common"
+	"shagan_pos/internal/identity"
+	"shagan_pos/internal/inventory"
+	"shagan_pos/internal/middleware"
 	"shagan_pos/internal/returns"
+	"shagan_pos/internal/sales"
 )
 
 type ReturnsAPI struct {
-	service returns.Interface
+	service   returns.Interface
+	jwtSecret []byte
 }
 
-func NewReturnsAPI(db *gorm.DB) *ReturnsAPI {
-	return &ReturnsAPI{service: returns.NewService(returns.NewRepository(db))}
+func NewReturnsAPI(db *gorm.DB, jwtSecret []byte) *ReturnsAPI {
+	return &ReturnsAPI{
+		service: returns.NewService(
+			returns.NewRepository(db),
+			identity.NewRepository(db),
+			sales.NewRepository(db),
+			inventory.NewRepository(db),
+			audit.NewRepository(db),
+			db,
+		),
+		jwtSecret: jwtSecret,
+	}
 }
 
 func (a *ReturnsAPI) RegisterRoutes(rg *gin.RouterGroup) {
-	rg.POST("/sales/:id/void", a.VoidSale)
+	rg.POST("/sales/:id/void", middleware.RequireStaffToken(a.jwtSecret), a.VoidSale)
 	rg.GET("/voids", a.ListVoids)
-	rg.POST("/returns", a.CreateReturn)
+	rg.POST("/returns", middleware.RequireStaffToken(a.jwtSecret), a.CreateReturn)
 	rg.GET("/returns", a.ListReturns)
 	rg.GET("/returns/:id", a.GetReturn)
-	rg.POST("/exchanges", a.CreateExchange)
+	rg.POST("/exchanges", middleware.RequireStaffToken(a.jwtSecret), a.CreateExchange)
 	rg.GET("/exchanges", a.ListExchanges)
 	rg.GET("/exchanges/:id", a.GetExchange)
 }
 
-// VoidSale handles `POST /sales/:id/void`. Full or partial
+// VoidSale handles `POST /sales/:id/void`. Reverses the entire sale - see
+// returns.Interface's doc. Requires X-Staff-Token; the acting staff needs
+// approve_void themselves, OR an optional X-Manager-Approval-Token grants
+// it instead (see middleware.ManagerApproved) - same
+// StaffHasPermission-or-ManagerApproved shape as sales.CreateSale's manual
+// discount check.
 func (a *ReturnsAPI) VoidSale(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	staffID, ok := requireStaffID(c)
+	if !ok {
+		return
+	}
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		common.HandleError(c, common.BadRequestError("invalid id"))
@@ -43,7 +72,12 @@ func (a *ReturnsAPI) VoidSale(c *gin.Context) {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
-	result, err := a.service.VoidSale(c.Request.Context(), id, in)
+	actor := returns.Actor{
+		StaffID: staffID,
+		CanApprove: middleware.StaffHasPermission(c, "approve_void") ||
+			middleware.ManagerApproved(c, a.jwtSecret, "approve_void"),
+	}
+	result, err := a.service.VoidSale(c.Request.Context(), orgID, actor, id, in)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -51,9 +85,20 @@ func (a *ReturnsAPI) VoidSale(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// ListVoids handles `GET /voids`.
+// ListVoids handles `GET /voids`. Restricted to the caller's own branch
+// when the caller's token carries one - org-wide for owner/service_center,
+// same reasoning as inventory.ListStockLevels. Optional ?branch_id=
+// (owner/service_center only).
 func (a *ReturnsAPI) ListVoids(c *gin.Context) {
-	result, err := a.service.ListVoids(c.Request.Context())
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	branchID, ok := reportBranchID(c)
+	if !ok {
+		return
+	}
+	result, err := a.service.ListVoids(c.Request.Context(), orgID, branchID)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -61,14 +106,30 @@ func (a *ReturnsAPI) ListVoids(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// CreateReturn handles `POST /returns`. Also writes return_items
+// CreateReturn handles `POST /returns`. Also writes return_items. Requires
+// X-Staff-Token; the acting staff needs approve_return themselves, OR an
+// optional X-Manager-Approval-Token grants it instead - same shape as
+// VoidSale.
 func (a *ReturnsAPI) CreateReturn(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	staffID, ok := requireStaffID(c)
+	if !ok {
+		return
+	}
 	var in returns.CreateReturnRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
-	result, err := a.service.CreateReturn(c.Request.Context(), in)
+	actor := returns.Actor{
+		StaffID: staffID,
+		CanApprove: middleware.StaffHasPermission(c, "approve_return") ||
+			middleware.ManagerApproved(c, a.jwtSecret, "approve_return"),
+	}
+	result, err := a.service.CreateReturn(c.Request.Context(), orgID, actor, in)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -76,9 +137,17 @@ func (a *ReturnsAPI) CreateReturn(c *gin.Context) {
 	c.JSON(http.StatusCreated, result)
 }
 
-// ListReturns handles `GET /returns`.
+// ListReturns handles `GET /returns`. Same scoping as ListVoids.
 func (a *ReturnsAPI) ListReturns(c *gin.Context) {
-	result, err := a.service.ListReturns(c.Request.Context())
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	branchID, ok := reportBranchID(c)
+	if !ok {
+		return
+	}
+	result, err := a.service.ListReturns(c.Request.Context(), orgID, branchID)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -88,12 +157,16 @@ func (a *ReturnsAPI) ListReturns(c *gin.Context) {
 
 // GetReturn handles `GET /returns/:id`.
 func (a *ReturnsAPI) GetReturn(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
-	result, err := a.service.GetReturn(c.Request.Context(), uint(idVal))
+	result, err := a.service.GetReturn(c.Request.Context(), orgID, uint(idVal))
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -101,14 +174,30 @@ func (a *ReturnsAPI) GetReturn(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// CreateExchange handles `POST /exchanges`. Also writes exchange_items
+// CreateExchange handles `POST /exchanges`. Also writes exchange_items.
+// Requires X-Staff-Token; the acting staff needs approve_exchange
+// themselves, OR an optional X-Manager-Approval-Token grants it instead -
+// same shape as VoidSale.
 func (a *ReturnsAPI) CreateExchange(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	staffID, ok := requireStaffID(c)
+	if !ok {
+		return
+	}
 	var in returns.CreateExchangeRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
-	result, err := a.service.CreateExchange(c.Request.Context(), in)
+	actor := returns.Actor{
+		StaffID: staffID,
+		CanApprove: middleware.StaffHasPermission(c, "approve_exchange") ||
+			middleware.ManagerApproved(c, a.jwtSecret, "approve_exchange"),
+	}
+	result, err := a.service.CreateExchange(c.Request.Context(), orgID, actor, in)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -116,9 +205,17 @@ func (a *ReturnsAPI) CreateExchange(c *gin.Context) {
 	c.JSON(http.StatusCreated, result)
 }
 
-// ListExchanges handles `GET /exchanges`.
+// ListExchanges handles `GET /exchanges`. Same scoping as ListVoids.
 func (a *ReturnsAPI) ListExchanges(c *gin.Context) {
-	result, err := a.service.ListExchanges(c.Request.Context())
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	branchID, ok := reportBranchID(c)
+	if !ok {
+		return
+	}
+	result, err := a.service.ListExchanges(c.Request.Context(), orgID, branchID)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -128,12 +225,16 @@ func (a *ReturnsAPI) ListExchanges(c *gin.Context) {
 
 // GetExchange handles `GET /exchanges/:id`.
 func (a *ReturnsAPI) GetExchange(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
-	result, err := a.service.GetExchange(c.Request.Context(), uint(idVal))
+	result, err := a.service.GetExchange(c.Request.Context(), orgID, uint(idVal))
 	if err != nil {
 		common.HandleError(c, err)
 		return

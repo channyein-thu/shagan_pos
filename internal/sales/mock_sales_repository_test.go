@@ -285,9 +285,69 @@ func (_c *MockRepository_GetSale_Call) RunAndReturn(run func(context.Context, ui
 	return _c
 }
 
-// ListHeldSales provides a mock function with given fields: ctx
-func (_m *MockRepository) ListHeldSales(ctx context.Context) ([]HeldSale, error) {
-	ret := _m.Called(ctx)
+// GetSaleWithLock provides a mock function with given fields: db, orgID, id
+func (_m *MockRepository) GetSaleWithLock(db *gorm.DB, orgID uint, id uuid.UUID) (*Sale, error) {
+	ret := _m.Called(db, orgID, id)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetSaleWithLock")
+	}
+
+	var r0 *Sale
+	var r1 error
+	if rf, ok := ret.Get(0).(func(*gorm.DB, uint, uuid.UUID) (*Sale, error)); ok {
+		return rf(db, orgID, id)
+	}
+	if rf, ok := ret.Get(0).(func(*gorm.DB, uint, uuid.UUID) *Sale); ok {
+		r0 = rf(db, orgID, id)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*Sale)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(*gorm.DB, uint, uuid.UUID) error); ok {
+		r1 = rf(db, orgID, id)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// MockRepository_GetSaleWithLock_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetSaleWithLock'
+type MockRepository_GetSaleWithLock_Call struct {
+	*mock.Call
+}
+
+// GetSaleWithLock is a helper method to define mock.On call
+//   - db *gorm.DB
+//   - orgID uint
+//   - id uuid.UUID
+func (_e *MockRepository_Expecter) GetSaleWithLock(db interface{}, orgID interface{}, id interface{}) *MockRepository_GetSaleWithLock_Call {
+	return &MockRepository_GetSaleWithLock_Call{Call: _e.mock.On("GetSaleWithLock", db, orgID, id)}
+}
+
+func (_c *MockRepository_GetSaleWithLock_Call) Run(run func(db *gorm.DB, orgID uint, id uuid.UUID)) *MockRepository_GetSaleWithLock_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(*gorm.DB), args[1].(uint), args[2].(uuid.UUID))
+	})
+	return _c
+}
+
+func (_c *MockRepository_GetSaleWithLock_Call) Return(_a0 *Sale, _a1 error) *MockRepository_GetSaleWithLock_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *MockRepository_GetSaleWithLock_Call) RunAndReturn(run func(*gorm.DB, uint, uuid.UUID) (*Sale, error)) *MockRepository_GetSaleWithLock_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ListHeldSales provides a mock function with given fields: ctx, branchID
+func (_m *MockRepository) ListHeldSales(ctx context.Context, branchID uint) ([]HeldSale, error) {
+	ret := _m.Called(ctx, branchID)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ListHeldSales")
@@ -295,19 +355,19 @@ func (_m *MockRepository) ListHeldSales(ctx context.Context) ([]HeldSale, error)
 
 	var r0 []HeldSale
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context) ([]HeldSale, error)); ok {
-		return rf(ctx)
+	if rf, ok := ret.Get(0).(func(context.Context, uint) ([]HeldSale, error)); ok {
+		return rf(ctx, branchID)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context) []HeldSale); ok {
-		r0 = rf(ctx)
+	if rf, ok := ret.Get(0).(func(context.Context, uint) []HeldSale); ok {
+		r0 = rf(ctx, branchID)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]HeldSale)
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context) error); ok {
-		r1 = rf(ctx)
+	if rf, ok := ret.Get(1).(func(context.Context, uint) error); ok {
+		r1 = rf(ctx, branchID)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -322,13 +382,14 @@ type MockRepository_ListHeldSales_Call struct {
 
 // ListHeldSales is a helper method to define mock.On call
 //   - ctx context.Context
-func (_e *MockRepository_Expecter) ListHeldSales(ctx interface{}) *MockRepository_ListHeldSales_Call {
-	return &MockRepository_ListHeldSales_Call{Call: _e.mock.On("ListHeldSales", ctx)}
+//   - branchID uint
+func (_e *MockRepository_Expecter) ListHeldSales(ctx interface{}, branchID interface{}) *MockRepository_ListHeldSales_Call {
+	return &MockRepository_ListHeldSales_Call{Call: _e.mock.On("ListHeldSales", ctx, branchID)}
 }
 
-func (_c *MockRepository_ListHeldSales_Call) Run(run func(ctx context.Context)) *MockRepository_ListHeldSales_Call {
+func (_c *MockRepository_ListHeldSales_Call) Run(run func(ctx context.Context, branchID uint)) *MockRepository_ListHeldSales_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context))
+		run(args[0].(context.Context), args[1].(uint))
 	})
 	return _c
 }
@@ -338,7 +399,7 @@ func (_c *MockRepository_ListHeldSales_Call) Return(_a0 []HeldSale, _a1 error) *
 	return _c
 }
 
-func (_c *MockRepository_ListHeldSales_Call) RunAndReturn(run func(context.Context) ([]HeldSale, error)) *MockRepository_ListHeldSales_Call {
+func (_c *MockRepository_ListHeldSales_Call) RunAndReturn(run func(context.Context, uint) ([]HeldSale, error)) *MockRepository_ListHeldSales_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -461,6 +522,65 @@ func (_c *MockRepository_ListSaleItems_Call) RunAndReturn(run func(context.Conte
 	return _c
 }
 
+// ListSaleItemsTx provides a mock function with given fields: db, saleID
+func (_m *MockRepository) ListSaleItemsTx(db *gorm.DB, saleID uuid.UUID) ([]SaleItem, error) {
+	ret := _m.Called(db, saleID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListSaleItemsTx")
+	}
+
+	var r0 []SaleItem
+	var r1 error
+	if rf, ok := ret.Get(0).(func(*gorm.DB, uuid.UUID) ([]SaleItem, error)); ok {
+		return rf(db, saleID)
+	}
+	if rf, ok := ret.Get(0).(func(*gorm.DB, uuid.UUID) []SaleItem); ok {
+		r0 = rf(db, saleID)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]SaleItem)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(*gorm.DB, uuid.UUID) error); ok {
+		r1 = rf(db, saleID)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// MockRepository_ListSaleItemsTx_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListSaleItemsTx'
+type MockRepository_ListSaleItemsTx_Call struct {
+	*mock.Call
+}
+
+// ListSaleItemsTx is a helper method to define mock.On call
+//   - db *gorm.DB
+//   - saleID uuid.UUID
+func (_e *MockRepository_Expecter) ListSaleItemsTx(db interface{}, saleID interface{}) *MockRepository_ListSaleItemsTx_Call {
+	return &MockRepository_ListSaleItemsTx_Call{Call: _e.mock.On("ListSaleItemsTx", db, saleID)}
+}
+
+func (_c *MockRepository_ListSaleItemsTx_Call) Run(run func(db *gorm.DB, saleID uuid.UUID)) *MockRepository_ListSaleItemsTx_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(*gorm.DB), args[1].(uuid.UUID))
+	})
+	return _c
+}
+
+func (_c *MockRepository_ListSaleItemsTx_Call) Return(_a0 []SaleItem, _a1 error) *MockRepository_ListSaleItemsTx_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *MockRepository_ListSaleItemsTx_Call) RunAndReturn(run func(*gorm.DB, uuid.UUID) ([]SaleItem, error)) *MockRepository_ListSaleItemsTx_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // ListSales provides a mock function with given fields: ctx, orgID
 func (_m *MockRepository) ListSales(ctx context.Context, orgID uint) ([]Sale, error) {
 	ret := _m.Called(ctx, orgID)
@@ -569,9 +689,9 @@ func (_c *MockRepository_RequireOpenShift_Call) RunAndReturn(run func(*gorm.DB, 
 	return _c
 }
 
-// ResumeHeldSale provides a mock function with given fields: ctx, id
-func (_m *MockRepository) ResumeHeldSale(ctx context.Context, id uint) (*HeldSale, error) {
-	ret := _m.Called(ctx, id)
+// ResumeHeldSale provides a mock function with given fields: ctx, branchID, id
+func (_m *MockRepository) ResumeHeldSale(ctx context.Context, branchID uint, id uint) (*HeldSale, error) {
+	ret := _m.Called(ctx, branchID, id)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ResumeHeldSale")
@@ -579,19 +699,19 @@ func (_m *MockRepository) ResumeHeldSale(ctx context.Context, id uint) (*HeldSal
 
 	var r0 *HeldSale
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, uint) (*HeldSale, error)); ok {
-		return rf(ctx, id)
+	if rf, ok := ret.Get(0).(func(context.Context, uint, uint) (*HeldSale, error)); ok {
+		return rf(ctx, branchID, id)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, uint) *HeldSale); ok {
-		r0 = rf(ctx, id)
+	if rf, ok := ret.Get(0).(func(context.Context, uint, uint) *HeldSale); ok {
+		r0 = rf(ctx, branchID, id)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(*HeldSale)
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, uint) error); ok {
-		r1 = rf(ctx, id)
+	if rf, ok := ret.Get(1).(func(context.Context, uint, uint) error); ok {
+		r1 = rf(ctx, branchID, id)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -606,14 +726,15 @@ type MockRepository_ResumeHeldSale_Call struct {
 
 // ResumeHeldSale is a helper method to define mock.On call
 //   - ctx context.Context
+//   - branchID uint
 //   - id uint
-func (_e *MockRepository_Expecter) ResumeHeldSale(ctx interface{}, id interface{}) *MockRepository_ResumeHeldSale_Call {
-	return &MockRepository_ResumeHeldSale_Call{Call: _e.mock.On("ResumeHeldSale", ctx, id)}
+func (_e *MockRepository_Expecter) ResumeHeldSale(ctx interface{}, branchID interface{}, id interface{}) *MockRepository_ResumeHeldSale_Call {
+	return &MockRepository_ResumeHeldSale_Call{Call: _e.mock.On("ResumeHeldSale", ctx, branchID, id)}
 }
 
-func (_c *MockRepository_ResumeHeldSale_Call) Run(run func(ctx context.Context, id uint)) *MockRepository_ResumeHeldSale_Call {
+func (_c *MockRepository_ResumeHeldSale_Call) Run(run func(ctx context.Context, branchID uint, id uint)) *MockRepository_ResumeHeldSale_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(uint))
+		run(args[0].(context.Context), args[1].(uint), args[2].(uint))
 	})
 	return _c
 }
@@ -623,7 +744,55 @@ func (_c *MockRepository_ResumeHeldSale_Call) Return(_a0 *HeldSale, _a1 error) *
 	return _c
 }
 
-func (_c *MockRepository_ResumeHeldSale_Call) RunAndReturn(run func(context.Context, uint) (*HeldSale, error)) *MockRepository_ResumeHeldSale_Call {
+func (_c *MockRepository_ResumeHeldSale_Call) RunAndReturn(run func(context.Context, uint, uint) (*HeldSale, error)) *MockRepository_ResumeHeldSale_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// UpdateSaleStatus provides a mock function with given fields: db, id, status
+func (_m *MockRepository) UpdateSaleStatus(db *gorm.DB, id uuid.UUID, status SaleStatus) error {
+	ret := _m.Called(db, id, status)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateSaleStatus")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(*gorm.DB, uuid.UUID, SaleStatus) error); ok {
+		r0 = rf(db, id, status)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// MockRepository_UpdateSaleStatus_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdateSaleStatus'
+type MockRepository_UpdateSaleStatus_Call struct {
+	*mock.Call
+}
+
+// UpdateSaleStatus is a helper method to define mock.On call
+//   - db *gorm.DB
+//   - id uuid.UUID
+//   - status SaleStatus
+func (_e *MockRepository_Expecter) UpdateSaleStatus(db interface{}, id interface{}, status interface{}) *MockRepository_UpdateSaleStatus_Call {
+	return &MockRepository_UpdateSaleStatus_Call{Call: _e.mock.On("UpdateSaleStatus", db, id, status)}
+}
+
+func (_c *MockRepository_UpdateSaleStatus_Call) Run(run func(db *gorm.DB, id uuid.UUID, status SaleStatus)) *MockRepository_UpdateSaleStatus_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(*gorm.DB), args[1].(uuid.UUID), args[2].(SaleStatus))
+	})
+	return _c
+}
+
+func (_c *MockRepository_UpdateSaleStatus_Call) Return(_a0 error) *MockRepository_UpdateSaleStatus_Call {
+	_c.Call.Return(_a0)
+	return _c
+}
+
+func (_c *MockRepository_UpdateSaleStatus_Call) RunAndReturn(run func(*gorm.DB, uuid.UUID, SaleStatus) error) *MockRepository_UpdateSaleStatus_Call {
 	_c.Call.Return(run)
 	return _c
 }

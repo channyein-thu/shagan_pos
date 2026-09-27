@@ -30,6 +30,27 @@ type Repository interface {
 	ListSaleItems(ctx context.Context, saleID uuid.UUID) ([]SaleItem, error)
 	ListPayments(ctx context.Context, saleID uuid.UUID) ([]Payment, error)
 	CreateHeldSale(ctx context.Context, in CreateHeldSaleRequest) (*HeldSale, error)
-	ListHeldSales(ctx context.Context) ([]HeldSale, error)
-	ResumeHeldSale(ctx context.Context, id uint) (*HeldSale, error)
+	// ListHeldSales is branch-scoped, not staff-scoped - any staff at the
+	// branch can see every held sale there, not just their own (so a
+	// covering cashier can resume one parked by whoever they're covering
+	// for).
+	ListHeldSales(ctx context.Context, branchID uint) ([]HeldSale, error)
+	// ResumeHeldSale is an atomic delete-and-restore: returns
+	// common.NotFoundError if id doesn't belong to branchID (same
+	// not-found-not-forbidden reasoning as everywhere else), otherwise
+	// deletes the row and returns what it held - resuming is inherently
+	// one-time, there's nothing left to resume a second time.
+	ResumeHeldSale(ctx context.Context, branchID uint, id uint) (*HeldSale, error)
+	// GetSaleWithLock is GetSale's transaction-participating counterpart -
+	// used by returns.Service to read-then-write a Sale atomically (voiding
+	// it, or serializing concurrent Returns/Exchanges against the same
+	// sale), same row-lock reasoning as inventory.Repository.GetStockTransfer.
+	// Same not-found-not-forbidden reasoning as GetSale.
+	GetSaleWithLock(db *gorm.DB, orgID uint, id uuid.UUID) (*Sale, error)
+	// ListSaleItemsTx is ListSaleItems's transaction-participating
+	// counterpart, same reasoning as GetSaleWithLock.
+	ListSaleItemsTx(db *gorm.DB, saleID uuid.UUID) ([]SaleItem, error)
+	// UpdateSaleStatus backs returns.Service.VoidSale - the only way a
+	// Sale's Status ever changes after creation.
+	UpdateSaleStatus(db *gorm.DB, id uuid.UUID, status SaleStatus) error
 }

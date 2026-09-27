@@ -25,7 +25,14 @@ const (
 	SyncConflictReasonVersionMismatch SyncConflictReason = "version_mismatch"
 	SyncConflictReasonDuplicate       SyncConflictReason = "duplicate"
 	SyncConflictReasonValidationError SyncConflictReason = "validation_error"
-	SyncConflictReasonOther           SyncConflictReason = "other"
+	// SyncConflictReasonStockConflict is the one real cross-device conflict
+	// docs/WORKFLOWS.md Section 10 calls out: two offline devices both sold
+	// the last unit of something. The sale is let through and stock goes
+	// negative rather than rejected - this is what actually gets used by
+	// Service.IngestQueuedSales; the values above are placeholders for
+	// conflict shapes nothing in this domain produces yet.
+	SyncConflictReasonStockConflict SyncConflictReason = "stock_conflict"
+	SyncConflictReasonOther         SyncConflictReason = "other"
 )
 
 // IdempotencyKey maps to the "Idempotency_keys" table in the ERD.

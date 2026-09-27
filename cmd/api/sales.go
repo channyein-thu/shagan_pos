@@ -8,7 +8,9 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"shagan_pos/internal/audit"
 	"shagan_pos/internal/common"
+	"shagan_pos/internal/inventory"
 	"shagan_pos/internal/middleware"
 	"shagan_pos/internal/sales"
 )
@@ -19,7 +21,7 @@ type SalesAPI struct {
 }
 
 func NewSalesAPI(db *gorm.DB, jwtSecret []byte) *SalesAPI {
-	return &SalesAPI{service: sales.NewService(sales.NewRepository(db), db), jwtSecret: jwtSecret}
+	return &SalesAPI{service: sales.NewService(sales.NewRepository(db), inventory.NewRepository(db), audit.NewRepository(db), db), jwtSecret: jwtSecret}
 }
 
 // requireBranchID reads the calling pos-device's branch from its access
@@ -39,7 +41,7 @@ func (a *SalesAPI) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.GET("/sales/:id", a.GetSale)
 	rg.GET("/sales/:id/receipt", a.GetSaleReceipt)
 	rg.POST("/sales/:id/reprint", a.ReprintSale)
-	rg.POST("/held-sales", a.CreateHeldSale)
+	rg.POST("/held-sales", middleware.RequireStaffToken(a.jwtSecret), a.CreateHeldSale)
 	rg.GET("/held-sales", a.ListHeldSales)
 	rg.DELETE("/held-sales/:id", a.ResumeHeldSale)
 }
@@ -75,7 +77,7 @@ func (a *SalesAPI) CreateSale(c *gin.Context) {
 	canApplyManualDiscount := middleware.StaffHasPermission(c, "apply_manual_discount") ||
 		middleware.ManagerApproved(c, a.jwtSecret, "apply_manual_discount")
 	actor := sales.SaleActor{StaffID: staffID, CanApplyManualDiscount: canApplyManualDiscount}
-	result, err := a.service.CreateSale(c.Request.Context(), orgID, branchID, actor, in)
+	result, _, err := a.service.CreateSale(c.Request.Context(), orgID, branchID, actor, in, false)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -156,14 +158,24 @@ func (a *SalesAPI) ReprintSale(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// CreateHeldSale handles `POST /held-sales`.
+// CreateHeldSale handles `POST /held-sales`. Parks the calling staff's
+// current cart - requires X-Staff-Token (attributed to whichever staff that
+// token identifies, never a client-supplied staff_id).
 func (a *SalesAPI) CreateHeldSale(c *gin.Context) {
+	branchID, ok := requireBranchID(c)
+	if !ok {
+		return
+	}
+	staffID, ok := requireStaffID(c)
+	if !ok {
+		return
+	}
 	var in sales.CreateHeldSaleRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
-	result, err := a.service.CreateHeldSale(c.Request.Context(), in)
+	result, err := a.service.CreateHeldSale(c.Request.Context(), branchID, staffID, in)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -171,9 +183,14 @@ func (a *SalesAPI) CreateHeldSale(c *gin.Context) {
 	c.JSON(http.StatusCreated, result)
 }
 
-// ListHeldSales handles `GET /held-sales`.
+// ListHeldSales handles `GET /held-sales`. Branch-scoped, not staff-scoped -
+// any staff at the branch sees every held sale there, not just their own.
 func (a *SalesAPI) ListHeldSales(c *gin.Context) {
-	result, err := a.service.ListHeldSales(c.Request.Context())
+	branchID, ok := requireBranchID(c)
+	if !ok {
+		return
+	}
+	result, err := a.service.ListHeldSales(c.Request.Context(), branchID)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -181,14 +198,20 @@ func (a *SalesAPI) ListHeldSales(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// ResumeHeldSale handles `DELETE /held-sales/:id`. Resume - atomic delete-and-restore
+// ResumeHeldSale handles `DELETE /held-sales/:id`. Resume - atomic
+// delete-and-restore. Branch-scoped, not staff-scoped - any staff at the
+// branch can resume a held sale, not just whoever parked it.
 func (a *SalesAPI) ResumeHeldSale(c *gin.Context) {
+	branchID, ok := requireBranchID(c)
+	if !ok {
+		return
+	}
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
-	result, err := a.service.ResumeHeldSale(c.Request.Context(), uint(idVal))
+	result, err := a.service.ResumeHeldSale(c.Request.Context(), branchID, uint(idVal))
 	if err != nil {
 		common.HandleError(c, err)
 		return

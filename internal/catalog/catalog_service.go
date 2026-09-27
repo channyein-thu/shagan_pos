@@ -60,7 +60,6 @@ type Interface interface {
 	CreateCategory(ctx context.Context, orgID uint, in CreateCategoryRequest) (*Category, error)
 	UpdateCategory(ctx context.Context, orgID uint, id uint, in UpdateCategoryRequest) (*Category, error)
 	DeleteCategory(ctx context.Context, orgID uint, id uint) error
-	UploadMedia(ctx context.Context) (*ProductImage, error)
 	// ListCombos returns ComboResult, not bare Combo - each result's Images
 	// carry a temporary signed URL, not just a StorageKey, same reasoning
 	// as ListProducts.

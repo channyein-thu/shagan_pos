@@ -8,16 +8,20 @@ import (
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 
+	"shagan_pos/internal/audit"
 	"shagan_pos/internal/common"
+	"shagan_pos/internal/inventory"
 )
 
 type Service struct {
-	repo Repository
-	db   common.Transactioner
+	repo      Repository
+	inventory InventoryWriter
+	audit     AuditWriter
+	db        common.Transactioner
 }
 
-func NewService(repo Repository, db common.Transactioner) *Service {
-	return &Service{repo: repo, db: db}
+func NewService(repo Repository, inv InventoryWriter, auditWriter AuditWriter, db common.Transactioner) *Service {
+	return &Service{repo: repo, inventory: inv, audit: auditWriter, db: db}
 }
 
 var _ Interface = (*Service)(nil)
@@ -35,17 +39,25 @@ var _ Interface = (*Service)(nil)
 // via X-Manager-Approval-Token (see middleware.ManagerApproved) - both are
 // folded into one bool by the handler before this is ever called, so this
 // method doesn't need to know which case applied.
-func (s *Service) CreateSale(ctx context.Context, orgID uint, branchID uint, actor SaleActor, in CreateSaleRequest) (*Sale, error) {
+//
+// Also decrements each product's stock at branchID (the selling branch,
+// aggregated across every line for that product) in the same transaction,
+// rejecting (409) if any product doesn't have enough - branchID, not the
+// product's own origin branch, since a product can be sellable at more than
+// one branch after a completed stock transfer (see inventory's own
+// CreateStockTransfer doc). Every item's stock effect and the sale itself
+// commit or roll back together.
+func (s *Service) CreateSale(ctx context.Context, orgID uint, branchID uint, actor SaleActor, in CreateSaleRequest, allowNegativeStock bool) (*Sale, []NegativeStockEvent, error) {
 	saleItems := make([]SaleItem, 0, len(in.Items))
 	subtotal := decimal.Zero
 	itemDiscountTotal := decimal.Zero
 	itemTaxTotal := decimal.Zero
 	for _, item := range in.Items {
 		if item.Discount.IsNegative() {
-			return nil, common.BadRequestError("item discount must be zero or greater")
+			return nil, nil, common.BadRequestError("item discount must be zero or greater")
 		}
 		if item.Tax.IsNegative() {
-			return nil, common.BadRequestError("item tax must be zero or greater")
+			return nil, nil, common.BadRequestError("item tax must be zero or greater")
 		}
 		effectivePrice := item.UnitPrice
 		if item.PriceOverride != nil {
@@ -69,7 +81,7 @@ func (s *Service) CreateSale(ctx context.Context, orgID uint, branchID uint, act
 		})
 	}
 	if itemDiscountTotal.IsPositive() && !actor.CanApplyManualDiscount {
-		return nil, common.ForbiddenError("staff does not have permission to apply a manual discount")
+		return nil, nil, common.ForbiddenError("staff does not have permission to apply a manual discount")
 	}
 	total := subtotal.Sub(itemDiscountTotal).Add(itemTaxTotal)
 
@@ -86,7 +98,7 @@ func (s *Service) CreateSale(ctx context.Context, orgID uint, branchID uint, act
 		})
 	}
 	if !paymentsTotal.Equal(total) {
-		return nil, common.BadRequestError("payments must add up to the sale total")
+		return nil, nil, common.BadRequestError("payments must add up to the sale total")
 	}
 
 	now := time.Now()
@@ -105,7 +117,20 @@ func (s *Service) CreateSale(ctx context.Context, orgID uint, branchID uint, act
 		Status:      SaleStatusCompleted,
 		CompletedAt: &now,
 	}
+	// allowNegativeStock is only ever true for datasync.Service.IngestQueuedSales
+	// re-submitting an offline-queued sale - stamp SyncedAt to mark it as
+	// confirmed received, same reasoning as the Interface doc. A live,
+	// online-rung-up sale was never "synced" from anywhere, so it stays nil.
+	if allowNegativeStock {
+		sale.SyncedAt = &now
+	}
 
+	qtyByProduct := make(map[uint]int, len(in.Items))
+	for _, item := range in.Items {
+		qtyByProduct[item.ProductID] += item.Qty
+	}
+
+	var negativeEvents []NegativeStockEvent
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		if err := s.repo.RequireOpenShift(tx, orgID, branchID, in.ShiftID); err != nil {
 			return err
@@ -116,12 +141,69 @@ func (s *Service) CreateSale(ctx context.Context, orgID uint, branchID uint, act
 		if err := s.repo.CreateSaleItems(tx, saleItems); err != nil {
 			return err
 		}
-		return s.repo.CreatePayments(tx, payments)
+		if err := s.repo.CreatePayments(tx, payments); err != nil {
+			return err
+		}
+		for productID, qty := range qtyByProduct {
+			newQty, err := s.applyStockDelta(tx, productID, branchID, -qty, allowNegativeStock)
+			if err != nil {
+				return err
+			}
+			if newQty < 0 {
+				negativeEvents = append(negativeEvents, NegativeStockEvent{ProductID: productID, BranchID: branchID, ResultingQty: newQty})
+			}
+			if err := s.inventory.CreateInventoryLedgerEntry(tx, &inventory.InventoryLedger{
+				OrgID: orgID, ProductID: productID, BranchID: branchID,
+				Type: inventory.LedgerEntryTypeSale, Qty: -qty, BalanceAfter: newQty,
+				ActorID: &actor.StaffID, ReferenceType: inventory.ReferenceTypeSale, ReferenceID: sale.ID.String(),
+			}); err != nil {
+				return err
+			}
+		}
+		if itemDiscountTotal.IsPositive() {
+			if err := s.audit.CreateAuditLog(tx, &audit.AuditLog{
+				OrgID: orgID, ActorID: &actor.StaffID, BranchID: &branchID,
+				Entity: "sale", EntityID: sale.ID.String(), Action: "manual_discount_applied",
+				Before: audit.ToJSON(nil), After: audit.ToJSON(sale),
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return sale, nil
+	return sale, negativeEvents, nil
+}
+
+// applyStockDelta is sales' own copy of the get-or-create-then-adjust
+// pattern behind every stock movement in this codebase (same shape as
+// inventory.Service/procurement.Service's own copies) - resolves the
+// current qty (0 if no StockLevel row exists yet for this product/branch
+// pair), applies delta, and persists the new value. Returns
+// common.ConflictError if applying delta would take qty negative.
+func (s *Service) applyStockDelta(tx *gorm.DB, productID uint, branchID uint, delta int, allowNegative bool) (int, error) {
+	level, err := s.inventory.GetStockLevel(tx, productID, branchID)
+	if err != nil {
+		return 0, err
+	}
+	current := 0
+	if level != nil {
+		current = level.Qty
+	}
+	newQty := current + delta
+	if newQty < 0 && !allowNegative {
+		return 0, common.ConflictError("insufficient stock for this movement")
+	}
+	if level == nil {
+		if err := s.inventory.CreateStockLevel(tx, &inventory.StockLevel{ProductID: productID, BranchID: branchID, Qty: newQty}); err != nil {
+			return 0, err
+		}
+	} else if err := s.inventory.UpdateStockLevelQty(tx, level.ID, newQty); err != nil {
+		return 0, err
+	}
+	return newQty, nil
 }
 
 func (s *Service) ListSales(ctx context.Context, orgID uint) ([]Sale, error) {
@@ -152,14 +234,23 @@ func (s *Service) ReprintSale(ctx context.Context, orgID uint, id uuid.UUID) (ma
 	return s.GetSaleReceipt(ctx, orgID, id)
 }
 
-func (s *Service) CreateHeldSale(ctx context.Context, in CreateHeldSaleRequest) (*HeldSale, error) {
+// CreateHeldSale parks the calling staff's current cart. BranchID/StaffID
+// come from the caller's own verified tokens, never in - see
+// cmd/api/sales.go's CreateHeldSale handler.
+func (s *Service) CreateHeldSale(ctx context.Context, branchID uint, staffID uint, in CreateHeldSaleRequest) (*HeldSale, error) {
+	if in.Discount.IsNegative() {
+		return nil, common.BadRequestError("discount must be zero or greater")
+	}
+	in.BranchID = branchID
+	in.StaffID = staffID
+	in.HeldAt = time.Now()
 	return s.repo.CreateHeldSale(ctx, in)
 }
 
-func (s *Service) ListHeldSales(ctx context.Context) ([]HeldSale, error) {
-	return s.repo.ListHeldSales(ctx)
+func (s *Service) ListHeldSales(ctx context.Context, branchID uint) ([]HeldSale, error) {
+	return s.repo.ListHeldSales(ctx, branchID)
 }
 
-func (s *Service) ResumeHeldSale(ctx context.Context, id uint) (*HeldSale, error) {
-	return s.repo.ResumeHeldSale(ctx, id)
+func (s *Service) ResumeHeldSale(ctx context.Context, branchID uint, id uint) (*HeldSale, error) {
+	return s.repo.ResumeHeldSale(ctx, branchID, id)
 }

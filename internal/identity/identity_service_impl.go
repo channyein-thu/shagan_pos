@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strconv"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 
+	"shagan_pos/internal/audit"
 	"shagan_pos/internal/authtoken"
 	"shagan_pos/internal/common"
 )
@@ -55,6 +57,7 @@ const invalidManagerPINMessage = "invalid staff, pin, or permission"
 
 type Service struct {
 	repo               Repository
+	audit              AuditWriter
 	db                 common.Transactioner
 	jwtSecret          []byte
 	accessTokenTTL     time.Duration
@@ -63,9 +66,10 @@ type Service struct {
 	managerPINTokenTTL time.Duration
 }
 
-func NewService(repo Repository, db common.Transactioner, jwtSecret []byte, accessTokenTTL, refreshTokenTTL, staffPINTokenTTL, managerPINTokenTTL time.Duration) *Service {
+func NewService(repo Repository, auditWriter AuditWriter, db common.Transactioner, jwtSecret []byte, accessTokenTTL, refreshTokenTTL, staffPINTokenTTL, managerPINTokenTTL time.Duration) *Service {
 	return &Service{
 		repo:               repo,
+		audit:              auditWriter,
 		db:                 db,
 		jwtSecret:          jwtSecret,
 		accessTokenTTL:     accessTokenTTL,
@@ -457,8 +461,15 @@ func (s *Service) GetStaff(ctx context.Context, orgID uint, id uint) (*Staff, er
 	return s.repo.GetStaff(ctx, orgID, id)
 }
 
-// UpdateStaff hashes the new PIN, if one was provided, before it reaches the repository.
-func (s *Service) UpdateStaff(ctx context.Context, orgID uint, id uint, in UpdateStaffRequest) (*Staff, error) {
+// UpdateStaff hashes the new PIN, if one was provided, before it reaches the
+// repository, then writes an audit entry capturing the staff record before
+// and after the change - see the Interface doc.
+func (s *Service) UpdateStaff(ctx context.Context, orgID uint, actorUserID uint, id uint, in UpdateStaffRequest) (*Staff, error) {
+	before, err := s.repo.GetStaff(ctx, orgID, id)
+	if err != nil {
+		return nil, err
+	}
+
 	if in.Pin != nil {
 		hash, err := bcrypt.GenerateFromPassword([]byte(*in.Pin), bcrypt.DefaultCost)
 		if err != nil {
@@ -468,7 +479,22 @@ func (s *Service) UpdateStaff(ctx context.Context, orgID uint, id uint, in Updat
 		in.Pin = &hashed
 	}
 
-	return s.repo.UpdateStaff(ctx, orgID, id, in)
+	after, err := s.repo.UpdateStaff(ctx, orgID, id, in)
+	if err != nil {
+		return nil, err
+	}
+
+	auditErr := s.db.Transaction(func(tx *gorm.DB) error {
+		return s.audit.CreateAuditLog(tx, &audit.AuditLog{
+			OrgID: orgID, ActorID: &actorUserID, BranchID: &after.BranchID,
+			Entity: "staff", EntityID: strconv.FormatUint(uint64(id), 10), Action: "updated",
+			Before: audit.ToJSON(before), After: audit.ToJSON(after),
+		})
+	})
+	if auditErr != nil {
+		return nil, auditErr
+	}
+	return after, nil
 }
 
 func (s *Service) ListRoles(ctx context.Context) ([]Role, error) {

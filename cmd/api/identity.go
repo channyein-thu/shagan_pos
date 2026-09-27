@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"shagan_pos/internal/audit"
 	"shagan_pos/internal/common"
 	"shagan_pos/internal/identity"
 	"shagan_pos/internal/middleware"
@@ -19,7 +20,7 @@ type IdentityAPI struct {
 
 func NewIdentityAPI(db *gorm.DB, jwtSecret []byte, accessTokenTTL, refreshTokenTTL, staffPINTokenTTL, managerPINTokenTTL time.Duration) *IdentityAPI {
 	return &IdentityAPI{
-		service: identity.NewService(identity.NewRepository(db), db, jwtSecret, accessTokenTTL, refreshTokenTTL, staffPINTokenTTL, managerPINTokenTTL),
+		service: identity.NewService(identity.NewRepository(db), audit.NewRepository(db), db, jwtSecret, accessTokenTTL, refreshTokenTTL, staffPINTokenTTL, managerPINTokenTTL),
 	}
 }
 
@@ -471,10 +472,16 @@ func (a *IdentityAPI) GetStaff(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// UpdateStaff handles `PATCH /staff/:id`. Never a hard delete - deactivate only
+// UpdateStaff handles `PATCH /staff/:id`. Never a hard delete - deactivate
+// only. Writes an audit entry - see identity.Interface.UpdateStaff's doc.
 func (a *IdentityAPI) UpdateStaff(c *gin.Context) {
 	orgID, ok := requireOrgID(c)
 	if !ok {
+		return
+	}
+	actorUserID, ok := middleware.UserIDFromContext(c)
+	if !ok {
+		common.HandleError(c, common.UnauthorizedError("missing or malformed authorization header"))
 		return
 	}
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
@@ -487,7 +494,7 @@ func (a *IdentityAPI) UpdateStaff(c *gin.Context) {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
-	result, err := a.service.UpdateStaff(c.Request.Context(), orgID, uint(idVal), in)
+	result, err := a.service.UpdateStaff(c.Request.Context(), orgID, actorUserID, uint(idVal), in)
 	if err != nil {
 		common.HandleError(c, err)
 		return

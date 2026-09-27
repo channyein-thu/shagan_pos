@@ -2,6 +2,7 @@ package procurement
 
 import (
 	"context"
+	"strconv"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -334,7 +335,7 @@ func (s *Service) CreateGoodsReceipt(ctx context.Context, orgID uint, poID uint,
 				BalanceAfter:  newQty,
 				ActorID:       &receivedBy,
 				ReferenceType: inventory.ReferenceTypeGoodsReceipt,
-				ReferenceID:   receipt.ID,
+				ReferenceID:   strconv.FormatUint(uint64(receipt.ID), 10),
 			}); err != nil {
 				return err
 			}

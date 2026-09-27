@@ -101,7 +101,6 @@ type Repository interface {
 	// deactivate instead (unlike Staff/Branch/Device). Existence/ownership was
 	// already confirmed by a prior GetCategory call.
 	DeleteCategory(ctx context.Context, id uint) error
-	UploadMedia(ctx context.Context) (*ProductImage, error)
 	// ListCombos backs `GET /combos`, scoped to the authenticated caller's
 	// own organization - same reasoning as identity's org-scoped lists
 	// (e.g. ListBranches).

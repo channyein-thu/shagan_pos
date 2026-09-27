@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"shagan_pos/internal/catalog"
 	"shagan_pos/internal/common"
 	"shagan_pos/internal/identity"
 	"shagan_pos/internal/inventory"
@@ -18,7 +19,9 @@ type InventoryAPI struct {
 }
 
 func NewInventoryAPI(db *gorm.DB) *InventoryAPI {
-	return &InventoryAPI{service: inventory.NewService(inventory.NewRepository(db), identity.NewRepository(db))}
+	return &InventoryAPI{
+		service: inventory.NewService(inventory.NewRepository(db), identity.NewRepository(db), catalog.NewRepository(db), db),
+	}
 }
 
 func (a *InventoryAPI) RegisterRoutes(rg *gin.RouterGroup) {
@@ -56,9 +59,18 @@ func (a *InventoryAPI) ListStockLevels(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// ListLowStock handles `GET /inventory/low-stock`.
+// ListLowStock handles `GET /inventory/low-stock`. Same scoping as
+// ListStockLevels.
 func (a *InventoryAPI) ListLowStock(c *gin.Context) {
-	result, err := a.service.ListLowStock(c.Request.Context())
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	branchID, _, ok := branchAndProductFilters(c)
+	if !ok {
+		return
+	}
+	result, err := a.service.ListLowStock(c.Request.Context(), orgID, branchID)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -123,14 +135,25 @@ func branchAndProductFilters(c *gin.Context) (branchID *uint, productID *uint, o
 	return branchID, productID, true
 }
 
-// CreateStockAdjustment handles `POST /inventory/adjustments`. Writes a ledger row as a side effect
+// CreateStockAdjustment handles `POST /inventory/adjustments`. Writes a
+// ledger row as a side effect. actor_id isn't accepted from the client -
+// it's the authenticated caller's own user ID.
 func (a *InventoryAPI) CreateStockAdjustment(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	actorID, ok := middleware.UserIDFromContext(c)
+	if !ok {
+		common.HandleError(c, common.UnauthorizedError("missing or malformed authorization header"))
+		return
+	}
 	var in inventory.CreateStockAdjustmentRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
-	result, err := a.service.CreateStockAdjustment(c.Request.Context(), in)
+	result, err := a.service.CreateStockAdjustment(c.Request.Context(), orgID, actorID, in)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -138,9 +161,19 @@ func (a *InventoryAPI) CreateStockAdjustment(c *gin.Context) {
 	c.JSON(http.StatusCreated, result)
 }
 
-// ListStockTransfers handles `GET /stock-transfers`.
+// ListStockTransfers handles `GET /stock-transfers`. Same scoping as
+// ListStockLevels (branch_id optionally narrows to transfers touching that
+// branch, either as sender or receiver).
 func (a *InventoryAPI) ListStockTransfers(c *gin.Context) {
-	result, err := a.service.ListStockTransfers(c.Request.Context())
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	branchID, _, ok := branchAndProductFilters(c)
+	if !ok {
+		return
+	}
+	result, err := a.service.ListStockTransfers(c.Request.Context(), orgID, branchID)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -148,14 +181,25 @@ func (a *InventoryAPI) ListStockTransfers(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// CreateStockTransfer handles `POST /stock-transfers`. Also writes stock_transfers_items
+// CreateStockTransfer handles `POST /stock-transfers`. Also writes
+// stock_transfers_items. actor_id isn't accepted from the client - it's the
+// authenticated caller's own user ID.
 func (a *InventoryAPI) CreateStockTransfer(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	actorID, ok := middleware.UserIDFromContext(c)
+	if !ok {
+		common.HandleError(c, common.UnauthorizedError("missing or malformed authorization header"))
+		return
+	}
 	var in inventory.CreateStockTransferRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
-	result, err := a.service.CreateStockTransfer(c.Request.Context(), in)
+	result, err := a.service.CreateStockTransfer(c.Request.Context(), orgID, actorID, in)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -163,8 +207,15 @@ func (a *InventoryAPI) CreateStockTransfer(c *gin.Context) {
 	c.JSON(http.StatusCreated, result)
 }
 
-// UpdateStockTransfer handles `PATCH /stock-transfers/:id`. Status lifecycle: pending -> in-transit -> received
+// UpdateStockTransfer handles `PATCH /stock-transfers/:id`. Status
+// lifecycle: pending -> in_transit -> completed, or -> cancelled. Moving to
+// completed is the transition that actually decrements/increments stock -
+// see Service.UpdateStockTransfer.
 func (a *InventoryAPI) UpdateStockTransfer(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		common.HandleError(c, common.BadRequestError("invalid id"))
@@ -175,7 +226,7 @@ func (a *InventoryAPI) UpdateStockTransfer(c *gin.Context) {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
-	result, err := a.service.UpdateStockTransfer(c.Request.Context(), uint(idVal), in)
+	result, err := a.service.UpdateStockTransfer(c.Request.Context(), orgID, uint(idVal), in)
 	if err != nil {
 		common.HandleError(c, err)
 		return

@@ -30,14 +30,15 @@ const (
 	ReturnReasonCodeOther       ReturnReasonCode = "other"
 )
 
-// RefundMethod is a best-guess enum (ERD only specified "enum"; confirm real values).
+// RefundMethod - confirmed: the only real payment methods in this POS are
+// cash and QR (plus split, but a refund is always a single explicit choice
+// by the approving manager, never derived from the original sale's payment
+// mix - see CreateReturnRequest's doc).
 type RefundMethod string
 
 const (
-	RefundMethodCash            RefundMethod = "cash"
-	RefundMethodCard            RefundMethod = "card"
-	RefundMethodStoreCredit     RefundMethod = "store_credit"
-	RefundMethodOriginalPayment RefundMethod = "original_payment"
+	RefundMethodCash RefundMethod = "cash"
+	RefundMethodQR   RefundMethod = "qr"
 )
 
 // ItemCondition is a best-guess enum (ERD only specified "enum"; confirm real values).

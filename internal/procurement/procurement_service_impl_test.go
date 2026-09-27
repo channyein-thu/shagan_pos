@@ -548,13 +548,13 @@ func TestService_CreateGoodsReceipt_HappyPath_CreditsStockAndLedgerAndMarksRecei
 		CreateInventoryLedgerEntry(mock.Anything, mock.MatchedBy(func(e *inventory.InventoryLedger) bool {
 			return e.OrgID == 7 && e.ProductID == 1 && e.BranchID == 5 && e.Type == inventory.LedgerEntryTypePurchaseReceipt &&
 				e.Qty == 10 && e.BalanceAfter == 10 && e.ActorID != nil && *e.ActorID == 42 &&
-				e.ReferenceType == inventory.ReferenceTypeGoodsReceipt && e.ReferenceID == 100
+				e.ReferenceType == inventory.ReferenceTypeGoodsReceipt && e.ReferenceID == "100"
 		})).
 		Return(nil).
 		Once()
 	stock.EXPECT().
 		CreateInventoryLedgerEntry(mock.Anything, mock.MatchedBy(func(e *inventory.InventoryLedger) bool {
-			return e.ProductID == 2 && e.BranchID == 5 && e.Qty == 3 && e.BalanceAfter == 23 && e.ReferenceID == 100
+			return e.ProductID == 2 && e.BranchID == 5 && e.Qty == 3 && e.BalanceAfter == 23 && e.ReferenceID == "100"
 		})).
 		Return(nil).
 		Once()

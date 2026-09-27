@@ -14,7 +14,10 @@ type Repository interface {
 	// product when set. No business decision about which branches the
 	// caller is allowed to see happens here.
 	ListStockLevels(ctx context.Context, branchIDs []uint, productID *uint) ([]StockLevel, error)
-	ListLowStock(ctx context.Context) ([]StockLevel, error)
+	// ListLowStock is the same shape as ListStockLevels, but joins to
+	// catalog's products table to keep only rows where qty <= the
+	// product's own threshold.
+	ListLowStock(ctx context.Context, branchIDs []uint) ([]StockLevel, error)
 	// ListInventoryLedger backs `GET /inventory/ledger`, scoped to orgID -
 	// InventoryLedger carries its own OrgID directly (unlike StockLevel),
 	// so branchID/productID can be applied as plain AND conditions with no
@@ -47,8 +50,40 @@ type Repository interface {
 	// insert, same db-is-either-plain-or-in-flight-transaction reasoning as
 	// GetStockLevel above.
 	CreateInventoryLedgerEntry(db *gorm.DB, entry *InventoryLedger) error
-	CreateStockAdjustment(ctx context.Context, in CreateStockAdjustmentRequest) (*StockAdjustment, error)
-	ListStockTransfers(ctx context.Context) ([]StockTransfer, error)
-	CreateStockTransfer(ctx context.Context, in CreateStockTransferRequest) (*StockTransfer, error)
-	UpdateStockTransfer(ctx context.Context, id uint, in UpdateStockTransferRequest) (*StockTransfer, error)
+	// CreateStockAdjustment backs `POST /inventory/adjustments`. Plain
+	// insert - the service has already resolved BranchID/ActorID and
+	// computed nothing here; the stock/ledger side effects are separate
+	// primitives (GetStockLevel/CreateStockLevel/UpdateStockLevelQty/
+	// CreateInventoryLedgerEntry above), composed by the service inside one
+	// transaction, same shape as procurement.Service.CreateGoodsReceipt.
+	CreateStockAdjustment(db *gorm.DB, adjustment *StockAdjustment) error
+	// ListStockTransfers is a plain query, same branchIDs-already-resolved
+	// reasoning as ListStockLevels - matches a transfer where branchIDs
+	// contains either FromBranch or ToBranch when branchIDs is non-empty,
+	// or lists every transfer when it's the full org (branchIDs still
+	// passed, just covering every branch in the org).
+	ListStockTransfers(ctx context.Context, branchIDs []uint) ([]StockTransfer, error)
+	// GetStockTransfer backs UpdateStockTransfer's existence check -
+	// returns common.NotFoundError if id doesn't exist or its FromBranch
+	// isn't in branchIDs (the org's own branches) - not-found-not-forbidden,
+	// same reasoning as everywhere else. lock requests a row lock (for the
+	// completing-a-transfer path, guarding against two concurrent
+	// completions of the same transfer) - db is always the in-flight
+	// transaction for that path, so the lock actually participates in it,
+	// same db-is-either-plain-or-in-flight-transaction reasoning as
+	// GetStockLevel.
+	GetStockTransfer(db *gorm.DB, branchIDs []uint, id uint, lock bool) (*StockTransfer, error)
+	// ListStockTransferItems backs the completing-a-transfer path - the
+	// line items to actually move. Same db reasoning as GetStockTransfer.
+	ListStockTransferItems(db *gorm.DB, transferID uint) ([]StockTransferItem, error)
+	// CreateStockTransfer and CreateStockTransferItems are the plain
+	// inserts Service.CreateStockTransfer composes inside one transaction -
+	// a transfer without its line items should never exist, same reasoning
+	// as procurement's PurchaseOrder/PurchaseOrderItems.
+	CreateStockTransfer(db *gorm.DB, transfer *StockTransfer) error
+	CreateStockTransferItems(db *gorm.DB, items []StockTransferItem) error
+	// UpdateStockTransferStatus backs every status transition - plain
+	// field write, the decision of which transitions are valid and what
+	// else happens alongside one belongs to the service.
+	UpdateStockTransferStatus(db *gorm.DB, id uint, status TransferStatus) error
 }

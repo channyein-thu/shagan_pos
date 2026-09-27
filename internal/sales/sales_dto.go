@@ -8,16 +8,22 @@ import (
 	"gorm.io/datatypes"
 )
 
-// CreateHeldSaleRequest is the request body for the endpoint that creates or updates a HeldSale.
-// TODO: fields mirroring org/branch/staff/device ownership (e.g. OrgID, BranchID, StaffID)
-// likely belong to the authenticated session/context, not client input - review before use.
+// CreateHeldSaleRequest is the request body for `POST /held-sales` - a
+// cashier parking their current cart to serve someone else, resumed later
+// via ResumeHeldSale. BranchID/StaffID aren't binding:"required" - same
+// reasoning as CreateSaleRequest.StaffID, both are always overwritten from
+// the caller's own access token/X-Staff-Token, never client input. HeldAt
+// likewise isn't required - it's server-set to now(), same reasoning as
+// identity.OpenShiftRequest's lifecycle fields. Items is an opaque
+// client-owned cart snapshot (JSONB) - the server never inspects its
+// structure, it's just stored and handed back verbatim on Resume.
 type CreateHeldSaleRequest struct {
-	BranchID    uint            `json:"branch_id" binding:"required"`
-	StaffID     uint            `json:"staff_id" binding:"required"`
+	BranchID    uint            `json:"branch_id"`
+	StaffID     uint            `json:"staff_id"`
 	CustomerRef *uint           `json:"customer_ref"`
 	Items       datatypes.JSON  `json:"items" binding:"required"`
-	Discount    decimal.Decimal `json:"discount" binding:"required"`
-	HeldAt      time.Time       `json:"held_at" binding:"required"`
+	Discount    decimal.Decimal `json:"discount"`
+	HeldAt      time.Time       `json:"held_at"`
 }
 
 // CreateSaleItemRequest is one line item of a CreateSaleRequest. NameSnapshot,
