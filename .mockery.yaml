@@ -59,3 +59,12 @@ packages:
       BranchLookup:
         config:
           filename: "mock_inventory_branch_lookup_test.go"
+  shagan_pos/internal/procurement:
+    config:
+      dir: "internal/procurement"
+      outpkg: procurement
+      inpackage: true
+    interfaces:
+      Repository:
+        config:
+          filename: "mock_procurement_repository_test.go"

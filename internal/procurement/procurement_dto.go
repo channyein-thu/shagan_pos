@@ -28,15 +28,18 @@ type CreatePurchaseOrderRequest struct {
 	CreatedBy  uint                `json:"created_by" binding:"required"`
 }
 
-// CreateSupplierRequest is the request body for the endpoint that creates or updates a Supplier.
-// TODO: fields mirroring org/branch/staff/device ownership (e.g. OrgID, BranchID, StaffID)
-// likely belong to the authenticated session/context, not client input - review before use.
+// CreateSupplierRequest is the request body for `POST /suppliers`. OrgID is
+// deliberately not here - a supplier always belongs to the authenticated
+// caller's own organization, never a client-supplied org, same reasoning as
+// catalog.CreateCategoryRequest. LastOrderAt is deliberately not here
+// either - it's a system-derived timestamp (set to the creation time, then
+// later updated whenever a real PurchaseOrder is placed with this
+// supplier), never a client-supplied one, same reasoning as
+// identity.Device.LastSeenAt.
 type CreateSupplierRequest struct {
-	OrgID       uint      `json:"org_id" binding:"required"`
-	Name        string    `json:"name" binding:"required"`
-	Phone       string    `json:"phone" binding:"required"`
-	Address     string    `json:"address" binding:"required"`
-	LastOrderAt time.Time `json:"last_order_at" binding:"required"`
+	Name    string `json:"name" binding:"required"`
+	Phone   string `json:"phone" binding:"required"`
+	Address string `json:"address" binding:"required"`
 }
 
 // UpdatePurchaseOrderRequest is the request body for the endpoint that creates or updates a PurchaseOrder.
@@ -50,13 +53,15 @@ type UpdatePurchaseOrderRequest struct {
 	CreatedBy  *uint                `json:"created_by" binding:"omitempty"`
 }
 
-// UpdateSupplierRequest is the request body for the endpoint that creates or updates a Supplier.
-// TODO: fields mirroring org/branch/staff/device ownership (e.g. OrgID, BranchID, StaffID)
-// likely belong to the authenticated session/context, not client input - review before use.
+// UpdateSupplierRequest is the request body for `PATCH /suppliers/:id`.
+// OrgID is deliberately not here - a supplier can never be reassigned to a
+// different organization via a client update, same reasoning as
+// catalog.UpdateCategoryRequest. LastOrderAt is deliberately not here
+// either - same reasoning as CreateSupplierRequest's doc; it isn't
+// client-editable at all, only ever system-updated when a real
+// PurchaseOrder is placed.
 type UpdateSupplierRequest struct {
-	OrgID       *uint      `json:"org_id" binding:"omitempty"`
-	Name        *string    `json:"name" binding:"omitempty"`
-	Phone       *string    `json:"phone" binding:"omitempty"`
-	Address     *string    `json:"address" binding:"omitempty"`
-	LastOrderAt *time.Time `json:"last_order_at" binding:"omitempty"`
+	Name    *string `json:"name" binding:"omitempty"`
+	Phone   *string `json:"phone" binding:"omitempty"`
+	Address *string `json:"address" binding:"omitempty"`
 }

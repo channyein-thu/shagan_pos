@@ -2900,7 +2900,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "suppliers"]
             },
-            "description": "ListSuppliers"
+            "description": "Lists suppliers in the caller's org. No query params - org_id comes from the token."
           },
           "response": []
         },
@@ -2922,7 +2922,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{}",
+              "raw": "{\n  \"name\": \"Acme Foods\",\n  \"phone\": \"0123456789\",\n  \"address\": \"123 Main St\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2934,7 +2934,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "suppliers"]
             },
-            "description": "CreateSupplier"
+            "description": "Creates a supplier in the caller's org (org_id comes from the token, never the body). last_order_at isn't client-settable - it's stamped at creation, then later updated whenever a real purchase order is placed with this supplier."
           },
           "response": []
         },
@@ -2956,7 +2956,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{}",
+              "raw": "{\n  \"name\": \"Acme Foods Ltd\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2974,7 +2974,7 @@
                 }
               ]
             },
-            "description": "UpdateSupplier"
+            "description": "Partial update, scoped to the caller's org. Every field is optional - only send what you want to change. last_order_at can't be changed via this endpoint - it's system-managed."
           },
           "response": []
         },
@@ -3000,7 +3000,7 @@
                 }
               ]
             },
-            "description": "DeleteSupplier"
+            "description": "Hard delete, scoped to the caller's org. Blocked with 409 if any purchase order still references this supplier. 204 No Content, no body."
           },
           "response": []
         },

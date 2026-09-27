@@ -33,7 +33,11 @@ func (a *ProcurementAPI) RegisterRoutes(rg *gin.RouterGroup) {
 
 // ListSuppliers handles `GET /suppliers`.
 func (a *ProcurementAPI) ListSuppliers(c *gin.Context) {
-	result, err := a.service.ListSuppliers(c.Request.Context())
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	result, err := a.service.ListSuppliers(c.Request.Context(), orgID)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -43,12 +47,16 @@ func (a *ProcurementAPI) ListSuppliers(c *gin.Context) {
 
 // CreateSupplier handles `POST /suppliers`.
 func (a *ProcurementAPI) CreateSupplier(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
 	var in procurement.CreateSupplierRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
-	result, err := a.service.CreateSupplier(c.Request.Context(), in)
+	result, err := a.service.CreateSupplier(c.Request.Context(), orgID, in)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -58,6 +66,10 @@ func (a *ProcurementAPI) CreateSupplier(c *gin.Context) {
 
 // UpdateSupplier handles `PATCH /suppliers/:id`.
 func (a *ProcurementAPI) UpdateSupplier(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		common.HandleError(c, common.BadRequestError("invalid id"))
@@ -68,7 +80,7 @@ func (a *ProcurementAPI) UpdateSupplier(c *gin.Context) {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
-	result, err := a.service.UpdateSupplier(c.Request.Context(), uint(idVal), in)
+	result, err := a.service.UpdateSupplier(c.Request.Context(), orgID, uint(idVal), in)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -76,14 +88,19 @@ func (a *ProcurementAPI) UpdateSupplier(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// DeleteSupplier handles `DELETE /suppliers/:id`.
+// DeleteSupplier handles `DELETE /suppliers/:id`. Hard delete, blocked if
+// any purchase order still references the supplier.
 func (a *ProcurementAPI) DeleteSupplier(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
-	if err := a.service.DeleteSupplier(c.Request.Context(), uint(idVal)); err != nil {
+	if err := a.service.DeleteSupplier(c.Request.Context(), orgID, uint(idVal)); err != nil {
 		common.HandleError(c, err)
 		return
 	}
