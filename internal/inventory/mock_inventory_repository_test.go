@@ -139,9 +139,9 @@ func (_c *MockRepository_CreateStockTransfer_Call) RunAndReturn(run func(context
 	return _c
 }
 
-// ListInventoryLedger provides a mock function with given fields: ctx
-func (_m *MockRepository) ListInventoryLedger(ctx context.Context) ([]InventoryLedger, error) {
-	ret := _m.Called(ctx)
+// ListInventoryLedger provides a mock function with given fields: ctx, orgID, branchID, productID
+func (_m *MockRepository) ListInventoryLedger(ctx context.Context, orgID uint, branchID *uint, productID *uint) ([]InventoryLedger, error) {
+	ret := _m.Called(ctx, orgID, branchID, productID)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ListInventoryLedger")
@@ -149,19 +149,19 @@ func (_m *MockRepository) ListInventoryLedger(ctx context.Context) ([]InventoryL
 
 	var r0 []InventoryLedger
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context) ([]InventoryLedger, error)); ok {
-		return rf(ctx)
+	if rf, ok := ret.Get(0).(func(context.Context, uint, *uint, *uint) ([]InventoryLedger, error)); ok {
+		return rf(ctx, orgID, branchID, productID)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context) []InventoryLedger); ok {
-		r0 = rf(ctx)
+	if rf, ok := ret.Get(0).(func(context.Context, uint, *uint, *uint) []InventoryLedger); ok {
+		r0 = rf(ctx, orgID, branchID, productID)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]InventoryLedger)
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context) error); ok {
-		r1 = rf(ctx)
+	if rf, ok := ret.Get(1).(func(context.Context, uint, *uint, *uint) error); ok {
+		r1 = rf(ctx, orgID, branchID, productID)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -176,13 +176,16 @@ type MockRepository_ListInventoryLedger_Call struct {
 
 // ListInventoryLedger is a helper method to define mock.On call
 //   - ctx context.Context
-func (_e *MockRepository_Expecter) ListInventoryLedger(ctx interface{}) *MockRepository_ListInventoryLedger_Call {
-	return &MockRepository_ListInventoryLedger_Call{Call: _e.mock.On("ListInventoryLedger", ctx)}
+//   - orgID uint
+//   - branchID *uint
+//   - productID *uint
+func (_e *MockRepository_Expecter) ListInventoryLedger(ctx interface{}, orgID interface{}, branchID interface{}, productID interface{}) *MockRepository_ListInventoryLedger_Call {
+	return &MockRepository_ListInventoryLedger_Call{Call: _e.mock.On("ListInventoryLedger", ctx, orgID, branchID, productID)}
 }
 
-func (_c *MockRepository_ListInventoryLedger_Call) Run(run func(ctx context.Context)) *MockRepository_ListInventoryLedger_Call {
+func (_c *MockRepository_ListInventoryLedger_Call) Run(run func(ctx context.Context, orgID uint, branchID *uint, productID *uint)) *MockRepository_ListInventoryLedger_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context))
+		run(args[0].(context.Context), args[1].(uint), args[2].(*uint), args[3].(*uint))
 	})
 	return _c
 }
@@ -192,7 +195,7 @@ func (_c *MockRepository_ListInventoryLedger_Call) Return(_a0 []InventoryLedger,
 	return _c
 }
 
-func (_c *MockRepository_ListInventoryLedger_Call) RunAndReturn(run func(context.Context) ([]InventoryLedger, error)) *MockRepository_ListInventoryLedger_Call {
+func (_c *MockRepository_ListInventoryLedger_Call) RunAndReturn(run func(context.Context, uint, *uint, *uint) ([]InventoryLedger, error)) *MockRepository_ListInventoryLedger_Call {
 	_c.Call.Return(run)
 	return _c
 }

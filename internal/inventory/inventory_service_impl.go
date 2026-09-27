@@ -42,8 +42,8 @@ func (s *Service) ListLowStock(ctx context.Context) ([]StockLevel, error) {
 	return s.repo.ListLowStock(ctx)
 }
 
-func (s *Service) ListInventoryLedger(ctx context.Context) ([]InventoryLedger, error) {
-	return s.repo.ListInventoryLedger(ctx)
+func (s *Service) ListInventoryLedger(ctx context.Context, orgID uint, branchID *uint, productID *uint) ([]InventoryLedger, error) {
+	return s.repo.ListInventoryLedger(ctx, orgID, branchID, productID)
 }
 
 func (s *Service) CreateStockAdjustment(ctx context.Context, in CreateStockAdjustmentRequest) (*StockAdjustment, error) {

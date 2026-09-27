@@ -32,7 +32,12 @@ type Interface interface {
 	// won't.
 	ListStockLevels(ctx context.Context, orgID uint, branchID *uint, productID *uint) ([]StockLevel, error)
 	ListLowStock(ctx context.Context) ([]StockLevel, error)
-	ListInventoryLedger(ctx context.Context) ([]InventoryLedger, error)
+	// ListInventoryLedger is scoped to the authenticated caller's own
+	// organization - branchID/productID optionally narrow it further, same
+	// filter shape as ListStockLevels. Unlike ListStockLevels, no
+	// BranchLookup ownership check is needed for branchID, since
+	// InventoryLedger carries its own OrgID (see the repository doc).
+	ListInventoryLedger(ctx context.Context, orgID uint, branchID *uint, productID *uint) ([]InventoryLedger, error)
 	CreateStockAdjustment(ctx context.Context, in CreateStockAdjustmentRequest) (*StockAdjustment, error)
 	ListStockTransfers(ctx context.Context) ([]StockTransfer, error)
 	CreateStockTransfer(ctx context.Context, in CreateStockTransferRequest) (*StockTransfer, error)

@@ -111,3 +111,46 @@ func TestService_ListStockLevels_ListBranchesFails_PropagatesAsIs(t *testing.T) 
 	_, err := svc.ListStockLevels(context.Background(), 7, nil, nil)
 	require.ErrorIs(t, err, dbErr)
 }
+
+func TestService_ListInventoryLedger_DelegatesToRepository(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	svc := NewService(repo, branches)
+
+	want := []InventoryLedger{{ID: 1, OrgID: 7, ProductID: 1, BranchID: 5, Qty: -2, BalanceAfter: 8}}
+	repo.EXPECT().ListInventoryLedger(mock.Anything, uint(7), (*uint)(nil), (*uint)(nil)).Return(want, nil).Once()
+
+	got, err := svc.ListInventoryLedger(context.Background(), 7, nil, nil)
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+}
+
+func TestService_ListInventoryLedger_FiltersByBranchAndProduct(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	svc := NewService(repo, branches)
+
+	branchID := uint(5)
+	productID := uint(3)
+	want := []InventoryLedger{{ID: 1, OrgID: 7, ProductID: 3, BranchID: 5, Qty: -2, BalanceAfter: 8}}
+	repo.EXPECT().ListInventoryLedger(mock.Anything, uint(7), &branchID, &productID).Return(want, nil).Once()
+	// No BranchLookup call is needed - InventoryLedger carries its own
+	// OrgID, unlike StockLevel.
+
+	got, err := svc.ListInventoryLedger(context.Background(), 7, &branchID, &productID)
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+}
+
+func TestService_ListInventoryLedger_PropagatesRepositoryError(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	svc := NewService(repo, branches)
+
+	wantErr := common.SystemError("db read failed")
+	repo.EXPECT().ListInventoryLedger(mock.Anything, uint(7), (*uint)(nil), (*uint)(nil)).Return(nil, wantErr).Once()
+
+	_, err := svc.ListInventoryLedger(context.Background(), 7, nil, nil)
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusInternalServerError)
+}

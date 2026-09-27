@@ -38,9 +38,22 @@ func (r *RepositoryImpl) ListLowStock(ctx context.Context) ([]StockLevel, error)
 	return nil, common.ErrNotImplemented
 }
 
-// ListInventoryLedger backs `GET /inventory/ledger`. Read-only - never written directly by a client
-func (r *RepositoryImpl) ListInventoryLedger(ctx context.Context) ([]InventoryLedger, error) {
-	return nil, common.ErrNotImplemented
+// ListInventoryLedger backs `GET /inventory/ledger`, scoped to orgID and
+// optionally narrowed to one branch/product. Read-only - never written
+// directly by a client.
+func (r *RepositoryImpl) ListInventoryLedger(ctx context.Context, orgID uint, branchID *uint, productID *uint) ([]InventoryLedger, error) {
+	var entries []InventoryLedger
+	q := r.db.WithContext(ctx).Where("org_id = ?", orgID)
+	if branchID != nil {
+		q = q.Where("branch_id = ?", *branchID)
+	}
+	if productID != nil {
+		q = q.Where("product_id = ?", *productID)
+	}
+	if err := q.Order("created_at ASC, id ASC").Find(&entries).Error; err != nil {
+		return nil, err
+	}
+	return entries, nil
 }
 
 // CreateStockAdjustment backs `POST /inventory/adjustments`. Writes a ledger row as a side effect

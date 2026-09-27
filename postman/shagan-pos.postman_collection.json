@@ -2131,11 +2131,23 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/inventory/ledger",
+              "raw": "{{baseUrl}}/api/v1/inventory/ledger?branch_id=1&product_id=1",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "inventory", "ledger"]
+              "path": ["api", "v1", "inventory", "ledger"],
+              "query": [
+                {
+                  "key": "branch_id",
+                  "value": "1",
+                  "description": "Optional - a pos-device token's own branch always wins instead."
+                },
+                {
+                  "key": "product_id",
+                  "value": "1",
+                  "description": "Optional - narrows to one product."
+                }
+              ]
             },
-            "description": "Read-only - never written directly by a client"
+            "description": "Read-only audit trail - never written directly by a client. Org-scoped, both query params optional. Ordered oldest-first, since each row's balance_after only reads as a running balance in chronological order."
           },
           "response": []
         },
