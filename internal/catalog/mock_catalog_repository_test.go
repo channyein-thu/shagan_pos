@@ -1382,64 +1382,6 @@ func (_c *MockRepository_UpdateProduct_Call) RunAndReturn(run func(*gorm.DB, uin
 	return _c
 }
 
-// UploadMedia provides a mock function with given fields: ctx
-func (_m *MockRepository) UploadMedia(ctx context.Context) (*ProductImage, error) {
-	ret := _m.Called(ctx)
-
-	if len(ret) == 0 {
-		panic("no return value specified for UploadMedia")
-	}
-
-	var r0 *ProductImage
-	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context) (*ProductImage, error)); ok {
-		return rf(ctx)
-	}
-	if rf, ok := ret.Get(0).(func(context.Context) *ProductImage); ok {
-		r0 = rf(ctx)
-	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*ProductImage)
-		}
-	}
-
-	if rf, ok := ret.Get(1).(func(context.Context) error); ok {
-		r1 = rf(ctx)
-	} else {
-		r1 = ret.Error(1)
-	}
-
-	return r0, r1
-}
-
-// MockRepository_UploadMedia_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UploadMedia'
-type MockRepository_UploadMedia_Call struct {
-	*mock.Call
-}
-
-// UploadMedia is a helper method to define mock.On call
-//   - ctx context.Context
-func (_e *MockRepository_Expecter) UploadMedia(ctx interface{}) *MockRepository_UploadMedia_Call {
-	return &MockRepository_UploadMedia_Call{Call: _e.mock.On("UploadMedia", ctx)}
-}
-
-func (_c *MockRepository_UploadMedia_Call) Run(run func(ctx context.Context)) *MockRepository_UploadMedia_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context))
-	})
-	return _c
-}
-
-func (_c *MockRepository_UploadMedia_Call) Return(_a0 *ProductImage, _a1 error) *MockRepository_UploadMedia_Call {
-	_c.Call.Return(_a0, _a1)
-	return _c
-}
-
-func (_c *MockRepository_UploadMedia_Call) RunAndReturn(run func(context.Context) (*ProductImage, error)) *MockRepository_UploadMedia_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
 // NewMockRepository creates a new instance of MockRepository. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
 // The first argument is typically a *testing.T value.
 func NewMockRepository(t interface {

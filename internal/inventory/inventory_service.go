@@ -3,6 +3,7 @@ package inventory
 import (
 	"context"
 
+	"shagan_pos/internal/catalog"
 	"shagan_pos/internal/identity"
 )
 
@@ -15,6 +16,17 @@ import (
 type BranchLookup interface {
 	GetBranch(ctx context.Context, orgID uint, id uint) (*identity.Branch, error)
 	ListBranches(ctx context.Context, orgID uint) ([]identity.Branch, error)
+}
+
+// ProductLookup is what inventory needs from catalog: confirming a
+// client-supplied ProductID actually belongs to the caller's org, and
+// reading back its own BranchID - a Product belongs to exactly one branch,
+// so that's also the only branch whose StockLevel a stock adjustment can
+// ever apply to, or that a stock transfer can ever move it out of. Same
+// reasoning as procurement.ProductLookup; catalog.Repository already
+// satisfies this signature, no adapter needed.
+type ProductLookup interface {
+	GetProduct(ctx context.Context, orgID uint, id uint) (*catalog.Product, error)
 }
 
 // Interface defines the inventory domain's use cases.
@@ -31,15 +43,52 @@ type Interface interface {
 	// unrelated org's product if such a row genuinely exists, which it
 	// won't.
 	ListStockLevels(ctx context.Context, orgID uint, branchID *uint, productID *uint) ([]StockLevel, error)
-	ListLowStock(ctx context.Context) ([]StockLevel, error)
+	// ListLowStock is scoped exactly like ListStockLevels (same branchID
+	// resolution) - "low" means the product's own qty at that branch is
+	// <= its own Threshold (catalog.Product), so the repository joins to
+	// products rather than needing a separate threshold input.
+	ListLowStock(ctx context.Context, orgID uint, branchID *uint) ([]StockLevel, error)
 	// ListInventoryLedger is scoped to the authenticated caller's own
 	// organization - branchID/productID optionally narrow it further, same
 	// filter shape as ListStockLevels. Unlike ListStockLevels, no
 	// BranchLookup ownership check is needed for branchID, since
 	// InventoryLedger carries its own OrgID (see the repository doc).
 	ListInventoryLedger(ctx context.Context, orgID uint, branchID *uint, productID *uint) ([]InventoryLedger, error)
-	CreateStockAdjustment(ctx context.Context, in CreateStockAdjustmentRequest) (*StockAdjustment, error)
-	ListStockTransfers(ctx context.Context) ([]StockTransfer, error)
-	CreateStockTransfer(ctx context.Context, in CreateStockTransferRequest) (*StockTransfer, error)
-	UpdateStockTransfer(ctx context.Context, id uint, in UpdateStockTransferRequest) (*StockTransfer, error)
+	// CreateStockAdjustment confirms in.ProductID belongs to orgID (via
+	// ProductLookup), takes the product's own BranchID as the adjustment's
+	// branch (a client never supplies one directly - see
+	// CreateStockAdjustmentRequest), applies Delta to that product's
+	// StockLevel (creating the row at 0 first if none exists yet), and
+	// appends one InventoryLedger entry reflecting the movement - all in
+	// one transaction, same shape as procurement.Service.CreateGoodsReceipt.
+	// actorID is the authenticated caller's own user ID, never a
+	// client-supplied one.
+	CreateStockAdjustment(ctx context.Context, orgID uint, actorID uint, in CreateStockAdjustmentRequest) (*StockAdjustment, error)
+	// ListStockTransfers is scoped to the authenticated caller's own
+	// organization - branchID optionally narrows it to transfers where
+	// that branch is either the sender or the receiver.
+	ListStockTransfers(ctx context.Context, orgID uint, branchID *uint) ([]StockTransfer, error)
+	// CreateStockTransfer confirms FromBranch and ToBranch both belong to
+	// orgID and are different branches, and every item's ProductID belongs
+	// to orgID AND to FromBranch specifically (a product only ever lives
+	// at one branch, so that's the only branch it can be transferred out
+	// of). Creates the StockTransfer and its StockTransferItems as one
+	// atomic unit, starting at TransferStatusPending - no stock movement
+	// happens yet, same reasoning as
+	// procurement.Service.CreatePurchaseOrder not touching stock until a
+	// GoodsReceipt is actually created. actorID is the authenticated
+	// caller's own user ID, never a client-supplied one.
+	CreateStockTransfer(ctx context.Context, orgID uint, actorID uint, in CreateStockTransferRequest) (*StockTransfer, error)
+	// UpdateStockTransfer confirms the transfer exists AND belongs to
+	// orgID, and blocks any update once it's already Completed or
+	// Cancelled (terminal states). Moving Status to TransferStatusCompleted
+	// is the one transition with a real side effect: for each item, it
+	// requires FromBranch's current stock to cover Qty (rejecting the
+	// whole transfer otherwise - no partial completion, no backorder),
+	// then atomically decrements FromBranch's StockLevel and increments
+	// ToBranch's StockLevel by Qty, and appends two InventoryLedger
+	// entries per item (transfer_out at FromBranch, transfer_in at
+	// ToBranch) - all in one transaction. Any other status transition
+	// (in_transit, cancelled) is a plain field write with no stock effect.
+	UpdateStockTransfer(ctx context.Context, orgID uint, id uint, in UpdateStockTransferRequest) (*StockTransfer, error)
 }

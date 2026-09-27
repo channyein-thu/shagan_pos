@@ -9,6 +9,9 @@ packages:
       Repository:
         config:
           filename: "mock_identity_repository_test.go"
+      AuditWriter:
+        config:
+          filename: "mock_identity_audit_writer_test.go"
   shagan_pos/internal/catalog:
     config:
       dir: "internal/catalog"
@@ -51,10 +54,6 @@ packages:
     config:
       dir: "internal/inventory"
       outpkg: inventory
-  shagan_pos/internal/sales:
-    config:
-      dir: "internal/sales"
-      outpkg: sales
       inpackage: true
     interfaces:
       Repository:
@@ -63,6 +62,24 @@ packages:
       BranchLookup:
         config:
           filename: "mock_inventory_branch_lookup_test.go"
+      ProductLookup:
+        config:
+          filename: "mock_inventory_product_lookup_test.go"
+  shagan_pos/internal/sales:
+    config:
+      dir: "internal/sales"
+      outpkg: sales
+      inpackage: true
+    interfaces:
+      Repository:
+        config:
+          filename: "mock_sales_repository_test.go"
+      InventoryWriter:
+        config:
+          filename: "mock_sales_inventory_writer_test.go"
+      AuditWriter:
+        config:
+          filename: "mock_sales_audit_writer_test.go"
   shagan_pos/internal/procurement:
     config:
       dir: "internal/procurement"
@@ -78,4 +95,60 @@ packages:
       InventoryWriter:
         config:
           filename: "mock_procurement_inventory_writer_test.go"
-          filename: "mock_sales_repository_test.go"
+  shagan_pos/internal/reports:
+    config:
+      dir: "internal/reports"
+      outpkg: reports
+      inpackage: true
+    interfaces:
+      Repository:
+        config:
+          filename: "mock_reports_repository_test.go"
+  shagan_pos/internal/returns:
+    config:
+      dir: "internal/returns"
+      outpkg: returns
+      inpackage: true
+    interfaces:
+      Repository:
+        config:
+          filename: "mock_returns_repository_test.go"
+      BranchLookup:
+        config:
+          filename: "mock_returns_branch_lookup_test.go"
+      InventoryWriter:
+        config:
+          filename: "mock_returns_inventory_writer_test.go"
+      SalesReader:
+        config:
+          filename: "mock_returns_sales_reader_test.go"
+      AuditWriter:
+        config:
+          filename: "mock_returns_audit_writer_test.go"
+  shagan_pos/internal/audit:
+    config:
+      dir: "internal/audit"
+      outpkg: audit
+      inpackage: true
+    interfaces:
+      Repository:
+        config:
+          filename: "mock_audit_repository_test.go"
+  shagan_pos/internal/datasync:
+    config:
+      dir: "internal/datasync"
+      outpkg: datasync
+      inpackage: true
+    interfaces:
+      Repository:
+        config:
+          filename: "mock_datasync_repository_test.go"
+      BranchLookup:
+        config:
+          filename: "mock_datasync_branch_lookup_test.go"
+      CatalogReader:
+        config:
+          filename: "mock_datasync_catalog_reader_test.go"
+      SalesWriter:
+        config:
+          filename: "mock_datasync_sales_writer_test.go"

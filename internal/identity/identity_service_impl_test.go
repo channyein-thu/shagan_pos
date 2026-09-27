@@ -15,6 +15,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 
+	"shagan_pos/internal/audit"
 	"shagan_pos/internal/authtoken"
 	"shagan_pos/internal/common"
 )
@@ -33,13 +34,14 @@ func (fakeTransactioner) Transaction(fc func(tx *gorm.DB) error, _ ...*sql.TxOpt
 	return fc(nil)
 }
 
-func newTestService(repo Repository) *Service {
-	return NewService(repo, fakeTransactioner{}, testJWTSecret, DefaultAccessTokenTTL, DefaultRefreshTokenTTL, DefaultStaffPINTokenTTL, DefaultManagerPINTokenTTL)
+func newTestService(repo Repository, auditWriter AuditWriter) *Service {
+	return NewService(repo, auditWriter, fakeTransactioner{}, testJWTSecret, DefaultAccessTokenTTL, DefaultRefreshTokenTTL, DefaultStaffPINTokenTTL, DefaultManagerPINTokenTTL)
 }
 
 func TestService_CreateAccount_HashesPasswordBeforePersisting(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	const ownerPlaintext = "correct horse battery staple"
 	const serviceCenterPlaintext = "another strong password"
@@ -92,7 +94,8 @@ func TestService_CreateAccount_HashesPasswordBeforePersisting(t *testing.T) {
 
 func TestService_CreateAccount_OwnerCreationFails_RollsBackAndNeverCreatesServiceCenter(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	repo.EXPECT().
 		CreateOrganization(mock.Anything, mock.Anything).
@@ -124,7 +127,8 @@ func TestService_CreateAccount_OwnerCreationFails_RollsBackAndNeverCreatesServic
 
 func TestService_CreatePosAccount_HashesPasswordBeforePersisting(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	const plaintext = "correct horse battery staple"
 	in := CreatePosAccountInput{
@@ -156,7 +160,8 @@ func TestService_CreatePosAccount_HashesPasswordBeforePersisting(t *testing.T) {
 
 func TestService_CreatePosAccount_PropagatesRepositoryError(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	wantErr := common.NotFoundError("device not found")
 	repo.EXPECT().CreatePosAccount(mock.Anything, mock.Anything).Return(nil, wantErr).Once()
@@ -178,7 +183,8 @@ func TestService_CreatePosAccount_PropagatesRepositoryError(t *testing.T) {
 
 func TestService_ListOrganizations_DelegatesToRepository(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	want := []Organization{{ID: 1, Name: "Acme Retail"}, {ID: 2, Name: "Golden Star Retail"}}
 	repo.EXPECT().ListOrganizations(mock.Anything).Return(want, nil).Once()
@@ -190,7 +196,8 @@ func TestService_ListOrganizations_DelegatesToRepository(t *testing.T) {
 
 func TestService_ListOrganizations_PropagatesRepositoryError(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	wantErr := common.SystemError("db read failed")
 	repo.EXPECT().ListOrganizations(mock.Anything).Return(nil, wantErr).Once()
@@ -202,7 +209,8 @@ func TestService_ListOrganizations_PropagatesRepositoryError(t *testing.T) {
 
 func TestService_ListPosAccounts_DelegatesToRepository(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	want := []User{{ID: 1, OrgID: 7, AccountType: AccountTypePos}}
 	repo.EXPECT().ListPosAccounts(mock.Anything, uint(7)).Return(want, nil).Once()
@@ -214,7 +222,8 @@ func TestService_ListPosAccounts_DelegatesToRepository(t *testing.T) {
 
 func TestService_UpdateOrganizationStatus_DelegatesToRepository(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	repo.EXPECT().UpdateOrganizationStatus(mock.Anything, uint(1), OrganizationStatusSuspended).Return(nil).Once()
 
@@ -224,7 +233,8 @@ func TestService_UpdateOrganizationStatus_DelegatesToRepository(t *testing.T) {
 
 func TestService_UpdateOrganizationStatus_PropagatesRepositoryError(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	wantErr := common.SystemError("db write failed")
 	repo.EXPECT().UpdateOrganizationStatus(mock.Anything, uint(1), OrganizationStatusSuspended).Return(wantErr).Once()
@@ -236,7 +246,8 @@ func TestService_UpdateOrganizationStatus_PropagatesRepositoryError(t *testing.T
 
 func TestService_UpdatePosAccountStatus_DelegatesToRepository(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	repo.EXPECT().UpdatePosAccountStatus(mock.Anything, uint(5), UserStatusSuspended).Return(nil).Once()
 
@@ -246,7 +257,8 @@ func TestService_UpdatePosAccountStatus_DelegatesToRepository(t *testing.T) {
 
 func TestService_UpdatePosAccountStatus_PropagatesNotFound(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	wantErr := common.NotFoundError("pos account not found")
 	repo.EXPECT().UpdatePosAccountStatus(mock.Anything, uint(999), UserStatusSuspended).Return(wantErr).Once()
@@ -258,7 +270,8 @@ func TestService_UpdatePosAccountStatus_PropagatesNotFound(t *testing.T) {
 
 func TestService_ResetPosAccountPassword_HashesPasswordBeforePersisting(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	const plaintext = "a-brand-new-password"
 	repo.EXPECT().
@@ -276,7 +289,8 @@ func TestService_ResetPosAccountPassword_HashesPasswordBeforePersisting(t *testi
 
 func TestService_ResetPosAccountPassword_PropagatesNotFound(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	wantErr := common.NotFoundError("pos account not found")
 	repo.EXPECT().ResetPosAccountPassword(mock.Anything, uint(999), mock.Anything).Return(wantErr).Once()
@@ -302,7 +316,8 @@ func requireRestErrorStatus(t *testing.T, err error, status int) {
 
 func TestService_Login_HappyPath(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	const plaintext = "correct horse battery staple"
 	user := &User{ID: 42, OrgID: 7, CredentialHash: hashPassword(t, plaintext)}
@@ -341,7 +356,8 @@ func TestService_Login_HappyPath(t *testing.T) {
 
 func TestService_Login_PosAccount_IncludesBranchIDInClaims(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	const plaintext = "correct horse battery staple"
 	branchID := uint(9)
@@ -365,7 +381,8 @@ func TestService_Login_PosAccount_IncludesBranchIDInClaims(t *testing.T) {
 
 func TestService_Login_UnknownEmail_ReturnsGenericUnauthorized(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	repo.EXPECT().GetUserByEmail(mock.Anything, "nobody@acme.test").
 		Return(nil, common.NotFoundError("user not found")).Once()
@@ -383,7 +400,8 @@ func TestService_Login_UnknownEmail_ReturnsGenericUnauthorized(t *testing.T) {
 
 func TestService_Login_WrongPassword_ReturnsSameGenericUnauthorized(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	user := &User{ID: 42, OrgID: 7, CredentialHash: hashPassword(t, "the-real-password")}
 	repo.EXPECT().GetUserByEmail(mock.Anything, "owner@acme.test").Return(user, nil).Once()
@@ -399,7 +417,8 @@ func TestService_Login_WrongPassword_ReturnsSameGenericUnauthorized(t *testing.T
 
 func TestService_Login_SuspendedAccount_ReturnsSameGenericUnauthorized(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	const plaintext = "correct horse battery staple"
 	user := &User{ID: 42, OrgID: 7, Status: UserStatusSuspended, CredentialHash: hashPassword(t, plaintext)}
@@ -417,7 +436,8 @@ func TestService_Login_SuspendedAccount_ReturnsSameGenericUnauthorized(t *testin
 
 func TestService_Login_SuspendedOrganization_ReturnsSameGenericUnauthorized(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	const plaintext = "correct horse battery staple"
 	user := &User{ID: 42, OrgID: 7, CredentialHash: hashPassword(t, plaintext)}
@@ -437,7 +457,8 @@ func TestService_Login_SuspendedOrganization_ReturnsSameGenericUnauthorized(t *t
 
 func TestService_Login_UnexpectedRepositoryError_PropagatesAsIs(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	dbErr := errors.New("connection refused")
 	repo.EXPECT().GetUserByEmail(mock.Anything, "owner@acme.test").Return(nil, dbErr).Once()
@@ -448,7 +469,8 @@ func TestService_Login_UnexpectedRepositoryError_PropagatesAsIs(t *testing.T) {
 
 func TestService_Login_CreateSessionFails_PropagatesError(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	const plaintext = "correct horse battery staple"
 	user := &User{ID: 42, OrgID: 7, CredentialHash: hashPassword(t, plaintext)}
@@ -470,7 +492,8 @@ const testRefreshPlaintext = "the-refresh-token-plaintext"
 
 func TestService_RefreshSession_HappyPath_RotatesToken(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	oldHash := hashRefreshToken(testRefreshPlaintext)
 	session := &Session{ID: 1, UserID: 42, RefreshHash: oldHash, ExpiresAt: time.Now().Add(time.Hour)}
@@ -507,7 +530,8 @@ func TestService_RefreshSession_HappyPath_RotatesToken(t *testing.T) {
 
 func TestService_RefreshSession_UnknownToken_ReturnsGenericUnauthorized(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	repo.EXPECT().
 		GetSessionByRefreshHash(mock.Anything, mock.Anything).
@@ -525,7 +549,8 @@ func TestService_RefreshSession_UnknownToken_ReturnsGenericUnauthorized(t *testi
 
 func TestService_RefreshSession_RevokedToken_ReturnsSameGenericUnauthorized(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	revokedAt := time.Now().Add(-time.Minute)
 	session := &Session{ID: 1, UserID: 42, ExpiresAt: time.Now().Add(time.Hour), RevokedAt: &revokedAt}
@@ -541,7 +566,8 @@ func TestService_RefreshSession_RevokedToken_ReturnsSameGenericUnauthorized(t *t
 
 func TestService_RefreshSession_ExpiredToken_ReturnsSameGenericUnauthorized(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	session := &Session{ID: 1, UserID: 42, ExpiresAt: time.Now().Add(-time.Minute)}
 	repo.EXPECT().GetSessionByRefreshHash(mock.Anything, mock.Anything).Return(session, nil).Once()
@@ -556,7 +582,8 @@ func TestService_RefreshSession_ExpiredToken_ReturnsSameGenericUnauthorized(t *t
 
 func TestService_RefreshSession_UserGone_ReturnsGenericUnauthorized(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	session := &Session{ID: 1, UserID: 42, ExpiresAt: time.Now().Add(time.Hour)}
 	repo.EXPECT().GetSessionByRefreshHash(mock.Anything, mock.Anything).Return(session, nil).Once()
@@ -569,7 +596,8 @@ func TestService_RefreshSession_UserGone_ReturnsGenericUnauthorized(t *testing.T
 
 func TestService_RefreshSession_SuspendedAccount_ReturnsSameGenericUnauthorized(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	session := &Session{ID: 1, UserID: 42, ExpiresAt: time.Now().Add(time.Hour)}
 	user := &User{ID: 42, OrgID: 7, Status: UserStatusSuspended}
@@ -589,7 +617,8 @@ func TestService_RefreshSession_SuspendedAccount_ReturnsSameGenericUnauthorized(
 
 func TestService_RefreshSession_SuspendedOrganization_ReturnsSameGenericUnauthorized(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	session := &Session{ID: 1, UserID: 42, ExpiresAt: time.Now().Add(time.Hour)}
 	user := &User{ID: 42, OrgID: 7}
@@ -609,7 +638,8 @@ func TestService_RefreshSession_SuspendedOrganization_ReturnsSameGenericUnauthor
 
 func TestService_RefreshSession_RotationFails_PropagatesError(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	session := &Session{ID: 1, UserID: 42, ExpiresAt: time.Now().Add(time.Hour)}
 	user := &User{ID: 42, OrgID: 7}
@@ -630,7 +660,8 @@ func TestService_RefreshSession_RotationFails_PropagatesError(t *testing.T) {
 
 func TestService_Logout_HappyPath_RevokesSession(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	session := &Session{ID: 1, UserID: 42}
 	repo.EXPECT().GetSessionByRefreshHash(mock.Anything, hashRefreshToken(testRefreshPlaintext)).Return(session, nil).Once()
@@ -642,7 +673,8 @@ func TestService_Logout_HappyPath_RevokesSession(t *testing.T) {
 
 func TestService_Logout_UnknownToken_SucceedsIdempotently(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	repo.EXPECT().
 		GetSessionByRefreshHash(mock.Anything, mock.Anything).
@@ -657,7 +689,8 @@ func TestService_Logout_UnknownToken_SucceedsIdempotently(t *testing.T) {
 
 func TestService_Logout_AlreadyRevoked_SucceedsIdempotently(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	revokedAt := time.Now().Add(-time.Minute)
 	session := &Session{ID: 1, UserID: 42, RevokedAt: &revokedAt}
@@ -669,7 +702,8 @@ func TestService_Logout_AlreadyRevoked_SucceedsIdempotently(t *testing.T) {
 
 func TestService_Logout_RepositoryFailure_Propagates(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	session := &Session{ID: 1, UserID: 42}
 	repo.EXPECT().GetSessionByRefreshHash(mock.Anything, mock.Anything).Return(session, nil).Once()
@@ -689,7 +723,8 @@ func TestService_Logout_RepositoryFailure_Propagates(t *testing.T) {
 
 func TestService_GetMe_DelegatesToRepository(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	want := &User{ID: 42, OrgID: 7}
 	repo.EXPECT().GetUserByID(mock.Anything, uint(42)).Return(want, nil).Once()
@@ -701,7 +736,8 @@ func TestService_GetMe_DelegatesToRepository(t *testing.T) {
 
 func TestService_GetMe_PropagatesRepositoryError(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	wantErr := common.NotFoundError("user not found")
 	repo.EXPECT().GetUserByID(mock.Anything, uint(42)).Return(nil, wantErr).Once()
@@ -713,7 +749,8 @@ func TestService_GetMe_PropagatesRepositoryError(t *testing.T) {
 
 func TestService_UpdateMe_DelegatesToRepository(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	name := "Chan Nyein"
 	in := UpdateMeRequest{Name: &name}
@@ -728,7 +765,8 @@ func TestService_UpdateMe_DelegatesToRepository(t *testing.T) {
 
 func TestService_UpdateMe_PropagatesRepositoryError(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	in := UpdateMeRequest{}
 	wantErr := common.ConflictError("an account with this email already exists")
@@ -745,7 +783,8 @@ func TestService_UpdateMe_PropagatesRepositoryError(t *testing.T) {
 
 func TestService_ListBranches_DelegatesToRepository(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	want := []Branch{{ID: 1, OrgID: 7}, {ID: 2, OrgID: 7}}
 	repo.EXPECT().ListBranches(mock.Anything, uint(7)).Return(want, nil).Once()
@@ -757,7 +796,8 @@ func TestService_ListBranches_DelegatesToRepository(t *testing.T) {
 
 func TestService_ListBranches_PropagatesRepositoryError(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	wantErr := common.SystemError("db read failed")
 	repo.EXPECT().ListBranches(mock.Anything, uint(7)).Return(nil, wantErr).Once()
@@ -769,7 +809,8 @@ func TestService_ListBranches_PropagatesRepositoryError(t *testing.T) {
 
 func TestService_CreateBranch_DelegatesToRepository(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	in := CreateBranchRequest{Name: "Main Branch", Status: BranchStatusActive}
 	want := &Branch{ID: 1, OrgID: 7, Name: "Main Branch"}
@@ -782,7 +823,8 @@ func TestService_CreateBranch_DelegatesToRepository(t *testing.T) {
 
 func TestService_CreateBranch_PropagatesRepositoryError(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	in := CreateBranchRequest{Name: "Main Branch", Status: BranchStatusActive}
 	wantErr := common.SystemError("db write failed")
@@ -795,7 +837,8 @@ func TestService_CreateBranch_PropagatesRepositoryError(t *testing.T) {
 
 func TestService_GetBranch_DelegatesToRepository(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	want := &Branch{ID: 1, OrgID: 7}
 	repo.EXPECT().GetBranch(mock.Anything, uint(7), uint(1)).Return(want, nil).Once()
@@ -807,7 +850,8 @@ func TestService_GetBranch_DelegatesToRepository(t *testing.T) {
 
 func TestService_GetBranch_PropagatesNotFound(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	wantErr := common.NotFoundError("branch not found")
 	repo.EXPECT().GetBranch(mock.Anything, uint(7), uint(999)).Return(nil, wantErr).Once()
@@ -819,7 +863,8 @@ func TestService_GetBranch_PropagatesNotFound(t *testing.T) {
 
 func TestService_UpdateBranch_DelegatesToRepository(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	name := "Renamed Branch"
 	in := UpdateBranchRequest{Name: &name}
@@ -833,7 +878,8 @@ func TestService_UpdateBranch_DelegatesToRepository(t *testing.T) {
 
 func TestService_UpdateBranch_PropagatesNotFound(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	in := UpdateBranchRequest{}
 	wantErr := common.NotFoundError("branch not found")
@@ -846,7 +892,8 @@ func TestService_UpdateBranch_PropagatesNotFound(t *testing.T) {
 
 func TestService_ListBranchStaff_DelegatesToRepository(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	want := []Staff{{ID: 1, BranchID: 1}, {ID: 2, BranchID: 1}}
 	repo.EXPECT().ListBranchStaff(mock.Anything, uint(7), uint(1)).Return(want, nil).Once()
@@ -858,7 +905,8 @@ func TestService_ListBranchStaff_DelegatesToRepository(t *testing.T) {
 
 func TestService_ListBranchStaff_PropagatesNotFound(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	wantErr := common.NotFoundError("branch not found")
 	repo.EXPECT().ListBranchStaff(mock.Anything, uint(7), uint(999)).Return(nil, wantErr).Once()
@@ -870,7 +918,8 @@ func TestService_ListBranchStaff_PropagatesNotFound(t *testing.T) {
 
 func TestService_ListBranchManagers_DelegatesToRepository(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	want := []Staff{{ID: 1, BranchID: 1, RoleID: 3}}
 	repo.EXPECT().ListBranchManagers(mock.Anything, uint(7), uint(1), "approve_void").Return(want, nil).Once()
@@ -882,7 +931,8 @@ func TestService_ListBranchManagers_DelegatesToRepository(t *testing.T) {
 
 func TestService_ListBranchManagers_PropagatesNotFound(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	wantErr := common.NotFoundError("branch not found")
 	repo.EXPECT().ListBranchManagers(mock.Anything, uint(7), uint(999), "approve_void").Return(nil, wantErr).Once()
@@ -894,7 +944,8 @@ func TestService_ListBranchManagers_PropagatesNotFound(t *testing.T) {
 
 func TestService_ListStaff_DelegatesToRepository(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	want := []Staff{{ID: 1, BranchID: 1}, {ID: 2, BranchID: 2}}
 	repo.EXPECT().ListStaff(mock.Anything, uint(7), (*uint)(nil)).Return(want, nil).Once()
@@ -906,7 +957,8 @@ func TestService_ListStaff_DelegatesToRepository(t *testing.T) {
 
 func TestService_ListStaff_PassesThroughCallerBranchID(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	branchID := uint(3)
 	want := []Staff{{ID: 1, BranchID: 3}}
@@ -919,7 +971,8 @@ func TestService_ListStaff_PassesThroughCallerBranchID(t *testing.T) {
 
 func TestService_ListStaff_PropagatesRepositoryError(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	wantErr := common.SystemError("db read failed")
 	repo.EXPECT().ListStaff(mock.Anything, uint(7), (*uint)(nil)).Return(nil, wantErr).Once()
@@ -931,7 +984,8 @@ func TestService_ListStaff_PropagatesRepositoryError(t *testing.T) {
 
 func TestService_CreateStaff_HashesPinBeforePersisting(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	const plaintextPin = "123456"
 	in := CreateStaffRequest{BranchID: 1, Name: "Cashier Joe", Role: 3, Pin: plaintextPin, Phone: "555-0000", Status: StaffStatusActive}
@@ -958,7 +1012,8 @@ func TestService_CreateStaff_HashesPinBeforePersisting(t *testing.T) {
 
 func TestService_CreateStaff_PropagatesRepositoryError(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	in := CreateStaffRequest{BranchID: 999, Name: "Cashier Joe", Role: 3, Pin: "123456", Phone: "555-0000", Status: StaffStatusActive}
 	wantErr := common.NotFoundError("branch not found")
@@ -971,7 +1026,8 @@ func TestService_CreateStaff_PropagatesRepositoryError(t *testing.T) {
 
 func TestService_GetStaff_DelegatesToRepository(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	want := &Staff{ID: 1, BranchID: 1}
 	repo.EXPECT().GetStaff(mock.Anything, uint(7), uint(1)).Return(want, nil).Once()
@@ -983,7 +1039,8 @@ func TestService_GetStaff_DelegatesToRepository(t *testing.T) {
 
 func TestService_GetStaff_PropagatesNotFound(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	wantErr := common.NotFoundError("staff not found")
 	repo.EXPECT().GetStaff(mock.Anything, uint(7), uint(999)).Return(nil, wantErr).Once()
@@ -995,12 +1052,15 @@ func TestService_GetStaff_PropagatesNotFound(t *testing.T) {
 
 func TestService_UpdateStaff_HashesPinWhenProvided(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	const plaintextPin = "567890"
 	in := UpdateStaffRequest{Pin: &[]string{plaintextPin}[0]}
+	before := &Staff{ID: 1, BranchID: 1}
 	want := &Staff{ID: 1, BranchID: 1}
 
+	repo.EXPECT().GetStaff(mock.Anything, uint(7), uint(1)).Return(before, nil).Once()
 	repo.EXPECT().
 		UpdateStaff(mock.Anything, uint(7), uint(1), mock.MatchedBy(func(got UpdateStaffRequest) bool {
 			return got.Pin != nil && *got.Pin != plaintextPin &&
@@ -1008,43 +1068,54 @@ func TestService_UpdateStaff_HashesPinWhenProvided(t *testing.T) {
 		})).
 		Return(want, nil).
 		Once()
+	audW.EXPECT().CreateAuditLog(mock.Anything, mock.MatchedBy(func(e *audit.AuditLog) bool {
+		return e.OrgID == 7 && e.ActorID != nil && *e.ActorID == 9 && e.Entity == "staff" && e.EntityID == "1" && e.Action == "updated"
+	})).Return(nil).Once()
 
-	result, err := svc.UpdateStaff(context.Background(), 7, 1, in)
+	result, err := svc.UpdateStaff(context.Background(), 7, 9, 1, in)
 	require.NoError(t, err)
 	require.Same(t, want, result)
 }
 
 func TestService_UpdateStaff_NoPinProvided_PassesThroughUnchanged(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	name := "Renamed Cashier"
 	in := UpdateStaffRequest{Name: &name}
+	before := &Staff{ID: 1, Name: "Old Name"}
 	want := &Staff{ID: 1, Name: name}
 
+	repo.EXPECT().GetStaff(mock.Anything, uint(7), uint(1)).Return(before, nil).Once()
 	repo.EXPECT().UpdateStaff(mock.Anything, uint(7), uint(1), in).Return(want, nil).Once()
+	audW.EXPECT().CreateAuditLog(mock.Anything, mock.Anything).Return(nil).Once()
 
-	result, err := svc.UpdateStaff(context.Background(), 7, 1, in)
+	result, err := svc.UpdateStaff(context.Background(), 7, 9, 1, in)
 	require.NoError(t, err)
 	require.Same(t, want, result)
 }
 
 func TestService_UpdateStaff_PropagatesNotFound(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	in := UpdateStaffRequest{}
 	wantErr := common.NotFoundError("staff not found")
-	repo.EXPECT().UpdateStaff(mock.Anything, uint(7), uint(999), in).Return(nil, wantErr).Once()
+	repo.EXPECT().GetStaff(mock.Anything, uint(7), uint(999)).Return(nil, wantErr).Once()
+	// UpdateStaff/CreateAuditLog must never be called - rejected before
+	// either happens.
 
-	_, err := svc.UpdateStaff(context.Background(), 7, 999, in)
+	_, err := svc.UpdateStaff(context.Background(), 7, 9, 999, in)
 	require.Error(t, err)
 	requireRestErrorStatus(t, err, http.StatusNotFound)
 }
 
 func TestService_VerifyStaffPIN_HappyPath_NoBranchRestriction(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	const plaintext = "123456"
 	staff := &Staff{ID: 5, BranchID: 3, RoleID: 2, PinHash: hashPassword(t, plaintext)}
@@ -1067,7 +1138,8 @@ func TestService_VerifyStaffPIN_HappyPath_NoBranchRestriction(t *testing.T) {
 
 func TestService_VerifyStaffPIN_MatchingBranch_Succeeds(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	const plaintext = "123456"
 	staff := &Staff{ID: 5, BranchID: 3, RoleID: 2, PinHash: hashPassword(t, plaintext)}
@@ -1082,7 +1154,8 @@ func TestService_VerifyStaffPIN_MatchingBranch_Succeeds(t *testing.T) {
 
 func TestService_VerifyStaffPIN_WrongBranch_ReturnsGenericUnauthorized(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	const plaintext = "123456"
 	staff := &Staff{ID: 5, BranchID: 3, RoleID: 2, PinHash: hashPassword(t, plaintext)}
@@ -1100,7 +1173,8 @@ func TestService_VerifyStaffPIN_WrongBranch_ReturnsGenericUnauthorized(t *testin
 
 func TestService_VerifyStaffPIN_WrongPin_ReturnsSameGenericUnauthorized(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	staff := &Staff{ID: 5, BranchID: 3, RoleID: 2, PinHash: hashPassword(t, "123456")}
 	repo.EXPECT().GetStaff(mock.Anything, uint(7), uint(5)).Return(staff, nil).Once()
@@ -1117,7 +1191,8 @@ func TestService_VerifyStaffPIN_WrongPin_ReturnsSameGenericUnauthorized(t *testi
 
 func TestService_VerifyStaffPIN_StaffNotFound_ReturnsSameGenericUnauthorized(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	repo.EXPECT().GetStaff(mock.Anything, uint(7), uint(999)).
 		Return(nil, common.NotFoundError("staff not found")).Once()
@@ -1134,7 +1209,8 @@ func TestService_VerifyStaffPIN_StaffNotFound_ReturnsSameGenericUnauthorized(t *
 
 func TestService_VerifyStaffPIN_UnexpectedRepositoryError_PropagatesAsIs(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	dbErr := errors.New("connection refused")
 	repo.EXPECT().GetStaff(mock.Anything, uint(7), uint(5)).Return(nil, dbErr).Once()
@@ -1145,7 +1221,8 @@ func TestService_VerifyStaffPIN_UnexpectedRepositoryError_PropagatesAsIs(t *test
 
 func TestService_VerifyStaffPIN_WrongPin_ReachesThreshold_LocksOut(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	// already at 4 prior failures - this 5th wrong guess must trigger the lock.
 	staff := &Staff{ID: 5, BranchID: 3, RoleID: 2, PinHash: hashPassword(t, "123456"), FailedPinAttempts: DefaultPinLockoutThreshold - 1}
@@ -1163,7 +1240,8 @@ func TestService_VerifyStaffPIN_WrongPin_ReachesThreshold_LocksOut(t *testing.T)
 
 func TestService_VerifyStaffPIN_CurrentlyLockedOut_RejectsWithoutCheckingPin(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	lockedUntil := time.Now().Add(10 * time.Minute)
 	// correct PIN, but locked out - must still be rejected, and must not
@@ -1178,7 +1256,8 @@ func TestService_VerifyStaffPIN_CurrentlyLockedOut_RejectsWithoutCheckingPin(t *
 
 func TestService_VerifyStaffPIN_LockoutExpired_AllowsRetryAgain(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	expiredLock := time.Now().Add(-1 * time.Minute)
 	const plaintext = "123456"
@@ -1194,7 +1273,8 @@ func TestService_VerifyStaffPIN_LockoutExpired_AllowsRetryAgain(t *testing.T) {
 
 func TestService_VerifyManagerPIN_HappyPath_GrantsShortLivedToken(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	const plaintext = "654321"
 	staff := &Staff{ID: 9, BranchID: 3, RoleID: 3, PinHash: hashPassword(t, plaintext)}
@@ -1216,7 +1296,8 @@ func TestService_VerifyManagerPIN_HappyPath_GrantsShortLivedToken(t *testing.T) 
 
 func TestService_VerifyManagerPIN_RoleLacksPermission_ReturnsGenericUnauthorized(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	const plaintext = "654321"
 	// a super_staff-shaped role: has apply_manual_discount but not approve_void
@@ -1236,7 +1317,8 @@ func TestService_VerifyManagerPIN_RoleLacksPermission_ReturnsGenericUnauthorized
 
 func TestService_VerifyManagerPIN_WrongBranch_ReturnsGenericUnauthorized(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	staff := &Staff{ID: 9, BranchID: 3, RoleID: 3, PinHash: hashPassword(t, "654321")}
 	repo.EXPECT().GetStaff(mock.Anything, uint(7), uint(9)).Return(staff, nil).Once()
@@ -1253,7 +1335,8 @@ func TestService_VerifyManagerPIN_WrongBranch_ReturnsGenericUnauthorized(t *test
 
 func TestService_VerifyManagerPIN_WrongPin_ReturnsSameGenericUnauthorized(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	staff := &Staff{ID: 9, BranchID: 3, RoleID: 3, PinHash: hashPassword(t, "654321")}
 	repo.EXPECT().GetStaff(mock.Anything, uint(7), uint(9)).Return(staff, nil).Once()
@@ -1270,7 +1353,8 @@ func TestService_VerifyManagerPIN_WrongPin_ReturnsSameGenericUnauthorized(t *tes
 
 func TestService_VerifyManagerPIN_StaffNotFound_ReturnsSameGenericUnauthorized(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	repo.EXPECT().GetStaff(mock.Anything, uint(7), uint(999)).
 		Return(nil, common.NotFoundError("staff not found")).Once()
@@ -1287,7 +1371,8 @@ func TestService_VerifyManagerPIN_StaffNotFound_ReturnsSameGenericUnauthorized(t
 
 func TestService_VerifyManagerPIN_UnexpectedRepositoryError_PropagatesAsIs(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	dbErr := errors.New("connection refused")
 	repo.EXPECT().GetStaff(mock.Anything, uint(7), uint(9)).Return(nil, dbErr).Once()
@@ -1302,7 +1387,8 @@ func TestService_VerifyManagerPIN_UnexpectedRepositoryError_PropagatesAsIs(t *te
 
 func TestService_CreateDevice_DelegatesToRepository(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	in := CreateDeviceRequest{BranchID: 1, Name: "Front Counter iPad", Status: DeviceStatusActive}
 	want := &Device{ID: 1, BranchID: 1}
@@ -1315,7 +1401,8 @@ func TestService_CreateDevice_DelegatesToRepository(t *testing.T) {
 
 func TestService_CreateDevice_PropagatesRepositoryError(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	in := CreateDeviceRequest{BranchID: 999, Name: "Sneaky Device", Status: DeviceStatusActive}
 	wantErr := common.NotFoundError("branch not found")
@@ -1328,7 +1415,8 @@ func TestService_CreateDevice_PropagatesRepositoryError(t *testing.T) {
 
 func TestService_ListDevices_DelegatesToRepository(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	want := []Device{{ID: 1, BranchID: 1}, {ID: 2, BranchID: 2}}
 	repo.EXPECT().ListDevices(mock.Anything, uint(7)).Return(want, nil).Once()
@@ -1340,7 +1428,8 @@ func TestService_ListDevices_DelegatesToRepository(t *testing.T) {
 
 func TestService_ListDevices_PropagatesRepositoryError(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	wantErr := common.SystemError("db read failed")
 	repo.EXPECT().ListDevices(mock.Anything, uint(7)).Return(nil, wantErr).Once()
@@ -1352,7 +1441,8 @@ func TestService_ListDevices_PropagatesRepositoryError(t *testing.T) {
 
 func TestService_UpdateDevice_DelegatesToRepository(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	name := "Renamed Device"
 	in := UpdateDeviceRequest{Name: &name}
@@ -1366,7 +1456,8 @@ func TestService_UpdateDevice_DelegatesToRepository(t *testing.T) {
 
 func TestService_UpdateDevice_PropagatesNotFound(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	in := UpdateDeviceRequest{}
 	wantErr := common.NotFoundError("device not found")
@@ -1383,7 +1474,8 @@ func TestService_UpdateDevice_PropagatesNotFound(t *testing.T) {
 
 func TestService_ListRoles_DelegatesToRepository(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	want := []Role{{ID: 1, Code: "owner", Name: "Owner"}, {ID: 2, Code: "cashier", Name: "Cashier"}}
 	repo.EXPECT().ListRoles(mock.Anything).Return(want, nil).Once()
@@ -1395,7 +1487,8 @@ func TestService_ListRoles_DelegatesToRepository(t *testing.T) {
 
 func TestService_ListRoles_PropagatesRepositoryError(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	wantErr := common.SystemError("db read failed")
 	repo.EXPECT().ListRoles(mock.Anything).Return(nil, wantErr).Once()
@@ -1407,7 +1500,8 @@ func TestService_ListRoles_PropagatesRepositoryError(t *testing.T) {
 
 func TestService_ListPermissions_DelegatesToRepository(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	want := []Permission{{ID: 1, Code: "products:create", Category: "catalog"}}
 	repo.EXPECT().ListPermissions(mock.Anything).Return(want, nil).Once()
@@ -1419,7 +1513,8 @@ func TestService_ListPermissions_DelegatesToRepository(t *testing.T) {
 
 func TestService_ListPermissions_PropagatesRepositoryError(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	wantErr := common.SystemError("db read failed")
 	repo.EXPECT().ListPermissions(mock.Anything).Return(nil, wantErr).Once()
@@ -1431,7 +1526,8 @@ func TestService_ListPermissions_PropagatesRepositoryError(t *testing.T) {
 
 func TestService_ListRolePermissions_DelegatesToRepository(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	want := []Permission{{ID: 1, Code: "products:create"}, {ID: 2, Code: "products:delete"}}
 	repo.EXPECT().ListRolePermissions(mock.Anything, uint(1)).Return(want, nil).Once()
@@ -1443,7 +1539,8 @@ func TestService_ListRolePermissions_DelegatesToRepository(t *testing.T) {
 
 func TestService_ListRolePermissions_PropagatesRepositoryError(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := newTestService(repo)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, audW)
 
 	wantErr := common.SystemError("db read failed")
 	repo.EXPECT().ListRolePermissions(mock.Anything, uint(1)).Return(nil, wantErr).Once()

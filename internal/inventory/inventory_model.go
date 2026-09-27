@@ -22,6 +22,9 @@ type LedgerEntryType string
 const (
 	LedgerEntryTypeSale            LedgerEntryType = "sale"
 	LedgerEntryTypeReturn          LedgerEntryType = "return"
+	LedgerEntryTypeVoid            LedgerEntryType = "void"
+	LedgerEntryTypeExchangeIn      LedgerEntryType = "exchange_in"
+	LedgerEntryTypeExchangeOut     LedgerEntryType = "exchange_out"
 	LedgerEntryTypeAdjustment      LedgerEntryType = "adjustment"
 	LedgerEntryTypeTransferIn      LedgerEntryType = "transfer_in"
 	LedgerEntryTypeTransferOut     LedgerEntryType = "transfer_out"
@@ -34,6 +37,8 @@ type ReferenceType string
 const (
 	ReferenceTypeSale          ReferenceType = "sale"
 	ReferenceTypeReturn        ReferenceType = "return"
+	ReferenceTypeVoid          ReferenceType = "void"
+	ReferenceTypeExchange      ReferenceType = "exchange"
 	ReferenceTypeAdjustment    ReferenceType = "adjustment"
 	ReferenceTypeStockTransfer ReferenceType = "stock_transfer"
 	ReferenceTypePurchaseOrder ReferenceType = "purchase_order"
@@ -88,7 +93,11 @@ type InventoryLedger struct {
 	BalanceAfter  int             `gorm:"not null" json:"balance_after"`
 	ActorID       *uint           `gorm:"index" json:"actor_id"`
 	ReferenceType ReferenceType   `gorm:"type:varchar(30);not null" json:"reference_type"` // one of ReferenceType* constants below (TODO: confirm real values)
-	ReferenceID   uint            `gorm:"not null" json:"reference_id"`                    // polymorphic: paired with ReferenceType, not a DB-level FK - see docs/db-schema.md
+	// ReferenceID is polymorphic, paired with ReferenceType, not a DB-level
+	// FK - a uint-keyed reference (adjustment/stock_transfer/purchase_order/
+	// goods_receipt) is its decimal string; a sale reference is Sale.ID's
+	// UUID string (Sale is the one referenced record that isn't uint-keyed).
+	ReferenceID string `gorm:"type:text;not null" json:"reference_id"`
 	CreatedAt     time.Time       `gorm:"autoCreateTime;not null" json:"created_at"`
 }
 

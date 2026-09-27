@@ -1,6 +1,19 @@
 package identity
 
-import "context"
+import (
+	"context"
+
+	"gorm.io/gorm"
+
+	"shagan_pos/internal/audit"
+)
+
+// AuditWriter is what identity needs from audit: recording a privileged
+// staff change as an audit entry, same reasoning as sales.AuditWriter.
+// audit.Repository already satisfies this signature - no adapter needed.
+type AuditWriter interface {
+	CreateAuditLog(db *gorm.DB, entry *audit.AuditLog) error
+}
 
 // Interface defines the identity domain's use cases.
 type Interface interface {
@@ -34,7 +47,12 @@ type Interface interface {
 	ListStaff(ctx context.Context, orgID uint, branchID *uint) ([]Staff, error)
 	CreateStaff(ctx context.Context, orgID uint, in CreateStaffRequest) (*Staff, error)
 	GetStaff(ctx context.Context, orgID uint, id uint) (*Staff, error)
-	UpdateStaff(ctx context.Context, orgID uint, id uint, in UpdateStaffRequest) (*Staff, error)
+	// UpdateStaff writes an audit entry (Entity "staff") for the change -
+	// editing roles/PINs/status is Owner-only and privileged (see
+	// docs/WORKFLOWS.md Section 4), worth an accountability trail.
+	// actorUserID is the authenticated caller's own user ID, never client
+	// input.
+	UpdateStaff(ctx context.Context, orgID uint, actorUserID uint, id uint, in UpdateStaffRequest) (*Staff, error)
 	ListRoles(ctx context.Context) ([]Role, error)
 	ListPermissions(ctx context.Context) ([]Permission, error)
 	ListRolePermissions(ctx context.Context, id uint) ([]Permission, error)

@@ -168,11 +168,6 @@ func (r *RepositoryImpl) DeleteCategory(ctx context.Context, id uint) error {
 	return r.db.WithContext(ctx).Delete(&Category{}, id).Error
 }
 
-// UploadMedia backs `POST /media`. Upload; returns storage_key
-func (r *RepositoryImpl) UploadMedia(ctx context.Context) (*ProductImage, error) {
-	return nil, common.ErrNotImplemented
-}
-
 // ListCombos backs `GET /combos`, scoped to orgID.
 func (r *RepositoryImpl) ListCombos(ctx context.Context, orgID uint) ([]Combo, error) {
 	var combos []Combo

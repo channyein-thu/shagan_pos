@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"shagan_pos/internal/common"
 )
@@ -86,6 +87,36 @@ func (r *RepositoryImpl) ListSaleItems(ctx context.Context, saleID uuid.UUID) ([
 	return items, nil
 }
 
+// GetSaleWithLock is GetSale's transaction-participating, row-locking
+// counterpart - see the Repository interface doc.
+func (r *RepositoryImpl) GetSaleWithLock(db *gorm.DB, orgID uint, id uuid.UUID) (*Sale, error) {
+	var sale Sale
+	err := db.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ? AND org_id = ?", id, orgID).First(&sale).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, common.NotFoundError("sale not found")
+		}
+		return nil, err
+	}
+	return &sale, nil
+}
+
+// ListSaleItemsTx is ListSaleItems's transaction-participating counterpart -
+// see the Repository interface doc.
+func (r *RepositoryImpl) ListSaleItemsTx(db *gorm.DB, saleID uuid.UUID) ([]SaleItem, error) {
+	var items []SaleItem
+	if err := db.Where("sale_id = ?", saleID).Find(&items).Error; err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+// UpdateSaleStatus backs returns.Service.VoidSale. Plain field write.
+func (r *RepositoryImpl) UpdateSaleStatus(db *gorm.DB, id uuid.UUID, status SaleStatus) error {
+	return db.Model(&Sale{}).Where("id = ?", id).Update("status", status).Error
+}
+
 // ListPayments backs the receipt bundle behind `GET /sales/:id/receipt` and
 // `POST /sales/:id/reprint`.
 func (r *RepositoryImpl) ListPayments(ctx context.Context, saleID uuid.UUID) ([]Payment, error) {
@@ -96,17 +127,50 @@ func (r *RepositoryImpl) ListPayments(ctx context.Context, saleID uuid.UUID) ([]
 	return payments, nil
 }
 
-// CreateHeldSale backs `POST /held-sales`.
+// CreateHeldSale backs `POST /held-sales`. Plain insert.
 func (r *RepositoryImpl) CreateHeldSale(ctx context.Context, in CreateHeldSaleRequest) (*HeldSale, error) {
-	return nil, common.ErrNotImplemented
+	held := HeldSale{
+		BranchID:    in.BranchID,
+		StaffID:     in.StaffID,
+		CustomerRef: in.CustomerRef,
+		Items:       in.Items,
+		Discount:    in.Discount,
+		HeldAt:      in.HeldAt,
+	}
+	if err := r.db.WithContext(ctx).Create(&held).Error; err != nil {
+		return nil, err
+	}
+	return &held, nil
 }
 
-// ListHeldSales backs `GET /held-sales`.
-func (r *RepositoryImpl) ListHeldSales(ctx context.Context) ([]HeldSale, error) {
-	return nil, common.ErrNotImplemented
+// ListHeldSales backs `GET /held-sales`. Branch-scoped, not staff-scoped -
+// see the Repository interface doc comment.
+func (r *RepositoryImpl) ListHeldSales(ctx context.Context, branchID uint) ([]HeldSale, error) {
+	var held []HeldSale
+	if err := r.db.WithContext(ctx).Where("branch_id = ?", branchID).Order("held_at DESC").Find(&held).Error; err != nil {
+		return nil, err
+	}
+	return held, nil
 }
 
-// ResumeHeldSale backs `DELETE /held-sales/:id`. Resume - atomic delete-and-restore
-func (r *RepositoryImpl) ResumeHeldSale(ctx context.Context, id uint) (*HeldSale, error) {
-	return nil, common.ErrNotImplemented
+// ResumeHeldSale backs `DELETE /held-sales/:id`. Atomic delete-and-restore -
+// locks the row so two concurrent resume attempts can't both succeed.
+func (r *RepositoryImpl) ResumeHeldSale(ctx context.Context, branchID uint, id uint) (*HeldSale, error) {
+	var held HeldSale
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND branch_id = ?", id, branchID).
+			First(&held).Error
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return common.NotFoundError("held sale not found")
+			}
+			return err
+		}
+		return tx.Delete(&held).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &held, nil
 }

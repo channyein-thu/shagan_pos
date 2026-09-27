@@ -2206,11 +2206,18 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/inventory/low-stock",
+              "raw": "{{baseUrl}}/api/v1/inventory/low-stock?branch_id=1",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "inventory", "low-stock"]
+              "path": ["api", "v1", "inventory", "low-stock"],
+              "query": [
+                {
+                  "key": "branch_id",
+                  "value": "1",
+                  "description": "Optional - owner/service_center only (a pos-device token's own branch always wins instead). Must belong to your own org."
+                }
+              ]
             },
-            "description": "ListLowStock"
+            "description": "Lists stock levels that have fallen to or below their product's own reorder threshold. Same scoping as ListStockLevels - restricted to the caller's own branch when the token carries one, org-wide otherwise. branch_id is optional."
           },
           "response": []
         },
@@ -2264,7 +2271,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{}",
+              "raw": "{\n  \"product_id\": 1,\n  \"delta\": -3,\n  \"reason\": \"damaged in storage\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2276,7 +2283,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "inventory", "adjustments"]
             },
-            "description": "Writes a ledger row as a side effect"
+            "description": "Applies delta to product_id's stock at its own branch (a product lives at exactly one branch - branch_id is never client-supplied) and writes one inventory_ledger row, atomically. delta can be positive (e.g. a manual recount finding more stock) or negative (e.g. shrinkage/damage). Returns 409 Conflict if delta would take quantity below zero - stock can never go negative from a movement this domain controls. actor_id is never client input - it's the authenticated caller's own user ID."
           },
           "response": []
         },
@@ -2292,11 +2299,18 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/stock-transfers",
+              "raw": "{{baseUrl}}/api/v1/stock-transfers?branch_id=1",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "stock-transfers"]
+              "path": ["api", "v1", "stock-transfers"],
+              "query": [
+                {
+                  "key": "branch_id",
+                  "value": "1",
+                  "description": "Optional - owner/service_center only (a pos-device token's own branch always wins instead). Matches a transfer where this branch is either the sender or the receiver."
+                }
+              ]
             },
-            "description": "ListStockTransfers"
+            "description": "Lists stock transfers in the caller's org. Same scoping as ListStockLevels. branch_id is optional and matches a transfer where the branch is either from_branch or to_branch."
           },
           "response": []
         },
@@ -2318,7 +2332,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{}",
+              "raw": "{\n  \"from_branch\": 1,\n  \"to_branch\": 2,\n  \"items\": [\n    {\"product_id\": 1, \"qty\": 5}\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2330,7 +2344,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "stock-transfers"]
             },
-            "description": "Also writes stock_transfers_items"
+            "description": "Creates a new stock transfer at status pending - no stock moves yet. from_branch/to_branch must both belong to your org and differ. Every item's product must belong to your org AND to from_branch specifically (a product lives at exactly one branch). actor_id is never client input - it's the authenticated caller's own user ID. Advance it with UpdateStockTransfer - moving it to completed is what actually decrements from_branch's stock and credits to_branch's."
           },
           "response": []
         },
@@ -2352,7 +2366,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{}",
+              "raw": "{\n  \"status\": \"in_transit\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2370,7 +2384,7 @@
                 }
               ]
             },
-            "description": "Status lifecycle: pending -> in-transit -> received"
+            "description": "Advances a stock transfer's status: pending -> in_transit -> completed, or -> cancelled from either pending or in_transit. Rejects with 409 Conflict if the transfer is already completed or cancelled. Moving to completed is the one transition with a real stock effect - decrements every item's qty from from_branch and credits it to to_branch, atomically, writing one transfer_out and one transfer_in inventory_ledger row per item. Rejects with 409 Conflict if from_branch doesn't have enough stock for any item - nothing moves for any item in that case. status must be one of: in_transit, completed, cancelled."
           },
           "response": []
         }
@@ -2618,6 +2632,17 @@
                 "type": "text"
               },
               {
+                "key": "X-Staff-Token",
+                "value": "{{staffToken}}",
+                "type": "text"
+              },
+              {
+                "key": "X-Manager-Approval-Token",
+                "value": "{{managerApprovalToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
                 "key": "Content-Type",
                 "value": "application/json",
                 "type": "text"
@@ -2625,7 +2650,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{}",
+              "raw": "{\n  \"reason\": \"staff_error\",\n  \"explanation\": \"rang up the wrong item\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2643,7 +2668,7 @@
                 }
               ]
             },
-            "description": "Full or partial"
+            "description": "Reverses the entire sale - there is no partial void (see docs/WORKFLOWS.md Section 9). Requires X-Staff-Token; the acting staff needs approve_void themselves, OR X-Manager-Approval-Token grants it instead. Rejects (409) if the sale is already voided, if its shift is no longer open (a void is only valid within the same shift it was rung up in), or if any Return/Exchange already references it. Credits back every item's decremented stock and marks the sale voided, atomically."
           },
           "response": []
         },
@@ -2659,11 +2684,18 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/voids",
+              "raw": "{{baseUrl}}/api/v1/voids?branch_id=1",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "voids"]
+              "path": ["api", "v1", "voids"],
+              "query": [
+                {
+                  "key": "branch_id",
+                  "value": "1",
+                  "description": "Optional - owner/service_center only (a pos-device token's own branch always wins instead)."
+                }
+              ]
             },
-            "description": "ListVoids"
+            "description": "Lists voids in the caller's org. Restricted to the caller's own branch when the token carries one - org-wide otherwise, same reasoning as inventory.ListStockLevels."
           },
           "response": []
         },
@@ -2678,6 +2710,17 @@
                 "type": "text"
               },
               {
+                "key": "X-Staff-Token",
+                "value": "{{staffToken}}",
+                "type": "text"
+              },
+              {
+                "key": "X-Manager-Approval-Token",
+                "value": "{{managerApprovalToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
                 "key": "Content-Type",
                 "value": "application/json",
                 "type": "text"
@@ -2685,7 +2728,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{}",
+              "raw": "{\n  \"sale_id\": \"11111111-1111-1111-1111-111111111111\",\n  \"items\": [\n    {\"sale_item_id\": 1, \"qty\": 1, \"condition\": \"sellable\"}\n  ],\n  \"reason_code\": \"changed_mind\",\n  \"refund_method\": \"cash\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2697,7 +2740,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "returns"]
             },
-            "description": "Also writes return_items"
+            "description": "Also writes return_items. Requires X-Staff-Token; the acting staff needs approve_return themselves, OR X-Manager-Approval-Token grants it instead. Confirms the sale is completed (not voided) and every item belongs to it with enough not-yet-returned-or-exchanged qty remaining, computes refund_total server-side from each item's own original per-unit price (never client-supplied), and restocks each condition=\"sellable\" item at the sale's own branch - all atomically. No fixed return time window in v1 - any completed sale can be returned regardless of age."
           },
           "response": []
         },
@@ -2713,11 +2756,18 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/returns",
+              "raw": "{{baseUrl}}/api/v1/returns?branch_id=1",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "returns"]
+              "path": ["api", "v1", "returns"],
+              "query": [
+                {
+                  "key": "branch_id",
+                  "value": "1",
+                  "description": "Optional - owner/service_center only (a pos-device token's own branch always wins instead)."
+                }
+              ]
             },
-            "description": "ListReturns"
+            "description": "Lists returns in the caller's org. Same scoping as ListVoids."
           },
           "response": []
         },
@@ -2743,7 +2793,7 @@
                 }
               ]
             },
-            "description": "GetReturn"
+            "description": "Same scoping as ListVoids."
           },
           "response": []
         },
@@ -2758,6 +2808,17 @@
                 "type": "text"
               },
               {
+                "key": "X-Staff-Token",
+                "value": "{{staffToken}}",
+                "type": "text"
+              },
+              {
+                "key": "X-Manager-Approval-Token",
+                "value": "{{managerApprovalToken}}",
+                "type": "text",
+                "disabled": true
+              },
+              {
                 "key": "Content-Type",
                 "value": "application/json",
                 "type": "text"
@@ -2765,7 +2826,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{}",
+              "raw": "{\n  \"sale_id\": \"11111111-1111-1111-1111-111111111111\",\n  \"items\": [\n    {\"direction\": \"in\", \"sale_item_id\": 1, \"qty\": 1},\n    {\"direction\": \"out\", \"product_id\": 5, \"qty\": 1, \"unit_price\": 2.00}\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2777,7 +2838,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "exchanges"]
             },
-            "description": "Also writes exchange_items"
+            "description": "Also writes exchange_items. Requires X-Staff-Token; the acting staff needs approve_exchange themselves, OR X-Manager-Approval-Token grants it instead. Modeled as one combined transaction (not a chained Return-then-Sale). An \"in\" item (sale_item_id) is something the customer is returning - its price is derived from the original sale, never client input. An \"out\" item (product_id + unit_price) is a new item the customer is taking instead. net_difference is computed server-side (out total minus in total) - positive means the customer owes more, negative means they're owed the difference. Credits stock for \"in\" items and decrements it for \"out\" items at the sale's own branch, atomically."
           },
           "response": []
         },
@@ -2793,11 +2854,18 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/exchanges",
+              "raw": "{{baseUrl}}/api/v1/exchanges?branch_id=1",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "exchanges"]
+              "path": ["api", "v1", "exchanges"],
+              "query": [
+                {
+                  "key": "branch_id",
+                  "value": "1",
+                  "description": "Optional - owner/service_center only (a pos-device token's own branch always wins instead)."
+                }
+              ]
             },
-            "description": "ListExchanges"
+            "description": "Lists exchanges in the caller's org. Same scoping as ListVoids."
           },
           "response": []
         },
@@ -2823,7 +2891,7 @@
                 }
               ]
             },
-            "description": "GetExchange"
+            "description": "Same scoping as ListVoids."
           },
           "response": []
         }
@@ -3468,11 +3536,18 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/audit-log",
+              "raw": "{{baseUrl}}/api/v1/audit-log?branch_id=1",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "audit-log"]
+              "path": ["api", "v1", "audit-log"],
+              "query": [
+                {
+                  "key": "branch_id",
+                  "value": "1",
+                  "description": "Optional - owner/service_center only (a pos-device token's own branch always wins instead)."
+                }
+              ]
             },
-            "description": "Read-only; written via mutation hooks, not a public POST"
+            "description": "Read-only; written via mutation hooks in other domains' own service methods, not a public POST. Curated v1 scope (not every mutation everywhere): Void/Return/Exchange approvals, manual discount applications, and staff record changes (role/PIN/status). Each entry's before/after are full JSON snapshots (before is null for a Create-shaped action like a Return/Exchange/discount, since nothing existed beforehand). Ordered newest-first."
           },
           "response": []
         }
@@ -3493,11 +3568,18 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/sync/catalog",
+              "raw": "{{baseUrl}}/api/v1/sync/catalog?branch_id=1",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "sync", "catalog"]
+              "path": ["api", "v1", "sync", "catalog"],
+              "query": [
+                {
+                  "key": "branch_id",
+                  "value": "1",
+                  "description": "Optional - owner/service_center only (a pos-device token's own branch always wins instead)."
+                }
+              ]
             },
-            "description": "Snapshot + ETag for offline caching (products/categories/combos)"
+            "description": "Snapshot + ETag for offline caching (products/categories/combos) - everything a device needs cached locally to ring up sales offline. Send the ETag response header back as If-None-Match on a later call - a 304 with no body means the device's cached copy is still current, saving the re-download. The ETag is stable across calls even though each image's URL is a freshly re-signed link every time (it hashes a redacted copy with URLs blanked out, not the raw response)."
           },
           "response": []
         },
@@ -3510,34 +3592,28 @@
                 "key": "Authorization",
                 "value": "Bearer {{token}}",
                 "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
               }
             ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sales\": [\n    {\n      \"id\": \"11111111-1111-1111-1111-111111111111\",\n      \"shift_id\": 1,\n      \"staff_id\": 14,\n      \"device_id\": 3,\n      \"items\": [\n        {\"product_id\": 1, \"name_snapshot\": \"Cola 500ml\", \"unit_price\": 1.50, \"qty\": 2, \"discount\": 0, \"tax\": 0}\n      ],\n      \"payments\": [\n        {\"method\": \"cash\", \"amount\": 3.00, \"amount_received\": 3.00, \"change_given\": 0}\n      ]\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
             "url": {
               "raw": "{{baseUrl}}/api/v1/sync/sales",
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "sync", "sales"]
             },
-            "description": "Queued-sale ingest, idempotent"
-          },
-          "response": []
-        },
-        {
-          "name": "FlushSync - POST /sync/flush",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/sync/flush",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "sync", "flush"]
-            },
-            "description": "FlushSync"
+            "description": "Batch-uploads a device's offline-queued sales - each shaped exactly like a normal POST /sales body. branch_id comes from the caller's own pos-device token, never client input. Idempotent by each sale's own client-generated id - resubmitting an already-arrived sale is a safe no-op reported as success, not an error. Every queued sale is treated as pre-authorized (manual discounts included, no permission re-check) since it already happened at the register. If it would take a product's stock negative, it's let through anyway (not rejected) and a SyncConflict is recorded instead - see GetSyncStatus/ListSyncConflicts. A sale that fails for another reason (e.g. its shift has since closed) is reported as a failed item in the response, not silently dropped."
           },
           "response": []
         },
@@ -3553,11 +3629,18 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/sync/status",
+              "raw": "{{baseUrl}}/api/v1/sync/status?branch_id=1",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "sync", "status"]
+              "path": ["api", "v1", "sync", "status"],
+              "query": [
+                {
+                  "key": "branch_id",
+                  "value": "1",
+                  "description": "Optional - owner/service_center only (a pos-device token's own branch always wins instead)."
+                }
+              ]
             },
-            "description": "GetSyncStatus"
+            "description": "unresolved_conflict_count and last_synced_at (the most recent Sale.SyncedAt among sales in scope, null if none have ever synced - only IngestQueuedSales ever sets it)."
           },
           "response": []
         },
@@ -3573,11 +3656,18 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/sync/conflicts",
+              "raw": "{{baseUrl}}/api/v1/sync/conflicts?branch_id=1",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "sync", "conflicts"]
+              "path": ["api", "v1", "sync", "conflicts"],
+              "query": [
+                {
+                  "key": "branch_id",
+                  "value": "1",
+                  "description": "Optional - owner/service_center only (a pos-device token's own branch always wins instead)."
+                }
+              ]
             },
-            "description": "ListSyncConflicts"
+            "description": "The one real cross-device conflict this domain expects: two offline devices both sold the last unit of something. Each row's payload is the product/branch/resulting (negative) qty - resolve it manually via the Inventory Ledger, then PATCH .../resolve to mark it reviewed."
           },
           "response": []
         },
@@ -3603,7 +3693,7 @@
                 }
               ]
             },
-            "description": "Sets resolved_by/resolved_at"
+            "description": "Sets resolved_by/resolved_at (resolved_by is the authenticated caller's own user id, never client input). Rejects (409) if already resolved. Only records that a human has seen and dealt with it - it doesn't itself change any stock."
           },
           "response": []
         }
@@ -3624,11 +3714,18 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/reports/home-summary",
+              "raw": "{{baseUrl}}/api/v1/reports/home-summary?branch_id=1",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "reports", "home-summary"]
+              "path": ["api", "v1", "reports", "home-summary"],
+              "query": [
+                {
+                  "key": "branch_id",
+                  "value": "1",
+                  "description": "Optional - owner/service_center only (a pos-device token's own branch always wins instead)."
+                }
+              ]
             },
-            "description": "GetHomeSummary"
+            "description": "Dashboard header cards for today only (no date range). net_sales = gross_sales - discounts - returns, tax excluded, and a voided sale never counts at all (erased, not counted-then-subtracted). low_stock_count mirrors StockOverview's own figure as a convenience."
           },
           "response": []
         },
@@ -3644,11 +3741,18 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/reports/stock-overview",
+              "raw": "{{baseUrl}}/api/v1/reports/stock-overview?branch_id=1",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "reports", "stock-overview"]
+              "path": ["api", "v1", "reports", "stock-overview"],
+              "query": [
+                {
+                  "key": "branch_id",
+                  "value": "1",
+                  "description": "Optional - owner/service_center only (a pos-device token's own branch always wins instead)."
+                }
+              ]
             },
-            "description": "GetStockOverview"
+            "description": "Dashboard widget - always current, no date range (stock levels have no historical dimension). low_stock_count and out_of_stock_count are counted per stock_levels row, so a product with stock at more than one branch (via a completed transfer) can contribute to both counts once per branch."
           },
           "response": []
         },
@@ -3664,11 +3768,18 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/reports/today",
+              "raw": "{{baseUrl}}/api/v1/reports/today?branch_id=1",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "reports", "today"]
+              "path": ["api", "v1", "reports", "today"],
+              "query": [
+                {
+                  "key": "branch_id",
+                  "value": "1",
+                  "description": "Optional - owner/service_center only (a pos-device token's own branch always wins instead)."
+                }
+              ]
             },
-            "description": "GetTodayReport"
+            "description": "Bundles a full \"Today\" tab in one call - headline totals (same gross/discounts/returns/net formula as SalesSummary), an hourly Net Sales trend, a payment-method split (amount actually collected, tax-inclusive), and the top 5 products by revenue - so the frontend's default Reports view doesn't need four separate round trips."
           },
           "response": []
         },
@@ -3684,11 +3795,17 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/reports/revenue-trend",
+              "raw": "{{baseUrl}}/api/v1/reports/revenue-trend?branch_id=1&from=2026-09-01&to=2026-09-27&granularity=daily",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "reports", "revenue-trend"]
+              "path": ["api", "v1", "reports", "revenue-trend"],
+              "query": [
+                {"key": "branch_id", "value": "1", "description": "Optional - owner/service_center only (a pos-device token's own branch always wins instead)."},
+                {"key": "from", "value": "2026-09-01", "description": "Optional, YYYY-MM-DD, inclusive. Defaults (with to) to the last 30 days."},
+                {"key": "to", "value": "2026-09-27", "description": "Optional, YYYY-MM-DD, inclusive."},
+                {"key": "granularity", "value": "daily", "description": "Optional - one of: daily, weekly, monthly. Defaults to daily."}
+              ]
             },
-            "description": "GetRevenueTrend"
+            "description": "Net Sales bucketed by granularity (default daily) over from/to (default: the last 30 days). Does not net out Returns per-bucket - only the aggregate endpoints (HomeSummary/TodayReport/SalesSummary) do that; every real bucket has zero returns today regardless, since Returns isn't built yet."
           },
           "response": []
         },
@@ -3704,11 +3821,16 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/reports/sales-summary",
+              "raw": "{{baseUrl}}/api/v1/reports/sales-summary?branch_id=1&from=2026-09-01&to=2026-09-27",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "reports", "sales-summary"]
+              "path": ["api", "v1", "reports", "sales-summary"],
+              "query": [
+                {"key": "branch_id", "value": "1", "description": "Optional - owner/service_center only (a pos-device token's own branch always wins instead)."},
+                {"key": "from", "value": "2026-09-01", "description": "Optional, YYYY-MM-DD, inclusive. Defaults (with to) to the last 30 days."},
+                {"key": "to", "value": "2026-09-27", "description": "Optional, YYYY-MM-DD, inclusive."}
+              ]
             },
-            "description": "GetSalesSummary"
+            "description": "The confirmed spec's core breakdown: headline net_sales = gross_sales - discounts - returns (tax excluded, a voided sale never counted at all), plus by_branch/by_payment_method/by_category views, over from/to (default: the last 30 days)."
           },
           "response": []
         },
@@ -3724,11 +3846,17 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/reports/sales-trend",
+              "raw": "{{baseUrl}}/api/v1/reports/sales-trend?branch_id=1&from=2026-09-01&to=2026-09-27&granularity=daily",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "reports", "sales-trend"]
+              "path": ["api", "v1", "reports", "sales-trend"],
+              "query": [
+                {"key": "branch_id", "value": "1", "description": "Optional - owner/service_center only (a pos-device token's own branch always wins instead)."},
+                {"key": "from", "value": "2026-09-01", "description": "Optional, YYYY-MM-DD, inclusive. Defaults (with to) to the last 30 days."},
+                {"key": "to", "value": "2026-09-27", "description": "Optional, YYYY-MM-DD, inclusive."},
+                {"key": "granularity", "value": "daily", "description": "Optional - one of: daily, weekly, monthly. Defaults to daily."}
+              ]
             },
-            "description": "GetSalesTrend"
+            "description": "Transaction count plus Net Sales bucketed by granularity (default daily) over from/to (default: the last 30 days) - same not-netting-Returns-per-bucket reasoning as RevenueTrend."
           },
           "response": []
         },
@@ -3744,11 +3872,16 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/reports/payment-methods",
+              "raw": "{{baseUrl}}/api/v1/reports/payment-methods?branch_id=1&from=2026-09-01&to=2026-09-27",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "reports", "payment-methods"]
+              "path": ["api", "v1", "reports", "payment-methods"],
+              "query": [
+                {"key": "branch_id", "value": "1", "description": "Optional - owner/service_center only (a pos-device token's own branch always wins instead)."},
+                {"key": "from", "value": "2026-09-01", "description": "Optional, YYYY-MM-DD, inclusive. Defaults (with to) to the last 30 days."},
+                {"key": "to", "value": "2026-09-27", "description": "Optional, YYYY-MM-DD, inclusive."}
+              ]
             },
-            "description": "GetPaymentMethodsReport"
+            "description": "Each payment method's share of the amount actually collected (Payment.Amount, tax-inclusive - a different question from the tax-excluded Net Sales revenue figure used elsewhere), over from/to (default: the last 30 days)."
           },
           "response": []
         },
@@ -3764,11 +3897,18 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/reports/transactions",
+              "raw": "{{baseUrl}}/api/v1/reports/transactions?branch_id=1&from=2026-09-01&to=2026-09-27&page=1&page_size=20",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "reports", "transactions"]
+              "path": ["api", "v1", "reports", "transactions"],
+              "query": [
+                {"key": "branch_id", "value": "1", "description": "Optional - owner/service_center only (a pos-device token's own branch always wins instead)."},
+                {"key": "from", "value": "2026-09-01", "description": "Optional, YYYY-MM-DD, inclusive. Defaults (with to) to the last 30 days."},
+                {"key": "to", "value": "2026-09-27", "description": "Optional, YYYY-MM-DD, inclusive."},
+                {"key": "page", "value": "1", "description": "Optional, defaults to 1."},
+                {"key": "page_size", "value": "20", "description": "Optional, defaults to 20, capped at 100."}
+              ]
             },
-            "description": "GetTransactionsReport"
+            "description": "A paginated raw sale list (newest-first) over from/to (default: the last 30 days)."
           },
           "response": []
         },
@@ -3784,11 +3924,17 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/reports/product-sales",
+              "raw": "{{baseUrl}}/api/v1/reports/product-sales?branch_id=1&from=2026-09-01&to=2026-09-27&category_id=1",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "reports", "product-sales"]
+              "path": ["api", "v1", "reports", "product-sales"],
+              "query": [
+                {"key": "branch_id", "value": "1", "description": "Optional - owner/service_center only (a pos-device token's own branch always wins instead)."},
+                {"key": "from", "value": "2026-09-01", "description": "Optional, YYYY-MM-DD, inclusive. Defaults (with to) to the last 30 days."},
+                {"key": "to", "value": "2026-09-27", "description": "Optional, YYYY-MM-DD, inclusive."},
+                {"key": "category_id", "value": "1", "description": "Optional - narrows to one category."}
+              ]
             },
-            "description": "GetProductSalesReport"
+            "description": "Every product's qty/revenue over from/to (default: the last 30 days), ranked by revenue descending, optionally narrowed to one category. Revenue is SUM(SaleItem.LineTotal) - not netted against Returns (Returns isn't built yet, and ReturnItem carries no per-line dollar amount to attribute cleanly)."
           },
           "response": []
         },
@@ -3804,11 +3950,17 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/reports/top-products",
+              "raw": "{{baseUrl}}/api/v1/reports/top-products?branch_id=1&from=2026-09-01&to=2026-09-27&limit=10",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "reports", "top-products"]
+              "path": ["api", "v1", "reports", "top-products"],
+              "query": [
+                {"key": "branch_id", "value": "1", "description": "Optional - owner/service_center only (a pos-device token's own branch always wins instead)."},
+                {"key": "from", "value": "2026-09-01", "description": "Optional, YYYY-MM-DD, inclusive. Defaults (with to) to the last 30 days."},
+                {"key": "to", "value": "2026-09-27", "description": "Optional, YYYY-MM-DD, inclusive."},
+                {"key": "limit", "value": "10", "description": "Optional, defaults to 10, capped at 100."}
+              ]
             },
-            "description": "GetTopProducts"
+            "description": "The top N products ranked by revenue (default limit 10) over from/to (default: the last 30 days) - same not-netted-against-Returns reasoning as ProductSalesReport."
           },
           "response": []
         },
@@ -3828,7 +3980,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "reports", "export"]
             },
-            "description": "DEFER per the cut list"
+            "description": "Deferred - out of the confirmed v1 Reports spec (docs/WORKFLOWS.md Section 11 has no export requirement). Stays 501 Not Implemented until Shagan schedules it."
           },
           "response": []
         }
