@@ -85,7 +85,7 @@ func registerRoutes(v1 *gin.RouterGroup, db *gorm.DB, store storage.Storage, jwt
 	api.NewCatalogAPI(db, store).RegisterRoutes(v1)
 	api.NewProcurementAPI(db).RegisterRoutes(v1)
 	api.NewInventoryAPI(db).RegisterRoutes(v1)
-	api.NewSalesAPI(db).RegisterRoutes(v1)
+	api.NewSalesAPI(db, jwtSecret).RegisterRoutes(v1)
 	api.NewReturnsAPI(db).RegisterRoutes(v1)
 	api.NewShiftAPI(db, jwtSecret).RegisterRoutes(v1)
 	api.NewSyncAPI(db).RegisterRoutes(v1)

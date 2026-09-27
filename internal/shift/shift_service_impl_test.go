@@ -41,6 +41,15 @@ type openShiftRepositoryStub struct {
 	closeShiftIn      CloseShiftRequest
 	closeShiftResult  *Shift
 	closeShiftError   error
+
+	forceCloseShiftCalled  bool
+	forceCloseShiftScope   AccessScope
+	forceCloseShiftID      uint
+	forceCloseShiftAt      time.Time
+	forceCloseShiftStaffID uint
+	forceCloseShiftIn      CloseShiftRequest
+	forceCloseShiftResult  *Shift
+	forceCloseShiftError   error
 }
 
 func (r *openShiftRepositoryStub) OpenShift(_ context.Context, in OpenShiftRequest) (*Shift, error) {
@@ -71,6 +80,16 @@ func (r *openShiftRepositoryStub) CloseShift(_ context.Context, scope AccessScop
 	r.closeShiftStaffID = staffID
 	r.closeShiftIn = in
 	return r.closeShiftResult, r.closeShiftError
+}
+
+func (r *openShiftRepositoryStub) ForceCloseShift(_ context.Context, scope AccessScope, id uint, closedAt time.Time, closedByStaffID uint, in CloseShiftRequest) (*Shift, error) {
+	r.forceCloseShiftCalled = true
+	r.forceCloseShiftScope = scope
+	r.forceCloseShiftID = id
+	r.forceCloseShiftAt = closedAt
+	r.forceCloseShiftStaffID = closedByStaffID
+	r.forceCloseShiftIn = in
+	return r.forceCloseShiftResult, r.forceCloseShiftError
 }
 
 func TestService_OpenShift_NormalizesServerOwnedStateBeforePersisting(t *testing.T) {
@@ -255,6 +274,72 @@ func TestService_CloseShift_PropagatesRepositoryError(t *testing.T) {
 	svc := NewService(repo)
 
 	got, err := svc.CloseShift(context.Background(), AccessScope{OrgID: 3}, 42, 9, CloseShiftRequest{ClosingCash: decimal.NewFromInt(100)})
+
+	require.Nil(t, got)
+	var restErr common.RestError
+	require.True(t, errors.As(err, &restErr))
+	require.Equal(t, wantErr, restErr)
+}
+
+func TestService_ForceCloseShift_DelegatesWithTrimmedReason(t *testing.T) {
+	want := &Shift{ID: 42, Status: ShiftStatusClosed}
+	repo := &openShiftRepositoryStub{forceCloseShiftResult: want}
+	svc := NewService(repo)
+	fixedNow := time.Date(2026, time.September, 15, 21, 45, 0, 0, time.UTC)
+	svc.now = func() time.Time { return fixedNow }
+
+	scope := AccessScope{OrgID: 3}
+	got, err := svc.ForceCloseShift(context.Background(), scope, 42, 20, CloseShiftRequest{
+		ClosingCash: decimal.NewFromInt(100),
+		Reason:      "  staff called in sick, closing on their behalf  ",
+	})
+
+	require.NoError(t, err)
+	require.Same(t, want, got)
+	require.True(t, repo.forceCloseShiftCalled)
+	require.Equal(t, scope, repo.forceCloseShiftScope)
+	require.Equal(t, uint(42), repo.forceCloseShiftID)
+	require.Equal(t, fixedNow, repo.forceCloseShiftAt)
+	require.Equal(t, uint(20), repo.forceCloseShiftStaffID)
+	require.Equal(t, "staff called in sick, closing on their behalf", repo.forceCloseShiftIn.Reason)
+}
+
+func TestService_ForceCloseShift_RequiresReasonEvenWhenCashMatches(t *testing.T) {
+	repo := &openShiftRepositoryStub{}
+	svc := NewService(repo)
+
+	got, err := svc.ForceCloseShift(context.Background(), AccessScope{OrgID: 3}, 42, 20, CloseShiftRequest{
+		ClosingCash: decimal.NewFromInt(100),
+	})
+
+	require.Nil(t, got)
+	require.False(t, repo.forceCloseShiftCalled)
+	requireRestErrorStatus(t, err, http.StatusBadRequest)
+}
+
+func TestService_ForceCloseShift_RejectsInvalidClosingCashWithoutPersisting(t *testing.T) {
+	repo := &openShiftRepositoryStub{}
+	svc := NewService(repo)
+
+	got, err := svc.ForceCloseShift(context.Background(), AccessScope{OrgID: 3}, 42, 20, CloseShiftRequest{
+		ClosingCash: decimal.RequireFromString("-0.01"),
+		Reason:      "still invalid regardless of reason",
+	})
+
+	require.Nil(t, got)
+	require.False(t, repo.forceCloseShiftCalled)
+	requireRestErrorStatus(t, err, http.StatusBadRequest)
+}
+
+func TestService_ForceCloseShift_PropagatesRepositoryError(t *testing.T) {
+	wantErr := common.NotFoundError("shift not found")
+	repo := &openShiftRepositoryStub{forceCloseShiftError: wantErr}
+	svc := NewService(repo)
+
+	got, err := svc.ForceCloseShift(context.Background(), AccessScope{OrgID: 3}, 42, 20, CloseShiftRequest{
+		ClosingCash: decimal.NewFromInt(100),
+		Reason:      "staff unavailable",
+	})
 
 	require.Nil(t, got)
 	var restErr common.RestError

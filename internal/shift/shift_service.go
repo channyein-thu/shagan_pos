@@ -8,6 +8,9 @@ type Interface interface {
 	GetCurrentShift(ctx context.Context, orgID, userID uint) (*Shift, error)
 	GetShift(ctx context.Context, scope AccessScope, id uint) (*Shift, error)
 	CloseShift(ctx context.Context, scope AccessScope, id uint, staffID uint, in CloseShiftRequest) (*Shift, error)
+	// ForceCloseShift is CloseShift's Manager-only escape hatch - Reason is
+	// always required, not just on a cash mismatch - see Repository.ForceCloseShift.
+	ForceCloseShift(ctx context.Context, scope AccessScope, id uint, closedByStaffID uint, in CloseShiftRequest) (*Shift, error)
 	GetShiftSummary(ctx context.Context, scope AccessScope, id uint) (map[string]any, error)
 	ListShiftReconciliations(ctx context.Context, scope AccessScope, id uint) ([]ShiftReconciliation, error)
 	CreateDrawerEvent(ctx context.Context, scope AccessScope, in CreateDrawerEventRequest) (*DrawerEvent, error)

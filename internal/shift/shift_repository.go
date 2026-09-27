@@ -19,8 +19,18 @@ type Repository interface {
 	// carries the physically-counted cash amount - see CloseShiftRequest.
 	// staffID must match the shift's own StaffID (whoever opened it) - a
 	// shift can only be closed by the same staff member who opened it, no
-	// exceptions - returns common.ForbiddenError otherwise.
+	// exceptions - returns common.ForbiddenError otherwise. Sets
+	// Shift.ClosedByStaffID to staffID (always equal to StaffID here).
 	CloseShift(ctx context.Context, scope AccessScope, id uint, closedAt time.Time, staffID uint, in CloseShiftRequest) (*Shift, error)
+	// ForceCloseShift is CloseShift without the "same staff who opened it"
+	// check - a Manager-only escape hatch for when that staff member is
+	// genuinely unavailable (e.g. called in sick) and the till would
+	// otherwise stay locked open indefinitely. closedByStaffID is who
+	// actually performed the override, recorded on Shift.ClosedByStaffID
+	// (which will differ from the shift's own StaffID, marking this as a
+	// forced close). Gated by the access_backoffice permission at the
+	// handler layer (middleware.RequirePermission), not rechecked here.
+	ForceCloseShift(ctx context.Context, scope AccessScope, id uint, closedAt time.Time, closedByStaffID uint, in CloseShiftRequest) (*Shift, error)
 	GetShiftSummary(ctx context.Context, scope AccessScope, id uint) (map[string]any, error)
 	ListShiftReconciliations(ctx context.Context, scope AccessScope, id uint) ([]ShiftReconciliation, error)
 	CreateDrawerEvent(ctx context.Context, scope AccessScope, in CreateDrawerEventRequest) (*DrawerEvent, error)

@@ -37,7 +37,14 @@ type Shift struct {
 	OpenedAt    time.Time       `gorm:"not null" json:"opened_at"`
 	OpeningCash decimal.Decimal `gorm:"type:decimal(10,2);not null" json:"opening_cash"`
 	ClosedAt    *time.Time      `json:"closed_at"`
-	Status      ShiftStatus     `gorm:"type:varchar(30);not null" json:"status"` // one of ShiftStatus* constants below (TODO: confirm real values)
+	// ClosedByStaffID records who actually performed the close - equal to
+	// StaffID for a normal close (only the shift's own staff may call
+	// CloseShift), or a different staff's ID for a manager's
+	// ForceCloseShift override (e.g. the original staff is unexpectedly
+	// unavailable). Comparing the two after the fact is how a force-close
+	// shows up distinctly, without a separate boolean flag.
+	ClosedByStaffID *uint       `gorm:"index" json:"closed_by_staff_id"`
+	Status          ShiftStatus `gorm:"type:varchar(30);not null" json:"status"` // one of ShiftStatus* constants below (TODO: confirm real values)
 }
 
 // ShiftReconciliation maps to the "Shifts_reconciliations" table in the ERD.

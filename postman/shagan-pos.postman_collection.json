@@ -1356,6 +1356,51 @@
           "response": []
         },
         {
+          "name": "ForceCloseShift - POST /shifts/:id/force-close",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "X-Staff-Token",
+                "value": "{{staffToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"closing_cash\": \"100\",\n  \"reason\": \"cashier called in sick, closing on their behalf\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/shifts/:id/force-close",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "shifts", ":id", "force-close"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Manager-only override of CloseShift's \"same staff who opened it\" rule - for when that staff is genuinely unavailable (e.g. called in sick) and the till would otherwise stay locked open indefinitely. Requires an X-Staff-Token whose role grants access_backoffice (a Manager), or 403. Unlike a normal close, reason is ALWAYS required here, even if closing_cash matches exactly - the override itself needs justification. The closed shift keeps its original staff_id (whoever opened it) but records closed_by_staff_id as whoever performed this override, so the two can be told apart afterward."
+          },
+          "response": []
+        },
+        {
           "name": "GetShiftSummary - GET /shifts/:id/summary",
           "request": {
             "method": "GET",
@@ -2314,6 +2359,11 @@
                 "type": "text"
               },
               {
+                "key": "X-Staff-Token",
+                "value": "{{staffToken}}",
+                "type": "text"
+              },
+              {
                 "key": "Content-Type",
                 "value": "application/json",
                 "type": "text"
@@ -2321,7 +2371,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"id\": \"11111111-1111-1111-1111-111111111111\",\n  \"shift_id\": 1,\n  \"staff_id\": 1,\n  \"device_id\": 1,\n  \"tax\": \"100\",\n  \"items\": [\n    {\n      \"product_id\": 1,\n      \"name_snapshot\": \"Rice 5kg\",\n      \"unit_price\": \"1000\",\n      \"qty\": 2,\n      \"discount\": \"50\"\n    }\n  ],\n  \"payments\": [\n    {\n      \"method\": \"cash\",\n      \"amount\": \"2050\",\n      \"amount_received\": \"2050\"\n    }\n  ]\n}",
+              "raw": "{\n  \"id\": \"11111111-1111-1111-1111-111111111111\",\n  \"shift_id\": 1,\n  \"device_id\": 1,\n  \"tax\": \"100\",\n  \"items\": [\n    {\n      \"product_id\": 1,\n      \"name_snapshot\": \"Rice 5kg\",\n      \"unit_price\": \"1000\",\n      \"qty\": 2,\n      \"discount\": \"50\"\n    }\n  ],\n  \"payments\": [\n    {\n      \"method\": \"cash\",\n      \"amount\": \"2050\",\n      \"amount_received\": \"2050\"\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2333,7 +2383,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "sales"]
             },
-            "description": "Requires a branch-bound pos-device token - org_id and branch_id both come from it, never the body. id is a client-generated UUID (idempotency key for the offline-first device). Subtotal/Discount/Tax/Total are NOT accepted here - the server derives Subtotal/Discount from items and Total = Subtotal - Discount + Tax, then rejects the request (400) if payments don't add up to that Total. shift_id must be a currently-open shift belonging to this branch, else 404. Status/completed_at are always server-set to completed/now(). Stock decrement/inventory-ledger writes are deliberately deferred until the Inventory domain exists."
+            "description": "Requires a branch-bound pos-device token (org_id and branch_id both come from it, never the body) AND X-Staff-Token (run VerifyStaffPIN first - it auto-saves into {{staffToken}}). id is a client-generated UUID (idempotency key for the offline-first device). Subtotal/Discount/Tax/Total are NOT accepted here - the server derives Subtotal/Discount from items and Total = Subtotal - Discount + Tax, then rejects the request (400) if payments don't add up to that Total. shift_id must be a currently-open shift belonging to this branch, else 404. Status/completed_at are always server-set to completed/now(). Any item's discount must be zero or greater (400 otherwise), and any positive item discount at all requires the calling staff's role to grant apply_manual_discount (only super_staff/manager have it by default) - 403 otherwise. Stock decrement/inventory-ledger writes are deliberately deferred until the Inventory domain exists."
           },
           "response": []
         },

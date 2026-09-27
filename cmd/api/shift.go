@@ -27,10 +27,14 @@ func (a *ShiftAPI) RegisterRoutes(rg *gin.RouterGroup) {
 	// shift, attributing a drawer event/expense to themselves) - see
 	// shift.ExpenseActor and cmd/api/shift.go's handlers below.
 	requireStaff := middleware.RequireStaffToken(a.jwtSecret)
+	// access_backoffice (Manager-only) gates the force-close override - see
+	// ForceCloseShift.
+	requireManager := middleware.RequirePermission(a.jwtSecret, "access_backoffice")
 	rg.POST("/shifts", requireStaff, a.OpenShift)
 	rg.GET("/shifts/current", a.GetCurrentShift)
 	rg.GET("/shifts/:id", a.GetShift)
 	rg.POST("/shifts/:id/close", requireStaff, a.CloseShift)
+	rg.POST("/shifts/:id/force-close", requireManager, a.ForceCloseShift)
 	rg.GET("/shifts/:id/summary", a.GetShiftSummary)
 	rg.GET("/shifts/:id/reconciliations", a.ListShiftReconciliations)
 	rg.POST("/drawer-events", requireStaff, a.CreateDrawerEvent)
@@ -167,6 +171,38 @@ func (a *ShiftAPI) CloseShift(c *gin.Context) {
 		return
 	}
 	result, err := a.service.CloseShift(c.Request.Context(), scope, uint(idVal), staffID, in)
+	if err != nil {
+		common.HandleError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// ForceCloseShift handles `POST /shifts/:id/force-close`. Manager-only
+// (access_backoffice) override of CloseShift's "same staff who opened it"
+// rule - for when that staff is genuinely unavailable (e.g. called in sick)
+// and the till would otherwise stay locked open indefinitely. reason is
+// always required here, not just on a cash mismatch.
+func (a *ShiftAPI) ForceCloseShift(c *gin.Context) {
+	scope, ok := shiftAccessScope(c)
+	if !ok {
+		return
+	}
+	staffID, ok := requireStaffID(c)
+	if !ok {
+		return
+	}
+	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		common.HandleError(c, common.BadRequestError("invalid id"))
+		return
+	}
+	var in shift.CloseShiftRequest
+	if err := c.ShouldBindJSON(&in); err != nil {
+		common.HandleError(c, common.BadRequestError(err.Error()))
+		return
+	}
+	result, err := a.service.ForceCloseShift(c.Request.Context(), scope, uint(idVal), staffID, in)
 	if err != nil {
 		common.HandleError(c, err)
 		return

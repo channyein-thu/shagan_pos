@@ -14,11 +14,12 @@ import (
 )
 
 type SalesAPI struct {
-	service sales.Interface
+	service   sales.Interface
+	jwtSecret []byte
 }
 
-func NewSalesAPI(db *gorm.DB) *SalesAPI {
-	return &SalesAPI{service: sales.NewService(sales.NewRepository(db), db)}
+func NewSalesAPI(db *gorm.DB, jwtSecret []byte) *SalesAPI {
+	return &SalesAPI{service: sales.NewService(sales.NewRepository(db), db), jwtSecret: jwtSecret}
 }
 
 // requireBranchID reads the calling pos-device's branch from its access
@@ -33,7 +34,7 @@ func requireBranchID(c *gin.Context) (uint, bool) {
 }
 
 func (a *SalesAPI) RegisterRoutes(rg *gin.RouterGroup) {
-	rg.POST("/sales", a.CreateSale)
+	rg.POST("/sales", middleware.RequireStaffToken(a.jwtSecret), a.CreateSale)
 	rg.GET("/sales", a.ListSales)
 	rg.GET("/sales/:id", a.GetSale)
 	rg.GET("/sales/:id/receipt", a.GetSaleReceipt)
@@ -46,7 +47,10 @@ func (a *SalesAPI) RegisterRoutes(rg *gin.RouterGroup) {
 // CreateSale handles `POST /sales`. Idempotent (ID is client-generated),
 // transactional. Stock decrement/ledger writes are deliberately deferred
 // until the Inventory domain is implemented - see the sales_service_impl.go
-// doc comment on CreateSale.
+// doc comment on CreateSale. Requires X-Staff-Token - the sale is always
+// attributed to whichever staff that token identifies, and a discount on
+// any item is rejected (403) unless that staff's role grants
+// apply_manual_discount.
 func (a *SalesAPI) CreateSale(c *gin.Context) {
 	orgID, ok := requireOrgID(c)
 	if !ok {
@@ -56,12 +60,18 @@ func (a *SalesAPI) CreateSale(c *gin.Context) {
 	if !ok {
 		return
 	}
+	staffID, ok := requireStaffID(c)
+	if !ok {
+		return
+	}
 	var in sales.CreateSaleRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
-	result, err := a.service.CreateSale(c.Request.Context(), orgID, branchID, in)
+	in.StaffID = staffID
+	actor := sales.SaleActor{StaffID: staffID, CanApplyManualDiscount: middleware.StaffHasPermission(c, "apply_manual_discount")}
+	result, err := a.service.CreateSale(c.Request.Context(), orgID, branchID, actor, in)
 	if err != nil {
 		common.HandleError(c, err)
 		return

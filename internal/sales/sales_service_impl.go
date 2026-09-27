@@ -27,11 +27,21 @@ var _ Interface = (*Service)(nil)
 // cover the derived Total, then persists the Sale/SaleItems/Payments as one
 // atomic unit guarded by a currently-open-shift check - same
 // transaction-composes-atomic-primitives shape as identity.Service.CreateAccount.
-func (s *Service) CreateSale(ctx context.Context, orgID uint, branchID uint, in CreateSaleRequest) (*Sale, error) {
+//
+// A discount on any item requires actor.CanApplyManualDiscount - a plain
+// Staff member's own token won't have it (only super_staff/manager do, per
+// the seeded role grants), so applying one needs a Manager's PIN approval
+// first. That approval-token flow doesn't exist yet - it's shared
+// infrastructure Returns/Void will also need, deliberately deferred to when
+// that's built rather than bolted onto Sales alone.
+func (s *Service) CreateSale(ctx context.Context, orgID uint, branchID uint, actor SaleActor, in CreateSaleRequest) (*Sale, error) {
 	saleItems := make([]SaleItem, 0, len(in.Items))
 	subtotal := decimal.Zero
 	itemDiscountTotal := decimal.Zero
 	for _, item := range in.Items {
+		if item.Discount.IsNegative() {
+			return nil, common.BadRequestError("item discount must be zero or greater")
+		}
 		effectivePrice := item.UnitPrice
 		if item.PriceOverride != nil {
 			effectivePrice = *item.PriceOverride
@@ -49,6 +59,9 @@ func (s *Service) CreateSale(ctx context.Context, orgID uint, branchID uint, in 
 			LineTotal:     lineGross.Sub(item.Discount),
 			Discount:      item.Discount,
 		})
+	}
+	if itemDiscountTotal.IsPositive() && !actor.CanApplyManualDiscount {
+		return nil, common.ForbiddenError("staff does not have permission to apply a manual discount")
 	}
 	total := subtotal.Sub(itemDiscountTotal).Add(in.Tax)
 
@@ -74,7 +87,7 @@ func (s *Service) CreateSale(ctx context.Context, orgID uint, branchID uint, in 
 		OrgID:       orgID,
 		BranchID:    branchID,
 		ShiftID:     in.ShiftID,
-		StaffID:     in.StaffID,
+		StaffID:     actor.StaffID,
 		DeviceID:    in.DeviceID,
 		CustomerID:  in.CustomerID,
 		Subtotal:    subtotal,
