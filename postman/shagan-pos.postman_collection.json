@@ -2079,11 +2079,23 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/stock-levels",
+              "raw": "{{baseUrl}}/api/v1/stock-levels?branch_id=1&product_id=1",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "stock-levels"]
+              "path": ["api", "v1", "stock-levels"],
+              "query": [
+                {
+                  "key": "branch_id",
+                  "value": "1",
+                  "description": "Optional - owner/service_center only (a pos-device token's own branch always wins instead). Must belong to your own org."
+                },
+                {
+                  "key": "product_id",
+                  "value": "1",
+                  "description": "Optional - narrows to one product."
+                }
+              ]
             },
-            "description": "Filter by product/branch"
+            "description": "Lists stock levels in the caller's org. Restricted to the caller's own branch when the token carries one (a pos device) - org-wide otherwise, same reasoning as ListProducts. Both query params are optional - omit either to leave that dimension unfiltered."
           },
           "response": []
         },

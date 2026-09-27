@@ -18,9 +18,19 @@ func NewRepository(db *gorm.DB) Repository {
 
 var _ Repository = (*RepositoryImpl)(nil)
 
-// ListStockLevels backs `GET /stock-levels`. Filter by product/branch
-func (r *RepositoryImpl) ListStockLevels(ctx context.Context) ([]StockLevel, error) {
-	return nil, common.ErrNotImplemented
+// ListStockLevels backs `GET /stock-levels`, scoped to branchIDs (already
+// resolved by the service to the caller's own org), optionally narrowed to
+// one product.
+func (r *RepositoryImpl) ListStockLevels(ctx context.Context, branchIDs []uint, productID *uint) ([]StockLevel, error) {
+	var levels []StockLevel
+	q := r.db.WithContext(ctx).Where("branch_id IN (?)", branchIDs)
+	if productID != nil {
+		q = q.Where("product_id = ?", *productID)
+	}
+	if err := q.Find(&levels).Error; err != nil {
+		return nil, err
+	}
+	return levels, nil
 }
 
 // ListLowStock backs `GET /inventory/low-stock`.

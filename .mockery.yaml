@@ -47,3 +47,15 @@ packages:
       Repository:
         config:
           filename: "mock_customer_repository_test.go"
+  shagan_pos/internal/inventory:
+    config:
+      dir: "internal/inventory"
+      outpkg: inventory
+      inpackage: true
+    interfaces:
+      Repository:
+        config:
+          filename: "mock_inventory_repository_test.go"
+      BranchLookup:
+        config:
+          filename: "mock_inventory_branch_lookup_test.go"

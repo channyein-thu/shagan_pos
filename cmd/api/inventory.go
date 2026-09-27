@@ -8,7 +8,9 @@ import (
 	"gorm.io/gorm"
 
 	"shagan_pos/internal/common"
+	"shagan_pos/internal/identity"
 	"shagan_pos/internal/inventory"
+	"shagan_pos/internal/middleware"
 )
 
 type InventoryAPI struct {
@@ -16,7 +18,7 @@ type InventoryAPI struct {
 }
 
 func NewInventoryAPI(db *gorm.DB) *InventoryAPI {
-	return &InventoryAPI{service: inventory.NewService(inventory.NewRepository(db))}
+	return &InventoryAPI{service: inventory.NewService(inventory.NewRepository(db), identity.NewRepository(db))}
 }
 
 func (a *InventoryAPI) RegisterRoutes(rg *gin.RouterGroup) {
@@ -29,9 +31,43 @@ func (a *InventoryAPI) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.PATCH("/stock-transfers/:id", a.UpdateStockTransfer)
 }
 
-// ListStockLevels handles `GET /stock-levels`. Filter by product/branch
+// ListStockLevels handles `GET /stock-levels`. Restricted to the caller's
+// own branch when the caller's token carries one (a pos device) -
+// org-wide for owner/service_center, same reasoning as
+// catalog.ListProducts. Optional ?branch_id= (owner/service_center only -
+// a pos-device token's own branch always wins) and ?product_id= further
+// narrow the results.
 func (a *InventoryAPI) ListStockLevels(c *gin.Context) {
-	result, err := a.service.ListStockLevels(c.Request.Context())
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+
+	var branchID *uint
+	if bID, ok := middleware.BranchIDFromContext(c); ok {
+		branchID = &bID
+	} else if v := c.Query("branch_id"); v != "" {
+		id, err := strconv.ParseUint(v, 10, 64)
+		if err != nil {
+			common.HandleError(c, common.BadRequestError("invalid branch_id"))
+			return
+		}
+		bID := uint(id)
+		branchID = &bID
+	}
+
+	var productID *uint
+	if v := c.Query("product_id"); v != "" {
+		id, err := strconv.ParseUint(v, 10, 64)
+		if err != nil {
+			common.HandleError(c, common.BadRequestError("invalid product_id"))
+			return
+		}
+		pID := uint(id)
+		productID = &pID
+	}
+
+	result, err := a.service.ListStockLevels(c.Request.Context(), orgID, branchID, productID)
 	if err != nil {
 		common.HandleError(c, err)
 		return
