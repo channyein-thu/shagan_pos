@@ -50,17 +50,28 @@ type Sale struct {
 	SyncedAt    *time.Time      `json:"synced_at"`
 }
 
-// SaleItem maps to the "Sale_items" table in the ERD.
+// SaleItem maps to the "Sale_items" table in the ERD. ComboID is set when
+// this line is one component of a Combo rung up as a group - the combo is
+// still expanded into one SaleItem per real product (so stock/inventory
+// effects work exactly like any other line item, see the CreateSaleItemRequest
+// doc comment on Combo pricing), ComboID just tags them as belonging
+// together for receipts/reporting.
 type SaleItem struct {
 	ID            uint             `gorm:"primaryKey;autoIncrement" json:"id"`
 	SaleID        uuid.UUID        `gorm:"type:uuid;index;not null" json:"sale_id"`
 	ProductID     uint             `gorm:"index;not null" json:"product_id"`
+	ComboID       *uint            `gorm:"index" json:"combo_id"`
 	NameSnapshot  string           `gorm:"size:255;not null" json:"name_snapshot"`
 	UnitPrice     decimal.Decimal  `gorm:"type:decimal(10,2);not null" json:"unit_price"`
 	PriceOverride *decimal.Decimal `gorm:"type:decimal(10,2)" json:"price_override"`
 	Qty           int              `gorm:"not null" json:"qty"`
 	LineTotal     decimal.Decimal  `gorm:"type:decimal(10,2);not null" json:"line_total"`
 	Discount      decimal.Decimal  `gorm:"type:decimal(10,2);not null" json:"discount"`
+	// Tax is this line's own tax amount (qty already accounted for), snapshotted
+	// by the client from Product.Tax at ring-up time - same offline-first
+	// reasoning as UnitPrice/NameSnapshot. Summed into Sale.Tax rather than
+	// the caller supplying one flat sale-level tax figure.
+	Tax decimal.Decimal `gorm:"type:decimal(10,2);not null;default:0" json:"tax"`
 }
 
 // Payment maps to the "Payments" table in the ERD.

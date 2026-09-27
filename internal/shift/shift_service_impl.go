@@ -108,7 +108,12 @@ func (s *Service) ListShiftReconciliations(ctx context.Context, scope AccessScop
 	return s.repo.ListShiftReconciliations(ctx, scope, id)
 }
 
-func (s *Service) CreateDrawerEvent(ctx context.Context, scope AccessScope, in CreateDrawerEventRequest) (*DrawerEvent, error) {
+// CreateDrawerEvent requires canOpenDrawerNoSale when in.SaleID is nil - a
+// drawer opened without an attached sale needs the open_drawer_no_sale
+// permission (own or a manager's approval, see middleware.ManagerApproved).
+// A drawer event tied to a real sale needs no such check - ringing up a
+// sale already required whatever permission that sale itself needed.
+func (s *Service) CreateDrawerEvent(ctx context.Context, scope AccessScope, canOpenDrawerNoSale bool, in CreateDrawerEventRequest) (*DrawerEvent, error) {
 	validationErrors := make([]common.FieldError, 0, 3)
 	if in.ShiftID == 0 {
 		validationErrors = append(validationErrors, common.FieldError{Field: "ShiftID", Message: "required"})
@@ -125,6 +130,9 @@ func (s *Service) CreateDrawerEvent(ctx context.Context, scope AccessScope, in C
 	}
 	if len(validationErrors) > 0 {
 		return nil, common.ValidationError("validation error", validationErrors)
+	}
+	if in.SaleID == nil && !canOpenDrawerNoSale {
+		return nil, common.ForbiddenError("staff does not have permission to open the drawer without a sale")
 	}
 	return s.repo.CreateDrawerEvent(ctx, scope, in)
 }

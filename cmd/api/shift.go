@@ -248,9 +248,11 @@ func (a *ShiftAPI) ListShiftReconciliations(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// CreateDrawerEvent handles `POST /drawer-events`. Cash drawer opened without
-// a sale - attributed to whichever staff member's X-Staff-Token is calling,
-// never a client-supplied staff id.
+// CreateDrawerEvent handles `POST /drawer-events`. Attributed to whichever
+// staff member's X-Staff-Token is calling, never a client-supplied staff id.
+// Opening the drawer without an attached sale (sale_id omitted) needs the
+// open_drawer_no_sale permission - own, or an X-Manager-Approval-Token
+// granting it instead.
 func (a *ShiftAPI) CreateDrawerEvent(c *gin.Context) {
 	scope, ok := shiftAccessScope(c)
 	if !ok {
@@ -266,7 +268,9 @@ func (a *ShiftAPI) CreateDrawerEvent(c *gin.Context) {
 		return
 	}
 	in.StaffID = staffID
-	result, err := a.service.CreateDrawerEvent(c.Request.Context(), scope, in)
+	canOpenDrawerNoSale := middleware.StaffHasPermission(c, "open_drawer_no_sale") ||
+		middleware.ManagerApproved(c, a.jwtSecret, "open_drawer_no_sale")
+	result, err := a.service.CreateDrawerEvent(c.Request.Context(), scope, canOpenDrawerNoSale, in)
 	if err != nil {
 		common.HandleError(c, err)
 		return

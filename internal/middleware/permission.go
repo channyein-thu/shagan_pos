@@ -23,6 +23,14 @@ const (
 // no "Bearer " prefix - same convention as InternalAuth's X-Internal-Key.
 const staffTokenHeader = "X-Staff-Token"
 
+// managerApprovalTokenHeader carries a manager's one-action elevation token
+// (identity.Service.VerifyManagerPIN), separate from staffTokenHeader - a
+// request can need both at once: X-Staff-Token still identifies which
+// ordinary staff member is ringing up the sale/opening the drawer/etc, while
+// this proves a manager separately approved this one action just now. See
+// ManagerApproved.
+const managerApprovalTokenHeader = "X-Manager-Approval-Token"
+
 // RequirePermission validates the X-Staff-Token JWT issued by
 // identity.Service.VerifyStaffPIN/VerifyManagerPIN and requires that its
 // embedded Permissions include permission. Stack this after Auth on routes
@@ -128,4 +136,24 @@ func StaffHasPermission(c *gin.Context, permission string) bool {
 	}
 	perms, ok := v.([]string)
 	return ok && slices.Contains(perms, permission)
+}
+
+// ManagerApproved checks the optional X-Manager-Approval-Token for a valid,
+// unexpired manager elevation (identity.Service.VerifyManagerPIN) granting
+// permission - the escape hatch for a staff member who lacks permission
+// themselves (e.g. a plain cashier applying a manual discount, voiding a
+// sale, opening the drawer without a sale) but has a manager approve it at
+// the terminal. An absent, invalid, expired, or non-granting token is never
+// itself an error here - it just returns false, so the caller falls back to
+// rejecting on the staff's own lack of permission (via StaffHasPermission).
+func ManagerApproved(c *gin.Context, jwtSecret []byte, permission string) bool {
+	token := c.GetHeader(managerApprovalTokenHeader)
+	if token == "" {
+		return false
+	}
+	claims, err := authtoken.ParseStaffToken(jwtSecret, token)
+	if err != nil {
+		return false
+	}
+	return slices.Contains(claims.Permissions, permission)
 }

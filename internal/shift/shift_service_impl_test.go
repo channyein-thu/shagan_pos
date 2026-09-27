@@ -456,7 +456,7 @@ func TestService_CreateDrawerEvent_TrimsReasonAndPersists(t *testing.T) {
 	want := &DrawerEvent{ID: 1, ShiftID: 2, StaffID: 3, Reason: "cash count"}
 	repo := &remainingRepositoryStub{drawerEvent: want}
 
-	got, err := NewService(repo).CreateDrawerEvent(context.Background(), scope, CreateDrawerEventRequest{
+	got, err := NewService(repo).CreateDrawerEvent(context.Background(), scope, true, CreateDrawerEventRequest{
 		ShiftID: 2, StaffID: 3, Reason: "  cash count  ",
 	})
 
@@ -476,11 +476,36 @@ func TestService_CreateDrawerEvent_RejectsInvalidInput(t *testing.T) {
 	}
 	for _, in := range tests {
 		repo := &remainingRepositoryStub{}
-		got, err := NewService(repo).CreateDrawerEvent(context.Background(), AccessScope{OrgID: 7}, in)
+		got, err := NewService(repo).CreateDrawerEvent(context.Background(), AccessScope{OrgID: 7}, true, in)
 		require.Nil(t, got)
 		require.Empty(t, repo.method)
 		requireRestErrorStatus(t, err, http.StatusBadRequest)
 	}
+}
+
+func TestService_CreateDrawerEvent_NoSaleWithoutPermission_Rejects(t *testing.T) {
+	repo := &remainingRepositoryStub{}
+
+	got, err := NewService(repo).CreateDrawerEvent(context.Background(), AccessScope{OrgID: 7}, false, CreateDrawerEventRequest{
+		ShiftID: 2, StaffID: 3, Reason: "cash count",
+	})
+
+	require.Nil(t, got)
+	require.Empty(t, repo.method)
+	requireRestErrorStatus(t, err, http.StatusForbidden)
+}
+
+func TestService_CreateDrawerEvent_WithSaleID_NoPermissionNeeded(t *testing.T) {
+	saleID := uuid.New()
+	want := &DrawerEvent{ID: 1, ShiftID: 2, StaffID: 3, SaleID: &saleID}
+	repo := &remainingRepositoryStub{drawerEvent: want}
+
+	got, err := NewService(repo).CreateDrawerEvent(context.Background(), AccessScope{OrgID: 7}, false, CreateDrawerEventRequest{
+		ShiftID: 2, StaffID: 3, Reason: "drawer opened for sale", SaleID: &saleID,
+	})
+
+	require.NoError(t, err)
+	require.Same(t, want, got)
 }
 
 func TestService_ListDrawerEventsAndExpenses_ForwardScope(t *testing.T) {

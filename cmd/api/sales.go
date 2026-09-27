@@ -50,7 +50,9 @@ func (a *SalesAPI) RegisterRoutes(rg *gin.RouterGroup) {
 // doc comment on CreateSale. Requires X-Staff-Token - the sale is always
 // attributed to whichever staff that token identifies, and a discount on
 // any item is rejected (403) unless that staff's role grants
-// apply_manual_discount.
+// apply_manual_discount, OR an optional X-Manager-Approval-Token is present
+// granting it instead (see middleware.ManagerApproved) - a cashier without
+// the permission gets a manager to approve just this one sale.
 func (a *SalesAPI) CreateSale(c *gin.Context) {
 	orgID, ok := requireOrgID(c)
 	if !ok {
@@ -70,7 +72,9 @@ func (a *SalesAPI) CreateSale(c *gin.Context) {
 		return
 	}
 	in.StaffID = staffID
-	actor := sales.SaleActor{StaffID: staffID, CanApplyManualDiscount: middleware.StaffHasPermission(c, "apply_manual_discount")}
+	canApplyManualDiscount := middleware.StaffHasPermission(c, "apply_manual_discount") ||
+		middleware.ManagerApproved(c, a.jwtSecret, "apply_manual_discount")
+	actor := sales.SaleActor{StaffID: staffID, CanApplyManualDiscount: canApplyManualDiscount}
 	result, err := a.service.CreateSale(c.Request.Context(), orgID, branchID, actor, in)
 	if err != nil {
 		common.HandleError(c, err)
