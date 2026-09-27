@@ -83,5 +83,13 @@ type Interface interface {
 	// image, same failure-cleanup reasoning as UpdateProduct's image
 	// handling. Doesn't support editing Items yet.
 	UpdateCombo(ctx context.Context, orgID uint, id uint, in UpdateComboRequest, file io.ReadSeeker, fileSize int64, contentType, filename string) (*Combo, error)
-	DeleteCombo(ctx context.Context, id uint) error
+	// DeleteCombo confirms the combo exists AND belongs to orgID before
+	// touching anything (not-found-not-forbidden, same reasoning as
+	// UpdateCombo). Unlike DeleteProduct, there's currently nothing outside
+	// the combo that can reference it (no Sales/order-history domain yet),
+	// so there's no referential-integrity gate to check - only the combo's
+	// own ComboItem/ComboImage rows and image storage object are cleaned
+	// up as part of the delete, same reasoning as DeleteProduct's
+	// ProductImage cleanup.
+	DeleteCombo(ctx context.Context, orgID uint, id uint) error
 }

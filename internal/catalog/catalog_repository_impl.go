@@ -234,7 +234,13 @@ func (r *RepositoryImpl) DeleteComboImagesByComboID(db *gorm.DB, comboID uint) e
 	return db.Where("combo_id = ?", comboID).Delete(&ComboImage{}).Error
 }
 
-// DeleteCombo backs `DELETE /combos/:id`.
-func (r *RepositoryImpl) DeleteCombo(ctx context.Context, id uint) error {
-	return common.ErrNotImplemented
+// DeleteComboItemsByComboID backs Service.DeleteCombo's cleanup step. Plain
+// delete.
+func (r *RepositoryImpl) DeleteComboItemsByComboID(db *gorm.DB, comboID uint) error {
+	return db.Where("combo_id = ?", comboID).Delete(&ComboItem{}).Error
+}
+
+// DeleteCombo backs `DELETE /combos/:id`. Hard delete.
+func (r *RepositoryImpl) DeleteCombo(db *gorm.DB, id uint) error {
+	return db.Delete(&Combo{}, id).Error
 }

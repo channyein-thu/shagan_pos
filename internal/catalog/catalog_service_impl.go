@@ -745,6 +745,34 @@ func (s *Service) UpdateCombo(ctx context.Context, orgID uint, id uint, in Updat
 	return s.repo.GetCombo(ctx, orgID, id)
 }
 
-func (s *Service) DeleteCombo(ctx context.Context, id uint) error {
-	return s.repo.DeleteCombo(ctx, id)
+func (s *Service) DeleteCombo(ctx context.Context, orgID uint, id uint) error {
+	if _, err := s.repo.GetCombo(ctx, orgID, id); err != nil {
+		return err
+	}
+
+	// fetched before the transaction - only needed to clean up the storage
+	// objects after a successful commit (see below), not part of the
+	// atomic write itself.
+	images, err := s.repo.ListComboImagesByComboIDs(ctx, []uint{id})
+	if err != nil {
+		return err
+	}
+
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := s.repo.DeleteComboImagesByComboID(tx, id); err != nil {
+			return err
+		}
+		if err := s.repo.DeleteComboItemsByComboID(tx, id); err != nil {
+			return err
+		}
+		return s.repo.DeleteCombo(tx, id)
+	}); err != nil {
+		return err
+	}
+
+	for _, img := range images {
+		_ = s.storage.Delete(ctx, img.StorageKey)
+	}
+
+	return nil
 }

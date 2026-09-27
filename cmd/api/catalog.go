@@ -586,14 +586,19 @@ func (a *CatalogAPI) UpdateCombo(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// DeleteCombo handles `DELETE /combos/:id`.
+// DeleteCombo handles `DELETE /combos/:id`. Hard delete - also removes the
+// combo's own items and image.
 func (a *CatalogAPI) DeleteCombo(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
 	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
-	if err := a.service.DeleteCombo(c.Request.Context(), uint(idVal)); err != nil {
+	if err := a.service.DeleteCombo(c.Request.Context(), orgID, uint(idVal)); err != nil {
 		common.HandleError(c, err)
 		return
 	}

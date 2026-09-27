@@ -1915,7 +1915,7 @@
                     }
                   ]
                 },
-                "description": "DeleteCombo"
+                "description": "Hard delete, scoped to the caller's org. Nothing currently blocks this (no Sales/order-history domain yet referencing combos) - also removes the combo's own items and image. 204 No Content, no body."
               },
               "response": []
             },

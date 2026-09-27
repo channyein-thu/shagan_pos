@@ -408,17 +408,17 @@ func (_c *MockRepository_DeleteCategory_Call) RunAndReturn(run func(context.Cont
 	return _c
 }
 
-// DeleteCombo provides a mock function with given fields: ctx, id
-func (_m *MockRepository) DeleteCombo(ctx context.Context, id uint) error {
-	ret := _m.Called(ctx, id)
+// DeleteCombo provides a mock function with given fields: db, id
+func (_m *MockRepository) DeleteCombo(db *gorm.DB, id uint) error {
+	ret := _m.Called(db, id)
 
 	if len(ret) == 0 {
 		panic("no return value specified for DeleteCombo")
 	}
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, uint) error); ok {
-		r0 = rf(ctx, id)
+	if rf, ok := ret.Get(0).(func(*gorm.DB, uint) error); ok {
+		r0 = rf(db, id)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -432,15 +432,15 @@ type MockRepository_DeleteCombo_Call struct {
 }
 
 // DeleteCombo is a helper method to define mock.On call
-//   - ctx context.Context
+//   - db *gorm.DB
 //   - id uint
-func (_e *MockRepository_Expecter) DeleteCombo(ctx interface{}, id interface{}) *MockRepository_DeleteCombo_Call {
-	return &MockRepository_DeleteCombo_Call{Call: _e.mock.On("DeleteCombo", ctx, id)}
+func (_e *MockRepository_Expecter) DeleteCombo(db interface{}, id interface{}) *MockRepository_DeleteCombo_Call {
+	return &MockRepository_DeleteCombo_Call{Call: _e.mock.On("DeleteCombo", db, id)}
 }
 
-func (_c *MockRepository_DeleteCombo_Call) Run(run func(ctx context.Context, id uint)) *MockRepository_DeleteCombo_Call {
+func (_c *MockRepository_DeleteCombo_Call) Run(run func(db *gorm.DB, id uint)) *MockRepository_DeleteCombo_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(uint))
+		run(args[0].(*gorm.DB), args[1].(uint))
 	})
 	return _c
 }
@@ -450,7 +450,7 @@ func (_c *MockRepository_DeleteCombo_Call) Return(_a0 error) *MockRepository_Del
 	return _c
 }
 
-func (_c *MockRepository_DeleteCombo_Call) RunAndReturn(run func(context.Context, uint) error) *MockRepository_DeleteCombo_Call {
+func (_c *MockRepository_DeleteCombo_Call) RunAndReturn(run func(*gorm.DB, uint) error) *MockRepository_DeleteCombo_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -498,6 +498,53 @@ func (_c *MockRepository_DeleteComboImagesByComboID_Call) Return(_a0 error) *Moc
 }
 
 func (_c *MockRepository_DeleteComboImagesByComboID_Call) RunAndReturn(run func(*gorm.DB, uint) error) *MockRepository_DeleteComboImagesByComboID_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// DeleteComboItemsByComboID provides a mock function with given fields: db, comboID
+func (_m *MockRepository) DeleteComboItemsByComboID(db *gorm.DB, comboID uint) error {
+	ret := _m.Called(db, comboID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DeleteComboItemsByComboID")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(*gorm.DB, uint) error); ok {
+		r0 = rf(db, comboID)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// MockRepository_DeleteComboItemsByComboID_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DeleteComboItemsByComboID'
+type MockRepository_DeleteComboItemsByComboID_Call struct {
+	*mock.Call
+}
+
+// DeleteComboItemsByComboID is a helper method to define mock.On call
+//   - db *gorm.DB
+//   - comboID uint
+func (_e *MockRepository_Expecter) DeleteComboItemsByComboID(db interface{}, comboID interface{}) *MockRepository_DeleteComboItemsByComboID_Call {
+	return &MockRepository_DeleteComboItemsByComboID_Call{Call: _e.mock.On("DeleteComboItemsByComboID", db, comboID)}
+}
+
+func (_c *MockRepository_DeleteComboItemsByComboID_Call) Run(run func(db *gorm.DB, comboID uint)) *MockRepository_DeleteComboItemsByComboID_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(*gorm.DB), args[1].(uint))
+	})
+	return _c
+}
+
+func (_c *MockRepository_DeleteComboItemsByComboID_Call) Return(_a0 error) *MockRepository_DeleteComboItemsByComboID_Call {
+	_c.Call.Return(_a0)
+	return _c
+}
+
+func (_c *MockRepository_DeleteComboItemsByComboID_Call) RunAndReturn(run func(*gorm.DB, uint) error) *MockRepository_DeleteComboItemsByComboID_Call {
 	_c.Call.Return(run)
 	return _c
 }
