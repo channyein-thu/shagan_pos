@@ -47,15 +47,14 @@ func TestService_CreateSale_HappyPath_DerivesTotalsAndPersistsAtomically(t *test
 		ShiftID:  9,
 		StaffID:  14,
 		DeviceID: 3,
-		Tax:      decimal.NewFromInt(100),
 		Items: []CreateSaleItemRequest{
-			{ProductID: 1, NameSnapshot: "Rice 5kg", UnitPrice: decimal.NewFromInt(1000), Qty: 2, Discount: decimal.NewFromInt(50)},
+			{ProductID: 1, NameSnapshot: "Rice 5kg", UnitPrice: decimal.NewFromInt(1000), Qty: 2, Discount: decimal.NewFromInt(50), Tax: decimal.NewFromInt(100)},
 		},
 		Payments: []CreateSalePaymentRequest{
 			{Method: PaymentMethodCash, Amount: decimal.NewFromInt(2050), AmountReceived: decimal.NewFromInt(2050)},
 		},
 	}
-	// subtotal = 1000*2 = 2000; discount = 50; total = 2000 - 50 + 100 = 2050
+	// subtotal = 1000*2 = 2000; discount = 50; tax = 100; total = 2000 - 50 + 100 = 2050
 
 	repo.EXPECT().RequireOpenShift(mock.Anything, uint(7), uint(3), uint(9)).Return(nil).Once()
 	repo.EXPECT().CreateSale(mock.Anything, mock.MatchedBy(func(s *Sale) bool {
@@ -155,6 +154,53 @@ func TestService_CreateSale_NegativeItemDiscount_RejectsWithoutOpeningTransactio
 	requireRestErrorStatus(t, err, http.StatusBadRequest)
 	repo.AssertNotCalled(t, "RequireOpenShift", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	repo.AssertNotCalled(t, "CreateSale", mock.Anything, mock.Anything)
+}
+
+func TestService_CreateSale_NegativeItemTax_RejectsWithoutOpeningTransaction(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo)
+
+	in := CreateSaleRequest{
+		ID:      uuid.New(),
+		ShiftID: 9, StaffID: 14, DeviceID: 3,
+		Items:    []CreateSaleItemRequest{{ProductID: 1, NameSnapshot: "Rice 5kg", UnitPrice: decimal.NewFromInt(1000), Qty: 1, Tax: decimal.NewFromInt(-5)}},
+		Payments: []CreateSalePaymentRequest{{Method: PaymentMethodCash, Amount: decimal.NewFromInt(995)}},
+	}
+
+	_, err := svc.CreateSale(context.Background(), 7, 3, SaleActor{StaffID: 14}, in)
+	requireRestErrorStatus(t, err, http.StatusBadRequest)
+	repo.AssertNotCalled(t, "RequireOpenShift", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	repo.AssertNotCalled(t, "CreateSale", mock.Anything, mock.Anything)
+}
+
+func TestService_CreateSale_SumsComboItemTaxIntoSaleTax(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo)
+
+	saleID := uuid.New()
+	comboID := uint(5)
+	in := CreateSaleRequest{
+		ID:      saleID,
+		ShiftID: 9, StaffID: 14, DeviceID: 3,
+		Items: []CreateSaleItemRequest{
+			{ProductID: 1, ComboID: &comboID, NameSnapshot: "Rice 5kg", UnitPrice: decimal.NewFromInt(600), Qty: 1, Tax: decimal.NewFromInt(20)},
+			{ProductID: 2, ComboID: &comboID, NameSnapshot: "Cooking Oil", UnitPrice: decimal.NewFromInt(400), Qty: 1, Tax: decimal.NewFromInt(10)},
+		},
+		Payments: []CreateSalePaymentRequest{{Method: PaymentMethodCash, Amount: decimal.NewFromInt(1030)}},
+	}
+	// subtotal = 600+400 = 1000; tax = 20+10 = 30; total = 1030
+
+	repo.EXPECT().RequireOpenShift(mock.Anything, uint(7), uint(3), uint(9)).Return(nil).Once()
+	repo.EXPECT().CreateSale(mock.Anything, mock.MatchedBy(func(s *Sale) bool {
+		return s.Tax.Equal(decimal.NewFromInt(30)) && s.Total.Equal(decimal.NewFromInt(1030))
+	})).Return(nil).Once()
+	repo.EXPECT().CreateSaleItems(mock.Anything, mock.MatchedBy(func(items []SaleItem) bool {
+		return len(items) == 2 && items[0].ComboID != nil && *items[0].ComboID == comboID && items[1].ComboID != nil && *items[1].ComboID == comboID
+	})).Return(nil).Once()
+	repo.EXPECT().CreatePayments(mock.Anything, mock.Anything).Return(nil).Once()
+
+	_, err := svc.CreateSale(context.Background(), 7, 3, SaleActor{StaffID: 14}, in)
+	require.NoError(t, err)
 }
 
 func TestService_CreateSale_ShiftNotOpen_PropagatesErrorWithoutPersisting(t *testing.T) {

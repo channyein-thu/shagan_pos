@@ -13,7 +13,9 @@ type Interface interface {
 	ForceCloseShift(ctx context.Context, scope AccessScope, id uint, closedByStaffID uint, in CloseShiftRequest) (*Shift, error)
 	GetShiftSummary(ctx context.Context, scope AccessScope, id uint) (map[string]any, error)
 	ListShiftReconciliations(ctx context.Context, scope AccessScope, id uint) ([]ShiftReconciliation, error)
-	CreateDrawerEvent(ctx context.Context, scope AccessScope, in CreateDrawerEventRequest) (*DrawerEvent, error)
+	// CreateDrawerEvent requires canOpenDrawerNoSale when in.SaleID is nil -
+	// see Service.CreateDrawerEvent.
+	CreateDrawerEvent(ctx context.Context, scope AccessScope, canOpenDrawerNoSale bool, in CreateDrawerEventRequest) (*DrawerEvent, error)
 	ListDrawerEvents(ctx context.Context, scope AccessScope) ([]DrawerEvent, error)
 	ListExpenses(ctx context.Context, scope AccessScope) ([]Expense, error)
 	CreateExpense(ctx context.Context, scope AccessScope, in CreateExpenseRequest) (*Expense, error)

@@ -30,17 +30,22 @@ var _ Interface = (*Service)(nil)
 //
 // A discount on any item requires actor.CanApplyManualDiscount - a plain
 // Staff member's own token won't have it (only super_staff/manager do, per
-// the seeded role grants), so applying one needs a Manager's PIN approval
-// first. That approval-token flow doesn't exist yet - it's shared
-// infrastructure Returns/Void will also need, deliberately deferred to when
-// that's built rather than bolted onto Sales alone.
+// the seeded role grants); it's true either because the calling staff holds
+// apply_manual_discount themselves, or because a manager approved this sale
+// via X-Manager-Approval-Token (see middleware.ManagerApproved) - both are
+// folded into one bool by the handler before this is ever called, so this
+// method doesn't need to know which case applied.
 func (s *Service) CreateSale(ctx context.Context, orgID uint, branchID uint, actor SaleActor, in CreateSaleRequest) (*Sale, error) {
 	saleItems := make([]SaleItem, 0, len(in.Items))
 	subtotal := decimal.Zero
 	itemDiscountTotal := decimal.Zero
+	itemTaxTotal := decimal.Zero
 	for _, item := range in.Items {
 		if item.Discount.IsNegative() {
 			return nil, common.BadRequestError("item discount must be zero or greater")
+		}
+		if item.Tax.IsNegative() {
+			return nil, common.BadRequestError("item tax must be zero or greater")
 		}
 		effectivePrice := item.UnitPrice
 		if item.PriceOverride != nil {
@@ -49,21 +54,24 @@ func (s *Service) CreateSale(ctx context.Context, orgID uint, branchID uint, act
 		lineGross := effectivePrice.Mul(decimal.NewFromInt(int64(item.Qty)))
 		subtotal = subtotal.Add(lineGross)
 		itemDiscountTotal = itemDiscountTotal.Add(item.Discount)
+		itemTaxTotal = itemTaxTotal.Add(item.Tax)
 		saleItems = append(saleItems, SaleItem{
 			SaleID:        in.ID,
 			ProductID:     item.ProductID,
+			ComboID:       item.ComboID,
 			NameSnapshot:  item.NameSnapshot,
 			UnitPrice:     item.UnitPrice,
 			PriceOverride: item.PriceOverride,
 			Qty:           item.Qty,
 			LineTotal:     lineGross.Sub(item.Discount),
 			Discount:      item.Discount,
+			Tax:           item.Tax,
 		})
 	}
 	if itemDiscountTotal.IsPositive() && !actor.CanApplyManualDiscount {
 		return nil, common.ForbiddenError("staff does not have permission to apply a manual discount")
 	}
-	total := subtotal.Sub(itemDiscountTotal).Add(in.Tax)
+	total := subtotal.Sub(itemDiscountTotal).Add(itemTaxTotal)
 
 	payments := make([]Payment, 0, len(in.Payments))
 	paymentsTotal := decimal.Zero
@@ -92,7 +100,7 @@ func (s *Service) CreateSale(ctx context.Context, orgID uint, branchID uint, act
 		CustomerID:  in.CustomerID,
 		Subtotal:    subtotal,
 		Discount:    itemDiscountTotal,
-		Tax:         in.Tax,
+		Tax:         itemTaxTotal,
 		Total:       total,
 		Status:      SaleStatusCompleted,
 		CompletedAt: &now,
