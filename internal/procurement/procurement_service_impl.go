@@ -241,9 +241,10 @@ func (s *Service) CreateGoodsReceipt(ctx context.Context, orgID uint, poID uint,
 	}
 
 	type resolvedItem struct {
-		req      CreateGoodsReceiptItemRequest
-		poItem   PurchaseOrderItem
-		branchID uint
+		req             CreateGoodsReceiptItemRequest
+		poItem          PurchaseOrderItem
+		branchID        uint
+		costPriceBefore decimal.Decimal
 	}
 	resolved := make([]resolvedItem, len(in.Items))
 	total := decimal.Zero
@@ -268,7 +269,7 @@ func (s *Service) CreateGoodsReceipt(ctx context.Context, orgID uint, poID uint,
 		if shortfall := poItem.OrderedQty - item.ReceivedQty; shortfall > 0 {
 			varianceCount += shortfall
 		}
-		resolved[i] = resolvedItem{req: item, poItem: poItem, branchID: product.BranchID}
+		resolved[i] = resolvedItem{req: item, poItem: poItem, branchID: product.BranchID, costPriceBefore: product.CostPrice}
 	}
 
 	var result *GoodsReceipt
@@ -310,8 +311,10 @@ func (s *Service) CreateGoodsReceipt(ctx context.Context, orgID uint, poID uint,
 			}
 
 			var newQty int
+			var currentQty int
 			if level == nil {
 				newQty = r.req.ReceivedQty
+				currentQty = 0
 				if err := s.stock.CreateStockLevel(tx, &inventory.StockLevel{
 					ProductID: r.poItem.ProductID,
 					BranchID:  r.branchID,
@@ -320,10 +323,16 @@ func (s *Service) CreateGoodsReceipt(ctx context.Context, orgID uint, poID uint,
 					return err
 				}
 			} else {
+				currentQty = level.Qty
 				newQty = level.Qty + r.req.ReceivedQty
 				if err := s.stock.UpdateStockLevelQty(tx, level.ID, newQty); err != nil {
 					return err
 				}
+			}
+
+			newCost := weightedAverageCost(currentQty, r.costPriceBefore, r.req.ReceivedQty, r.poItem.UnitCost)
+			if err := s.products.UpdateProduct(tx, r.poItem.ProductID, map[string]any{"cost_price": newCost}); err != nil {
+				return err
 			}
 
 			if err := s.stock.CreateInventoryLedgerEntry(tx, &inventory.InventoryLedger{
@@ -353,4 +362,23 @@ func (s *Service) CreateGoodsReceipt(ctx context.Context, orgID uint, poID uint,
 	}
 
 	return result, nil
+}
+
+// weightedAverageCost blends receivedQty units at receivedUnitCost into a
+// product's existing cost basis, weighted by currentQty - the product's own
+// on-hand qty at this specific branch immediately before this movement (not
+// summed across every branch it might also exist at via a transfer - see
+// catalog.Product.CostPrice's own doc for why that's an accepted
+// simplification). currentQty <= 0 (nothing on hand yet) means there's
+// nothing to blend with - the new cost is just receivedUnitCost itself.
+// Same small-helper-duplicated-per-domain shape as applyStockDelta - see
+// inventory.Service's own copy of this exact function.
+func weightedAverageCost(currentQty int, currentCost decimal.Decimal, receivedQty int, receivedUnitCost decimal.Decimal) decimal.Decimal {
+	if currentQty <= 0 {
+		return receivedUnitCost
+	}
+	existingValue := currentCost.Mul(decimal.NewFromInt(int64(currentQty)))
+	receivedValue := receivedUnitCost.Mul(decimal.NewFromInt(int64(receivedQty)))
+	totalQty := decimal.NewFromInt(int64(currentQty + receivedQty))
+	return existingValue.Add(receivedValue).Div(totalQty).Round(2)
 }

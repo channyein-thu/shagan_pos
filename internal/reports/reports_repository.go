@@ -64,4 +64,18 @@ type Repository interface {
 	// many have fallen to or below their own reorder threshold / to zero,
 	// scoped to orgID and optionally one branch.
 	ProductCounts(ctx context.Context, orgID uint, branchID *uint) (ProductCounts, error)
+	// COGS backs GetProfitAndLoss - Σ(SaleItem.UnitCost × Qty) for the same
+	// sale population SalesAggregate uses, minus the cost of items
+	// returned in the period (Σ SaleItem.UnitCost × ReturnItem.Qty, dated
+	// by when the return happened via ReturnItem -> SaleItem's own FK,
+	// same reasoning as ReturnsTotal not being dated by the original
+	// sale). UnitCost is a per-sale snapshot (see sales.SaleItem.UnitCost's
+	// own doc), so this is historically accurate even if a product's
+	// current cost has since changed.
+	COGS(ctx context.Context, orgID uint, branchID *uint, from, to time.Time) (decimal.Decimal, error)
+	// Expenses backs GetProfitAndLoss - Σ Expense.Amount for branchIDs
+	// (already resolved by the service to the caller's own org, or one
+	// verified branch - shift.Expense carries no OrgID of its own, only
+	// BranchID) within [from, to), by Expense's own Date field.
+	Expenses(ctx context.Context, branchIDs []uint, from, to time.Time) (decimal.Decimal, error)
 }

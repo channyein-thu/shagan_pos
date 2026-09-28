@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -21,6 +22,14 @@ func requireRestErrorStatus(t *testing.T, err error, status int) {
 	var restErr common.RestError
 	require.True(t, errors.As(err, &restErr), "expected a common.RestError, got %T: %v", err, err)
 	require.Equal(t, status, restErr.Status)
+}
+
+func d(s string) decimal.Decimal {
+	v, err := decimal.NewFromString(s)
+	if err != nil {
+		panic(err)
+	}
+	return v
 }
 
 // fakeTransactioner runs fc directly against a nil *gorm.DB, with no real
@@ -304,6 +313,61 @@ func TestService_CreateStockAdjustment_UnknownProduct_PropagatesNotFound(t *test
 	_, err := svc.CreateStockAdjustment(context.Background(), 7, 42, CreateStockAdjustmentRequest{ProductID: 99, Delta: 5, Reason: "found extra"})
 	require.Error(t, err)
 	requireRestErrorStatus(t, err, http.StatusNotFound)
+}
+
+func TestService_CreateStockAdjustment_WithUnitCost_BlendsWeightedAverageCost(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	products := NewMockProductLookup(t)
+	svc := NewService(repo, branches, products, fakeTransactioner{})
+
+	unitCost := d("3.00")
+	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7, BranchID: 5, CostPrice: d("1.00")}, nil).Once()
+	// existing 10 units @ 1.00 blended with 10 more @ 3.00: (10*1 + 10*3)/20 = 2.00
+	repo.EXPECT().GetStockLevel(mock.Anything, uint(1), uint(5)).Return(&StockLevel{ID: 50, ProductID: 1, BranchID: 5, Qty: 10}, nil).Once()
+	repo.EXPECT().UpdateStockLevelQty(mock.Anything, uint(50), 20).Return(nil).Once()
+	products.EXPECT().
+		UpdateProduct(mock.Anything, uint(1), mock.MatchedBy(func(updates map[string]any) bool {
+			cost, ok := updates["cost_price"].(decimal.Decimal)
+			return ok && cost.Equal(d("2.00"))
+		})).
+		Return(nil).Once()
+	repo.EXPECT().CreateStockAdjustment(mock.Anything, mock.Anything).Return(nil).Once()
+	repo.EXPECT().CreateInventoryLedgerEntry(mock.Anything, mock.Anything).Return(nil).Once()
+
+	_, err := svc.CreateStockAdjustment(context.Background(), 7, 42, CreateStockAdjustmentRequest{
+		ProductID: 1, Delta: 10, Reason: "restocked", UnitCost: &unitCost,
+	})
+	require.NoError(t, err)
+}
+
+func TestService_CreateStockAdjustment_UnitCostWithNonPositiveDelta_ReturnsBadRequest(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	products := NewMockProductLookup(t)
+	svc := NewService(repo, branches, products, fakeTransactioner{})
+	// GetProduct must never be called - rejected before any lookup.
+
+	unitCost := d("3.00")
+	_, err := svc.CreateStockAdjustment(context.Background(), 7, 42, CreateStockAdjustmentRequest{
+		ProductID: 1, Delta: -5, Reason: "shrinkage", UnitCost: &unitCost,
+	})
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusBadRequest)
+}
+
+func TestService_CreateStockAdjustment_NegativeUnitCost_ReturnsBadRequest(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	products := NewMockProductLookup(t)
+	svc := NewService(repo, branches, products, fakeTransactioner{})
+
+	unitCost := d("-1.00")
+	_, err := svc.CreateStockAdjustment(context.Background(), 7, 42, CreateStockAdjustmentRequest{
+		ProductID: 1, Delta: 5, Reason: "found extra", UnitCost: &unitCost,
+	})
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusBadRequest)
 }
 
 func TestService_ListStockTransfers_OrgWide_ListsAllOrgBranches(t *testing.T) {

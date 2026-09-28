@@ -18,6 +18,10 @@ import (
 // signature - no adapter needed, same reasoning as inventory.ProductLookup.
 type ProductLookup interface {
 	GetProduct(ctx context.Context, orgID uint, id uint) (*catalog.Product, error)
+	// UpdateProduct backs CreateGoodsReceipt's weighted-average cost blend
+	// (see Product.CostPrice's own doc) - db is the same in-flight
+	// transaction the stock/ledger writes participate in.
+	UpdateProduct(db *gorm.DB, id uint, updates map[string]any) error
 }
 
 // InventoryWriter is what procurement needs from inventory: crediting a

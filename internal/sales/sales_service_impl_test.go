@@ -15,6 +15,7 @@ import (
 	"gorm.io/gorm"
 
 	"shagan_pos/internal/audit"
+	"shagan_pos/internal/catalog"
 	"shagan_pos/internal/common"
 	"shagan_pos/internal/inventory"
 )
@@ -29,8 +30,16 @@ func (fakeTransactioner) Transaction(fc func(tx *gorm.DB) error, _ ...*sql.TxOpt
 	return fc(nil)
 }
 
-func newTestService(repo Repository, inv InventoryWriter, auditWriter AuditWriter) *Service {
-	return NewService(repo, inv, auditWriter, fakeTransactioner{})
+func d(s string) decimal.Decimal {
+	v, err := decimal.NewFromString(s)
+	if err != nil {
+		panic(err)
+	}
+	return v
+}
+
+func newTestService(repo Repository, inv InventoryWriter, products ProductLookup, auditWriter AuditWriter) *Service {
+	return NewService(repo, inv, products, auditWriter, fakeTransactioner{})
 }
 
 func requireRestErrorStatus(t *testing.T, err error, status int) {
@@ -44,7 +53,8 @@ func TestService_CreateSale_HappyPath_DerivesTotalsAndPersistsAtomically(t *test
 	repo := NewMockRepository(t)
 	inv := NewMockInventoryWriter(t)
 	audW := NewMockAuditWriter(t)
-	svc := newTestService(repo, inv, audW)
+	products := NewMockProductLookup(t)
+	svc := newTestService(repo, inv, products, audW)
 
 	saleID := uuid.New()
 	in := CreateSaleRequest{
@@ -61,6 +71,7 @@ func TestService_CreateSale_HappyPath_DerivesTotalsAndPersistsAtomically(t *test
 	}
 	// subtotal = 1000*2 = 2000; discount = 50; tax = 100; total = 2000 - 50 + 100 = 2050
 
+	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7, CostPrice: d("600.00")}, nil).Once()
 	repo.EXPECT().RequireOpenShift(mock.Anything, uint(7), uint(3), uint(9)).Return(nil).Once()
 	repo.EXPECT().CreateSale(mock.Anything, mock.MatchedBy(func(s *Sale) bool {
 		return s.ID == saleID && s.OrgID == 7 && s.BranchID == 3 && s.ShiftID == 9 && s.StaffID == 14 && s.DeviceID == 3 &&
@@ -71,7 +82,8 @@ func TestService_CreateSale_HappyPath_DerivesTotalsAndPersistsAtomically(t *test
 			s.Status == SaleStatusCompleted && s.CompletedAt != nil
 	})).Return(nil).Once()
 	repo.EXPECT().CreateSaleItems(mock.Anything, mock.MatchedBy(func(items []SaleItem) bool {
-		return len(items) == 1 && items[0].SaleID == saleID && items[0].LineTotal.Equal(decimal.NewFromInt(1950))
+		return len(items) == 1 && items[0].SaleID == saleID && items[0].LineTotal.Equal(decimal.NewFromInt(1950)) &&
+			items[0].UnitCost.Equal(d("600.00"))
 	})).Return(nil).Once()
 	repo.EXPECT().CreatePayments(mock.Anything, mock.MatchedBy(func(payments []Payment) bool {
 		return len(payments) == 1 && payments[0].SaleID == saleID && payments[0].Amount.Equal(decimal.NewFromInt(2050))
@@ -102,7 +114,8 @@ func TestService_CreateSale_UsesPriceOverrideWhenSet(t *testing.T) {
 	repo := NewMockRepository(t)
 	inv := NewMockInventoryWriter(t)
 	audW := NewMockAuditWriter(t)
-	svc := newTestService(repo, inv, audW)
+	products := NewMockProductLookup(t)
+	svc := newTestService(repo, inv, products, audW)
 
 	override := decimal.NewFromInt(800)
 	in := CreateSaleRequest{
@@ -116,6 +129,7 @@ func TestService_CreateSale_UsesPriceOverrideWhenSet(t *testing.T) {
 		},
 	}
 
+	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7, CostPrice: d("400.00")}, nil).Once()
 	repo.EXPECT().RequireOpenShift(mock.Anything, uint(7), uint(3), uint(9)).Return(nil).Once()
 	repo.EXPECT().CreateSale(mock.Anything, mock.MatchedBy(func(s *Sale) bool {
 		return s.Subtotal.Equal(decimal.NewFromInt(800)) && s.Total.Equal(decimal.NewFromInt(800))
@@ -134,7 +148,8 @@ func TestService_CreateSale_PaymentsMismatch_RejectsWithoutOpeningTransaction(t 
 	repo := NewMockRepository(t)
 	inv := NewMockInventoryWriter(t)
 	audW := NewMockAuditWriter(t)
-	svc := newTestService(repo, inv, audW)
+	products := NewMockProductLookup(t)
+	svc := newTestService(repo, inv, products, audW)
 
 	in := CreateSaleRequest{
 		ID:      uuid.New(),
@@ -153,7 +168,8 @@ func TestService_CreateSale_DiscountWithoutPermission_RejectsWithoutOpeningTrans
 	repo := NewMockRepository(t)
 	inv := NewMockInventoryWriter(t)
 	audW := NewMockAuditWriter(t)
-	svc := newTestService(repo, inv, audW)
+	products := NewMockProductLookup(t)
+	svc := newTestService(repo, inv, products, audW)
 
 	in := CreateSaleRequest{
 		ID:      uuid.New(),
@@ -172,7 +188,8 @@ func TestService_CreateSale_NegativeItemDiscount_RejectsWithoutOpeningTransactio
 	repo := NewMockRepository(t)
 	inv := NewMockInventoryWriter(t)
 	audW := NewMockAuditWriter(t)
-	svc := newTestService(repo, inv, audW)
+	products := NewMockProductLookup(t)
+	svc := newTestService(repo, inv, products, audW)
 
 	in := CreateSaleRequest{
 		ID:      uuid.New(),
@@ -191,7 +208,8 @@ func TestService_CreateSale_NegativeItemTax_RejectsWithoutOpeningTransaction(t *
 	repo := NewMockRepository(t)
 	inv := NewMockInventoryWriter(t)
 	audW := NewMockAuditWriter(t)
-	svc := newTestService(repo, inv, audW)
+	products := NewMockProductLookup(t)
+	svc := newTestService(repo, inv, products, audW)
 
 	in := CreateSaleRequest{
 		ID:      uuid.New(),
@@ -210,7 +228,8 @@ func TestService_CreateSale_SumsComboItemTaxIntoSaleTax(t *testing.T) {
 	repo := NewMockRepository(t)
 	inv := NewMockInventoryWriter(t)
 	audW := NewMockAuditWriter(t)
-	svc := newTestService(repo, inv, audW)
+	products := NewMockProductLookup(t)
+	svc := newTestService(repo, inv, products, audW)
 
 	saleID := uuid.New()
 	comboID := uint(5)
@@ -225,6 +244,8 @@ func TestService_CreateSale_SumsComboItemTaxIntoSaleTax(t *testing.T) {
 	}
 	// subtotal = 600+400 = 1000; tax = 20+10 = 30; total = 1030
 
+	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7, CostPrice: d("300.00")}, nil).Once()
+	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(2)).Return(&catalog.Product{ID: 2, OrgID: 7, CostPrice: d("200.00")}, nil).Once()
 	repo.EXPECT().RequireOpenShift(mock.Anything, uint(7), uint(3), uint(9)).Return(nil).Once()
 	repo.EXPECT().CreateSale(mock.Anything, mock.MatchedBy(func(s *Sale) bool {
 		return s.Tax.Equal(decimal.NewFromInt(30)) && s.Total.Equal(decimal.NewFromInt(1030))
@@ -247,7 +268,8 @@ func TestService_CreateSale_InsufficientStock_RollsBackWithConflict(t *testing.T
 	repo := NewMockRepository(t)
 	inv := NewMockInventoryWriter(t)
 	audW := NewMockAuditWriter(t)
-	svc := newTestService(repo, inv, audW)
+	products := NewMockProductLookup(t)
+	svc := newTestService(repo, inv, products, audW)
 
 	in := CreateSaleRequest{
 		ID:      uuid.New(),
@@ -256,6 +278,7 @@ func TestService_CreateSale_InsufficientStock_RollsBackWithConflict(t *testing.T
 		Payments: []CreateSalePaymentRequest{{Method: PaymentMethodCash, Amount: decimal.NewFromInt(5000)}},
 	}
 
+	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7}, nil).Once()
 	repo.EXPECT().RequireOpenShift(mock.Anything, uint(7), uint(3), uint(9)).Return(nil).Once()
 	repo.EXPECT().CreateSale(mock.Anything, mock.Anything).Return(nil).Once()
 	repo.EXPECT().CreateSaleItems(mock.Anything, mock.Anything).Return(nil).Once()
@@ -275,7 +298,8 @@ func TestService_CreateSale_AllowNegativeStock_LetsItThroughAndReportsEvent(t *t
 	repo := NewMockRepository(t)
 	inv := NewMockInventoryWriter(t)
 	audW := NewMockAuditWriter(t)
-	svc := newTestService(repo, inv, audW)
+	products := NewMockProductLookup(t)
+	svc := newTestService(repo, inv, products, audW)
 
 	in := CreateSaleRequest{
 		ID:      uuid.New(),
@@ -284,6 +308,7 @@ func TestService_CreateSale_AllowNegativeStock_LetsItThroughAndReportsEvent(t *t
 		Payments: []CreateSalePaymentRequest{{Method: PaymentMethodCash, Amount: decimal.NewFromInt(5000)}},
 	}
 
+	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7}, nil).Once()
 	repo.EXPECT().RequireOpenShift(mock.Anything, uint(7), uint(3), uint(9)).Return(nil).Once()
 	repo.EXPECT().CreateSale(mock.Anything, mock.Anything).Return(nil).Once()
 	repo.EXPECT().CreateSaleItems(mock.Anything, mock.Anything).Return(nil).Once()
@@ -304,7 +329,8 @@ func TestService_CreateSale_SameProductAcrossMultipleLines_AggregatesQtyBeforeDe
 	repo := NewMockRepository(t)
 	inv := NewMockInventoryWriter(t)
 	audW := NewMockAuditWriter(t)
-	svc := newTestService(repo, inv, audW)
+	products := NewMockProductLookup(t)
+	svc := newTestService(repo, inv, products, audW)
 
 	in := CreateSaleRequest{
 		ID:      uuid.New(),
@@ -316,9 +342,14 @@ func TestService_CreateSale_SameProductAcrossMultipleLines_AggregatesQtyBeforeDe
 		Payments: []CreateSalePaymentRequest{{Method: PaymentMethodCash, Amount: decimal.NewFromInt(2500)}},
 	}
 
+	// Exactly one GetProduct call for product 1 - the cost lookup is
+	// deduped per unique product, same as the stock decrement below.
+	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7, CostPrice: d("300.00")}, nil).Once()
 	repo.EXPECT().RequireOpenShift(mock.Anything, uint(7), uint(3), uint(9)).Return(nil).Once()
 	repo.EXPECT().CreateSale(mock.Anything, mock.Anything).Return(nil).Once()
-	repo.EXPECT().CreateSaleItems(mock.Anything, mock.Anything).Return(nil).Once()
+	repo.EXPECT().CreateSaleItems(mock.Anything, mock.MatchedBy(func(items []SaleItem) bool {
+		return len(items) == 2 && items[0].UnitCost.Equal(d("300.00")) && items[1].UnitCost.Equal(d("300.00"))
+	})).Return(nil).Once()
 	repo.EXPECT().CreatePayments(mock.Anything, mock.Anything).Return(nil).Once()
 	// Exactly one GetStockLevel/UpdateStockLevelQty pair for product 1,
 	// decrementing by the combined qty of both lines (5), not two separate
@@ -339,7 +370,8 @@ func TestService_CreateSale_ShiftNotOpen_PropagatesErrorWithoutPersisting(t *tes
 	repo := NewMockRepository(t)
 	inv := NewMockInventoryWriter(t)
 	audW := NewMockAuditWriter(t)
-	svc := newTestService(repo, inv, audW)
+	products := NewMockProductLookup(t)
+	svc := newTestService(repo, inv, products, audW)
 
 	in := CreateSaleRequest{
 		ID:      uuid.New(),
@@ -348,6 +380,7 @@ func TestService_CreateSale_ShiftNotOpen_PropagatesErrorWithoutPersisting(t *tes
 		Payments: []CreateSalePaymentRequest{{Method: PaymentMethodCash, Amount: decimal.NewFromInt(1000)}},
 	}
 
+	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7}, nil).Once()
 	repo.EXPECT().RequireOpenShift(mock.Anything, uint(7), uint(3), uint(9)).
 		Return(common.NotFoundError("shift not found, not open, or doesn't belong to this branch")).Once()
 
@@ -360,7 +393,8 @@ func TestService_ListSales_DelegatesToRepository(t *testing.T) {
 	repo := NewMockRepository(t)
 	inv := NewMockInventoryWriter(t)
 	audW := NewMockAuditWriter(t)
-	svc := newTestService(repo, inv, audW)
+	products := NewMockProductLookup(t)
+	svc := newTestService(repo, inv, products, audW)
 
 	want := []Sale{{OrgID: 7}, {OrgID: 7}}
 	repo.EXPECT().ListSales(mock.Anything, uint(7)).Return(want, nil).Once()
@@ -374,7 +408,8 @@ func TestService_GetSale_DelegatesToRepository(t *testing.T) {
 	repo := NewMockRepository(t)
 	inv := NewMockInventoryWriter(t)
 	audW := NewMockAuditWriter(t)
-	svc := newTestService(repo, inv, audW)
+	products := NewMockProductLookup(t)
+	svc := newTestService(repo, inv, products, audW)
 
 	id := uuid.New()
 	want := &Sale{ID: id, OrgID: 7}
@@ -389,7 +424,8 @@ func TestService_GetSaleReceipt_BundlesSaleItemsAndPayments(t *testing.T) {
 	repo := NewMockRepository(t)
 	inv := NewMockInventoryWriter(t)
 	audW := NewMockAuditWriter(t)
-	svc := newTestService(repo, inv, audW)
+	products := NewMockProductLookup(t)
+	svc := newTestService(repo, inv, products, audW)
 
 	id := uuid.New()
 	sale := &Sale{ID: id, OrgID: 7}
@@ -410,7 +446,8 @@ func TestService_GetSaleReceipt_PropagatesNotFoundWithoutListingItemsOrPayments(
 	repo := NewMockRepository(t)
 	inv := NewMockInventoryWriter(t)
 	audW := NewMockAuditWriter(t)
-	svc := newTestService(repo, inv, audW)
+	products := NewMockProductLookup(t)
+	svc := newTestService(repo, inv, products, audW)
 
 	id := uuid.New()
 	repo.EXPECT().GetSale(mock.Anything, uint(7), id).Return(nil, common.NotFoundError("sale not found")).Once()
@@ -425,7 +462,8 @@ func TestService_ReprintSale_ReturnsSameBundleAsGetSaleReceipt(t *testing.T) {
 	repo := NewMockRepository(t)
 	inv := NewMockInventoryWriter(t)
 	audW := NewMockAuditWriter(t)
-	svc := newTestService(repo, inv, audW)
+	products := NewMockProductLookup(t)
+	svc := newTestService(repo, inv, products, audW)
 
 	id := uuid.New()
 	sale := &Sale{ID: id, OrgID: 7}
@@ -442,7 +480,8 @@ func TestService_CreateHeldSale_OverwritesBranchStaffAndHeldAt(t *testing.T) {
 	repo := NewMockRepository(t)
 	inv := NewMockInventoryWriter(t)
 	audW := NewMockAuditWriter(t)
-	svc := newTestService(repo, inv, audW)
+	products := NewMockProductLookup(t)
+	svc := newTestService(repo, inv, products, audW)
 
 	items := datatypes.JSON(`[{"product_id":1,"qty":2}]`)
 	in := CreateHeldSaleRequest{
@@ -462,7 +501,8 @@ func TestService_CreateHeldSale_RejectsNegativeDiscountWithoutPersisting(t *test
 	repo := NewMockRepository(t)
 	inv := NewMockInventoryWriter(t)
 	audW := NewMockAuditWriter(t)
-	svc := newTestService(repo, inv, audW)
+	products := NewMockProductLookup(t)
+	svc := newTestService(repo, inv, products, audW)
 
 	in := CreateHeldSaleRequest{Items: datatypes.JSON(`[]`), Discount: decimal.NewFromInt(-1)}
 
@@ -475,7 +515,8 @@ func TestService_ListHeldSales_DelegatesToRepositoryByBranch(t *testing.T) {
 	repo := NewMockRepository(t)
 	inv := NewMockInventoryWriter(t)
 	audW := NewMockAuditWriter(t)
-	svc := newTestService(repo, inv, audW)
+	products := NewMockProductLookup(t)
+	svc := newTestService(repo, inv, products, audW)
 
 	want := []HeldSale{{ID: 1, BranchID: 3}, {ID: 2, BranchID: 3}}
 	repo.EXPECT().ListHeldSales(mock.Anything, uint(3)).Return(want, nil).Once()
@@ -489,7 +530,8 @@ func TestService_ResumeHeldSale_DelegatesToRepositoryByBranch(t *testing.T) {
 	repo := NewMockRepository(t)
 	inv := NewMockInventoryWriter(t)
 	audW := NewMockAuditWriter(t)
-	svc := newTestService(repo, inv, audW)
+	products := NewMockProductLookup(t)
+	svc := newTestService(repo, inv, products, audW)
 
 	want := &HeldSale{ID: 9, BranchID: 3}
 	repo.EXPECT().ResumeHeldSale(mock.Anything, uint(3), uint(9)).Return(want, nil).Once()
@@ -503,7 +545,8 @@ func TestService_ResumeHeldSale_PropagatesNotFound(t *testing.T) {
 	repo := NewMockRepository(t)
 	inv := NewMockInventoryWriter(t)
 	audW := NewMockAuditWriter(t)
-	svc := newTestService(repo, inv, audW)
+	products := NewMockProductLookup(t)
+	svc := newTestService(repo, inv, products, audW)
 
 	repo.EXPECT().ResumeHeldSale(mock.Anything, uint(3), uint(9)).Return(nil, common.NotFoundError("held sale not found")).Once()
 

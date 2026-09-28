@@ -27,8 +27,17 @@ type Product struct {
 	Threshold  int             `gorm:"not null" json:"threshold"`
 	IsActive   bool            `gorm:"not null" json:"is_active"`
 	Modifier   *string         `gorm:"size:255" json:"modifier"`
-	CreatedAt  time.Time       `gorm:"autoCreateTime;not null" json:"created_at"`
-	UpdatedAt  time.Time       `gorm:"autoUpdateTime;not null" json:"updated_at"`
+	// CostPrice is this product's current cost basis, blended via weighted
+	// average across however it enters stock (a Procurement goods receipt,
+	// or an Inventory stock adjustment that supplies its own unit_cost -
+	// see inventory.CreateStockAdjustmentRequest's doc), or set directly
+	// here via UpdateProduct. Deliberately json:"-" - cost is
+	// business-sensitive and never appears in the product list/detail
+	// response every pos-device till reads; it's only readable through
+	// reports.GetProfitAndLoss or this domain's own Go code.
+	CostPrice decimal.Decimal `gorm:"type:decimal(10,2);not null;default:0" json:"-"`
+	CreatedAt time.Time       `gorm:"autoCreateTime;not null" json:"created_at"`
+	UpdatedAt time.Time       `gorm:"autoUpdateTime;not null" json:"updated_at"`
 }
 
 // Category maps to the "categories" table in the ERD. NameI18n is unique per

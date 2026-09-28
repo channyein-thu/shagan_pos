@@ -16,12 +16,13 @@ import (
 type Service struct {
 	repo      Repository
 	inventory InventoryWriter
+	products  ProductLookup
 	audit     AuditWriter
 	db        common.Transactioner
 }
 
-func NewService(repo Repository, inv InventoryWriter, auditWriter AuditWriter, db common.Transactioner) *Service {
-	return &Service{repo: repo, inventory: inv, audit: auditWriter, db: db}
+func NewService(repo Repository, inv InventoryWriter, products ProductLookup, auditWriter AuditWriter, db common.Transactioner) *Service {
+	return &Service{repo: repo, inventory: inv, products: products, audit: auditWriter, db: db}
 }
 
 var _ Interface = (*Service)(nil)
@@ -99,6 +100,24 @@ func (s *Service) CreateSale(ctx context.Context, orgID uint, branchID uint, act
 	}
 	if !paymentsTotal.Equal(total) {
 		return nil, nil, common.BadRequestError("payments must add up to the sale total")
+	}
+
+	// Cost is resolved server-side, once per unique product, only once the
+	// request itself is known to be well-formed - see SaleItem.UnitCost's
+	// own doc for why this is never client-supplied.
+	costByProduct := make(map[uint]decimal.Decimal, len(saleItems))
+	for i := range saleItems {
+		productID := saleItems[i].ProductID
+		cost, ok := costByProduct[productID]
+		if !ok {
+			product, err := s.products.GetProduct(ctx, orgID, productID)
+			if err != nil {
+				return nil, nil, err
+			}
+			cost = product.CostPrice
+			costByProduct[productID] = cost
+		}
+		saleItems[i].UnitCost = cost
 	}
 
 	now := time.Now()

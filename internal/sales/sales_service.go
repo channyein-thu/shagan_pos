@@ -7,8 +7,18 @@ import (
 	"gorm.io/gorm"
 
 	"shagan_pos/internal/audit"
+	"shagan_pos/internal/catalog"
 	"shagan_pos/internal/inventory"
 )
+
+// ProductLookup is what sales needs from catalog: reading each item's own
+// Product.CostPrice server-side at sale time, to snapshot onto
+// SaleItem.UnitCost - see SaleItem.UnitCost's own doc for why this is
+// never client-supplied, unlike UnitPrice/NameSnapshot/Tax. catalog.Repository
+// already satisfies this signature - no adapter needed.
+type ProductLookup interface {
+	GetProduct(ctx context.Context, orgID uint, id uint) (*catalog.Product, error)
+}
 
 // InventoryWriter is what sales needs from inventory: decrementing a sold
 // product's stock at the selling branch and recording the ledger entry,

@@ -10,11 +10,35 @@ import (
 )
 
 type Service struct {
-	repo Repository
+	repo     Repository
+	branches BranchLookup
 }
 
-func NewService(repo Repository) *Service {
-	return &Service{repo: repo}
+func NewService(repo Repository, branches BranchLookup) *Service {
+	return &Service{repo: repo, branches: branches}
+}
+
+// resolveBranchIDs turns branchID (one verified branch, or every branch in
+// orgID when nil) into the branchIDs GetProfitAndLoss's Expenses query
+// expects - same reasoning as inventory.Service.resolveBranchIDs. Every
+// other Reports query filters its own table's plain org_id column instead
+// and never needed this.
+func (s *Service) resolveBranchIDs(ctx context.Context, orgID uint, branchID *uint) ([]uint, error) {
+	if branchID != nil {
+		if _, err := s.branches.GetBranch(ctx, orgID, *branchID); err != nil {
+			return nil, err
+		}
+		return []uint{*branchID}, nil
+	}
+	branchList, err := s.branches.ListBranches(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	branchIDs := make([]uint, len(branchList))
+	for i, b := range branchList {
+		branchIDs[i] = b.ID
+	}
+	return branchIDs, nil
 }
 
 var _ Interface = (*Service)(nil)
@@ -292,6 +316,37 @@ func (s *Service) GetTopProducts(ctx context.Context, orgID uint, branchID *uint
 		return nil, err
 	}
 	return &TopProductsReport{Products: products}, nil
+}
+
+func (s *Service) GetProfitAndLoss(ctx context.Context, orgID uint, branchID *uint, from, to *time.Time) (*ProfitAndLoss, error) {
+	start, end := resolveDateRange(from, to)
+
+	totals, err := s.salesTotals(ctx, orgID, branchID, start, end)
+	if err != nil {
+		return nil, err
+	}
+	cogs, err := s.repo.COGS(ctx, orgID, branchID, start, end)
+	if err != nil {
+		return nil, err
+	}
+	branchIDs, err := s.resolveBranchIDs(ctx, orgID, branchID)
+	if err != nil {
+		return nil, err
+	}
+	expenses, err := s.repo.Expenses(ctx, branchIDs, start, end)
+	if err != nil {
+		return nil, err
+	}
+
+	grossProfit := totals.NetSales.Sub(cogs)
+	netProfit := grossProfit.Sub(expenses)
+	return &ProfitAndLoss{
+		SalesTotals: totals,
+		COGS:        cogs,
+		GrossProfit: grossProfit,
+		Expenses:    expenses,
+		NetProfit:   netProfit,
+	}, nil
 }
 
 func (s *Service) ExportReport(ctx context.Context) (map[string]any, error) {

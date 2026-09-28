@@ -849,6 +849,43 @@ func TestService_UpdateProduct_HappyPath_UpdatesAndReturns(t *testing.T) {
 	require.Same(t, updated, got)
 }
 
+func TestService_UpdateProduct_CostPrice_AppliesDirectly(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	existing := &Product{ID: 1, OrgID: 7, BranchID: 5}
+	updated := &Product{ID: 1, OrgID: 7, BranchID: 5, CostPrice: decimal.NewFromFloat(4.25)}
+	cost := decimal.NewFromFloat(4.25)
+	in := UpdateProductRequest{CostPrice: &cost}
+
+	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(existing, nil).Once()
+	repo.EXPECT().UpdateProduct(mock.Anything, uint(1), map[string]any{"cost_price": cost}).Return(nil).Once()
+	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(updated, nil).Once()
+
+	got, err := svc.UpdateProduct(context.Background(), 7, 1, in, nil, 0, "", "")
+	require.NoError(t, err)
+	require.Same(t, updated, got)
+}
+
+func TestService_UpdateProduct_NegativeCostPrice_ReturnsBadRequest(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, branches, fakeTransactioner{}, store)
+
+	existing := &Product{ID: 1, OrgID: 7, BranchID: 5}
+	cost := decimal.NewFromFloat(-1.00)
+
+	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(existing, nil).Once()
+	// UpdateProduct must never be called - rejected before any write.
+
+	_, err := svc.UpdateProduct(context.Background(), 7, 1, UpdateProductRequest{CostPrice: &cost}, nil, 0, "", "")
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusBadRequest)
+}
+
 func TestService_UpdateProduct_NoFieldsProvided_SkipsWrite(t *testing.T) {
 	repo := NewMockRepository(t)
 	branches := NewMockBranchLookup(t)

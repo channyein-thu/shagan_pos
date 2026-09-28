@@ -1845,6 +1845,11 @@
                       "type": "text"
                     },
                     {
+                      "key": "cost_price",
+                      "value": "1.75",
+                      "type": "text"
+                    },
+                    {
                       "key": "image",
                       "type": "file",
                       "src": []
@@ -1862,7 +1867,7 @@
                     }
                   ]
                 },
-                "description": "Multipart upload, scoped to the caller's org (org_id can never be reassigned via this endpoint). Every field is optional - only send what you want to change, remove any row you don't need (an unselected \"image\" file row causes a Postman bug - EISDIR - so delete it entirely rather than leaving it empty). branch_id/category_id, if sent, must belong to your own org. price/discount/tax are validated against the resulting combined state (existing values fill in for anything not sent), not just the fields in this request. image, if attached, entirely replaces the product's existing photo. modifier can't be cleared back to null via PATCH yet - omitting it just leaves it unchanged."
+                "description": "Multipart upload, scoped to the caller's org (org_id can never be reassigned via this endpoint). Every field is optional - only send what you want to change, remove any row you don't need (an unselected \"image\" file row causes a Postman bug - EISDIR - so delete it entirely rather than leaving it empty). branch_id/category_id, if sent, must belong to your own org. price/discount/tax are validated against the resulting combined state (existing values fill in for anything not sent), not just the fields in this request. image, if attached, entirely replaces the product's existing photo. modifier can't be cleared back to null via PATCH yet - omitting it just leaves it unchanged. cost_price lets you set the cost basis directly (e.g. for stock never received through a real Procurement goods receipt) - it never appears in GET /products or GET /products/:id (business-sensitive, only readable via GET /reports/profit-loss)."
               },
               "response": []
             },
@@ -2271,7 +2276,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"product_id\": 1,\n  \"delta\": -3,\n  \"reason\": \"damaged in storage\"\n}",
+              "raw": "{\n  \"product_id\": 1,\n  \"delta\": 10,\n  \"reason\": \"initial stock count\",\n  \"unit_cost\": 1.50\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2283,7 +2288,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "inventory", "adjustments"]
             },
-            "description": "Applies delta to product_id's stock at its own branch (a product lives at exactly one branch - branch_id is never client-supplied) and writes one inventory_ledger row, atomically. delta can be positive (e.g. a manual recount finding more stock) or negative (e.g. shrinkage/damage). Returns 409 Conflict if delta would take quantity below zero - stock can never go negative from a movement this domain controls. actor_id is never client input - it's the authenticated caller's own user ID."
+            "description": "Applies delta to product_id's stock at its own branch (a product lives at exactly one branch - branch_id is never client-supplied) and writes one inventory_ledger row, atomically. delta can be positive (e.g. a manual recount finding more stock) or negative (e.g. shrinkage/damage). Returns 409 Conflict if delta would take quantity below zero - stock can never go negative from a movement this domain controls. actor_id is never client input - it's the authenticated caller's own user ID. unit_cost is optional and only meaningful alongside a positive delta (you're adding stock, so you can say what it's worth) - when given, it blends into the product's cost basis by weighted average, same method a Procurement goods receipt uses. Rejected (400) if given alongside a zero-or-negative delta, or if negative itself."
           },
           "response": []
         },
@@ -3961,6 +3966,31 @@
               ]
             },
             "description": "The top N products ranked by revenue (default limit 10) over from/to (default: the last 30 days) - same not-netted-against-Returns reasoning as ProductSalesReport."
+          },
+          "response": []
+        },
+        {
+          "name": "GetProfitAndLoss - GET /reports/profit-loss",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/reports/profit-loss?branch_id=1&from=2026-09-01&to=2026-09-27",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "reports", "profit-loss"],
+              "query": [
+                {"key": "branch_id", "value": "1", "description": "Optional - owner/service_center only (a pos-device token's own branch always wins instead)."},
+                {"key": "from", "value": "2026-09-01", "description": "Optional, YYYY-MM-DD, inclusive. Defaults (with to) to the last 30 days."},
+                {"key": "to", "value": "2026-09-27", "description": "Optional, YYYY-MM-DD, inclusive."}
+              ]
+            },
+            "description": "A real P&L statement over from/to (default: the last 30 days): Net Sales (same Gross-Discounts-Returns formula as SalesSummary) minus COGS (SUM(SaleItem.UnitCost * Qty), a per-sale snapshot of Product.CostPrice taken at sale time - never client-supplied) equals Gross Profit; minus Expenses (shift.Expense, already real per-branch data) equals Net Profit. COGS is only as reliable as the product's own cost basis - a product that's never been through a real Procurement goods receipt or a manual cost_price edit (see UpdateProduct) reads as cost 0, overstating margin until one happens. Returns naturally reduce COGS too (via ReturnItem's own link back to the original SaleItem), no separate tracking needed."
           },
           "response": []
         },
