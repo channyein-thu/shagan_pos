@@ -117,8 +117,13 @@ type UpdateProductRequest struct {
 	Discount   *decimal.Decimal `json:"discount" binding:"omitempty"`
 	Tax        *decimal.Decimal `json:"tax" binding:"omitempty"`
 	Threshold  *int             `json:"threshold" binding:"omitempty"`
-	IsActive   *bool            `json:"is_active" binding:"omitempty"`
-	Modifier   *string          `json:"modifier" binding:"omitempty"`
+	// CostPrice lets an Owner set the cost basis directly - useful for
+	// stock that was never received through a real Procurement goods
+	// receipt (imported starting inventory, catalog seeded before
+	// Procurement was used) - see Product.CostPrice's own doc.
+	CostPrice *decimal.Decimal `json:"cost_price" binding:"omitempty"`
+	IsActive  *bool            `json:"is_active" binding:"omitempty"`
+	Modifier  *string          `json:"modifier" binding:"omitempty"`
 }
 
 // ProductImageResult is one image attached to a product, as returned by

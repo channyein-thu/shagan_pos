@@ -4,6 +4,7 @@ import (
 	"context"
 	"strconv"
 
+	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 
 	"shagan_pos/internal/common"
@@ -74,6 +75,12 @@ func (s *Service) ListInventoryLedger(ctx context.Context, orgID uint, branchID 
 // doc), then applies Delta to that product's StockLevel and appends one
 // InventoryLedger entry, all atomically.
 func (s *Service) CreateStockAdjustment(ctx context.Context, orgID uint, actorID uint, in CreateStockAdjustmentRequest) (*StockAdjustment, error) {
+	if in.UnitCost != nil && in.Delta <= 0 {
+		return nil, common.BadRequestError("unit_cost is only meaningful for a positive delta")
+	}
+	if in.UnitCost != nil && in.UnitCost.IsNegative() {
+		return nil, common.BadRequestError("unit_cost must be zero or greater")
+	}
 	product, err := s.products.GetProduct(ctx, orgID, in.ProductID)
 	if err != nil {
 		return nil, err
@@ -84,6 +91,14 @@ func (s *Service) CreateStockAdjustment(ctx context.Context, orgID uint, actorID
 		newQty, err := s.applyStockDelta(tx, in.ProductID, product.BranchID, in.Delta)
 		if err != nil {
 			return err
+		}
+
+		if in.UnitCost != nil {
+			currentQty := newQty - in.Delta
+			newCost := weightedAverageCost(currentQty, product.CostPrice, in.Delta, *in.UnitCost)
+			if err := s.products.UpdateProduct(tx, in.ProductID, map[string]any{"cost_price": newCost}); err != nil {
+				return err
+			}
 		}
 
 		adjustment = StockAdjustment{
@@ -143,6 +158,20 @@ func (s *Service) applyStockDelta(tx *gorm.DB, productID uint, branchID uint, de
 		return 0, err
 	}
 	return newQty, nil
+}
+
+// weightedAverageCost blends receivedQty units at receivedUnitCost into a
+// product's existing cost basis, weighted by currentQty - see
+// procurement.Service's own copy of this exact function for the full doc
+// (same small-helper-duplicated-per-domain shape as applyStockDelta).
+func weightedAverageCost(currentQty int, currentCost decimal.Decimal, receivedQty int, receivedUnitCost decimal.Decimal) decimal.Decimal {
+	if currentQty <= 0 {
+		return receivedUnitCost
+	}
+	existingValue := currentCost.Mul(decimal.NewFromInt(int64(currentQty)))
+	receivedValue := receivedUnitCost.Mul(decimal.NewFromInt(int64(receivedQty)))
+	totalQty := decimal.NewFromInt(int64(currentQty + receivedQty))
+	return existingValue.Add(receivedValue).Div(totalQty).Round(2)
 }
 
 func (s *Service) ListStockTransfers(ctx context.Context, orgID uint, branchID *uint) ([]StockTransfer, error) {

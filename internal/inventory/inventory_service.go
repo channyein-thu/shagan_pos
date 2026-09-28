@@ -3,6 +3,8 @@ package inventory
 import (
 	"context"
 
+	"gorm.io/gorm"
+
 	"shagan_pos/internal/catalog"
 	"shagan_pos/internal/identity"
 )
@@ -27,6 +29,11 @@ type BranchLookup interface {
 // satisfies this signature, no adapter needed.
 type ProductLookup interface {
 	GetProduct(ctx context.Context, orgID uint, id uint) (*catalog.Product, error)
+	// UpdateProduct backs CreateStockAdjustment's optional weighted-average
+	// cost blend (see CreateStockAdjustmentRequest.UnitCost's own doc) - db
+	// is the same in-flight transaction the stock/ledger writes participate
+	// in.
+	UpdateProduct(db *gorm.DB, id uint, updates map[string]any) error
 }
 
 // Interface defines the inventory domain's use cases.

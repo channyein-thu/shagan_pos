@@ -247,3 +247,45 @@ func (r *RepositoryImpl) ProductCounts(ctx context.Context, orgID uint, branchID
 
 	return counts, nil
 }
+
+func (r *RepositoryImpl) COGS(ctx context.Context, orgID uint, branchID *uint, from, to time.Time) (decimal.Decimal, error) {
+	var gross struct{ Total decimal.Decimal }
+	grossQ := r.db.WithContext(ctx).Table("sale_items").
+		Select("COALESCE(SUM(sale_items.unit_cost * sale_items.qty), 0) AS total").
+		Joins("JOIN sales ON sales.id = sale_items.sale_id").
+		Where("sales.org_id = ? AND sales."+completedSalesWhere, orgID, from, to)
+	if branchID != nil {
+		grossQ = grossQ.Where("sales.branch_id = ?", *branchID)
+	}
+	if err := grossQ.Scan(&gross).Error; err != nil {
+		return decimal.Zero, err
+	}
+
+	var returned struct{ Total decimal.Decimal }
+	returnedQ := r.db.WithContext(ctx).Table("return_items").
+		Select("COALESCE(SUM(sale_items.unit_cost * return_items.qty), 0) AS total").
+		Joins("JOIN sale_items ON sale_items.id = return_items.sale_item_id").
+		Joins("JOIN returns ON returns.id = return_items.return_id").
+		Joins("JOIN sales ON sales.id = sale_items.sale_id").
+		Where("sales.org_id = ? AND returns.created_at >= ? AND returns.created_at < ?", orgID, from, to)
+	if branchID != nil {
+		returnedQ = returnedQ.Where("sales.branch_id = ?", *branchID)
+	}
+	if err := returnedQ.Scan(&returned).Error; err != nil {
+		return decimal.Zero, err
+	}
+
+	return gross.Total.Sub(returned.Total), nil
+}
+
+func (r *RepositoryImpl) Expenses(ctx context.Context, branchIDs []uint, from, to time.Time) (decimal.Decimal, error) {
+	var row struct{ Total decimal.Decimal }
+	err := r.db.WithContext(ctx).Table("expenses").
+		Select("COALESCE(SUM(amount), 0) AS total").
+		Where("branch_id IN (?) AND date >= ? AND date < ?", branchIDs, from, to).
+		Scan(&row).Error
+	if err != nil {
+		return decimal.Zero, err
+	}
+	return row.Total, nil
+}

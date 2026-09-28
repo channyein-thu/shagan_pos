@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 
 	"shagan_pos/internal/common"
+	"shagan_pos/internal/identity"
 	"shagan_pos/internal/middleware"
 	"shagan_pos/internal/reports"
 )
@@ -18,7 +19,7 @@ type ReportsAPI struct {
 }
 
 func NewReportsAPI(db *gorm.DB) *ReportsAPI {
-	return &ReportsAPI{service: reports.NewService(reports.NewRepository(db))}
+	return &ReportsAPI{service: reports.NewService(reports.NewRepository(db), identity.NewRepository(db))}
 }
 
 func (a *ReportsAPI) RegisterRoutes(rg *gin.RouterGroup) {
@@ -32,6 +33,7 @@ func (a *ReportsAPI) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.GET("/reports/transactions", a.GetTransactionsReport)
 	rg.GET("/reports/product-sales", a.GetProductSalesReport)
 	rg.GET("/reports/top-products", a.GetTopProducts)
+	rg.GET("/reports/profit-loss", a.GetProfitAndLoss)
 	rg.POST("/reports/export", a.ExportReport)
 }
 
@@ -300,6 +302,28 @@ func (a *ReportsAPI) GetTopProducts(c *gin.Context) {
 		limit = &n
 	}
 	result, err := a.service.GetTopProducts(c.Request.Context(), orgID, branchID, from, to, limit)
+	if err != nil {
+		common.HandleError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// GetProfitAndLoss handles `GET /reports/profit-loss`.
+func (a *ReportsAPI) GetProfitAndLoss(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	branchID, ok := reportBranchID(c)
+	if !ok {
+		return
+	}
+	from, to, ok := reportDateRange(c)
+	if !ok {
+		return
+	}
+	result, err := a.service.GetProfitAndLoss(c.Request.Context(), orgID, branchID, from, to)
 	if err != nil {
 		common.HandleError(c, err)
 		return

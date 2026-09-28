@@ -160,6 +160,27 @@ type SalesSummary struct {
 	ByCategory      []CategoryBreakdown      `json:"by_category"`
 }
 
+// ProfitAndLoss backs `GET /reports/profit-loss` - a real P&L statement:
+//
+//	Net Sales
+//	− COGS            (cost of goods sold, from SaleItem.UnitCost snapshots)
+//	= Gross Profit
+//	− Expenses        (shift.Expense, already real per-branch data)
+//	= Net Profit
+//
+// COGS relies on SaleItem.UnitCost having been snapshotted at sale time
+// (see its own doc) - a sale item created before that existed reads as
+// UnitCost 0, so COGS (and therefore margin) for older sales will
+// understate cost until the catalog's cost basis has been established via
+// a real goods receipt or a manual UpdateProduct edit.
+type ProfitAndLoss struct {
+	SalesTotals
+	COGS        decimal.Decimal `json:"cogs"`
+	GrossProfit decimal.Decimal `json:"gross_profit"`
+	Expenses    decimal.Decimal `json:"expenses"`
+	NetProfit   decimal.Decimal `json:"net_profit"`
+}
+
 // PaymentMethodsReport backs `GET /reports/payment-methods`.
 type PaymentMethodsReport struct {
 	Total   decimal.Decimal          `json:"total"`

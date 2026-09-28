@@ -282,6 +282,14 @@ func (a *CatalogAPI) UpdateProduct(c *gin.Context) {
 		}
 		in.Tax = &tax
 	}
+	if v, ok := c.GetPostForm("cost_price"); ok {
+		costPrice, err := decimal.NewFromString(v)
+		if err != nil {
+			common.HandleError(c, common.BadRequestError("invalid cost_price"))
+			return
+		}
+		in.CostPrice = &costPrice
+	}
 	if v, ok := c.GetPostForm("threshold"); ok {
 		threshold, err := strconv.Atoi(v)
 		if err != nil {

@@ -541,8 +541,24 @@ func TestService_CreateGoodsReceipt_HappyPath_CreditsStockAndLedgerAndMarksRecei
 		})).
 		Return(nil).
 		Once()
+	// product 1 had no existing stock (currentQty 0), so its new cost is
+	// just the received unit cost directly - nothing to blend with.
+	products.EXPECT().
+		UpdateProduct(mock.Anything, uint(1), mock.MatchedBy(func(updates map[string]any) bool {
+			cost, ok := updates["cost_price"].(decimal.Decimal)
+			return ok && cost.Equal(decimal.NewFromFloat(2.00))
+		})).
+		Return(nil).Once()
 	stock.EXPECT().GetStockLevel(mock.Anything, uint(2), uint(5)).Return(&inventory.StockLevel{ID: 50, ProductID: 2, BranchID: 5, Qty: 20}, nil).Once()
 	stock.EXPECT().UpdateStockLevelQty(mock.Anything, uint(50), 23).Return(nil).Once()
+	// product 2 had 20 on hand at cost 0 (unset), blended with 3 more at
+	// 1.00: (20*0 + 3*1.00) / 23 = 0.1304... rounded to 0.13.
+	products.EXPECT().
+		UpdateProduct(mock.Anything, uint(2), mock.MatchedBy(func(updates map[string]any) bool {
+			cost, ok := updates["cost_price"].(decimal.Decimal)
+			return ok && cost.Equal(decimal.NewFromFloat(0.13))
+		})).
+		Return(nil).Once()
 
 	stock.EXPECT().
 		CreateInventoryLedgerEntry(mock.Anything, mock.MatchedBy(func(e *inventory.InventoryLedger) bool {

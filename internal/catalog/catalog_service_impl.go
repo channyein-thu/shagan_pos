@@ -252,6 +252,9 @@ func (s *Service) UpdateProduct(ctx context.Context, orgID uint, id uint, in Upd
 			return nil, err
 		}
 	}
+	if in.CostPrice != nil && in.CostPrice.IsNegative() {
+		return nil, common.BadRequestError("cost_price must be zero or greater")
+	}
 
 	var cfg image.Config
 	if file != nil {
@@ -303,6 +306,9 @@ func (s *Service) UpdateProduct(ctx context.Context, orgID uint, id uint, in Upd
 	}
 	if in.Threshold != nil {
 		updates["threshold"] = *in.Threshold
+	}
+	if in.CostPrice != nil {
+		updates["cost_price"] = *in.CostPrice
 	}
 	if in.IsActive != nil {
 		updates["is_active"] = *in.IsActive

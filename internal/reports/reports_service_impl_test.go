@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"shagan_pos/internal/common"
+	"shagan_pos/internal/identity"
 )
 
 func requireRestErrorStatus(t *testing.T, err error, status int) {
@@ -116,7 +117,8 @@ func TestApplyPercentages_ZeroTotal_LeavesPercentagesZero(t *testing.T) {
 
 func TestService_GetHomeSummary_ComposesTotalsAndLowStockCount(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := NewService(repo)
+	branches := NewMockBranchLookup(t)
+	svc := NewService(repo, branches)
 
 	repo.EXPECT().SalesAggregate(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).
 		Return(SalesAggregate{Gross: d("100.00"), Discounts: d("10.00"), Count: 5}, nil).Once()
@@ -137,7 +139,8 @@ func TestService_GetHomeSummary_ComposesTotalsAndLowStockCount(t *testing.T) {
 
 func TestService_GetHomeSummary_PropagatesRepositoryError(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := NewService(repo)
+	branches := NewMockBranchLookup(t)
+	svc := NewService(repo, branches)
 
 	wantErr := common.SystemError("db read failed")
 	repo.EXPECT().SalesAggregate(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).
@@ -150,7 +153,8 @@ func TestService_GetHomeSummary_PropagatesRepositoryError(t *testing.T) {
 
 func TestService_GetStockOverview_DelegatesToRepository(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := NewService(repo)
+	branches := NewMockBranchLookup(t)
+	svc := NewService(repo, branches)
 
 	branchID := uint(5)
 	want := StockOverview{TotalProducts: 10, LowStockCount: 2, OutOfStockCount: 0}
@@ -163,7 +167,8 @@ func TestService_GetStockOverview_DelegatesToRepository(t *testing.T) {
 
 func TestService_GetTodayReport_ComposesAllFourQueries(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := NewService(repo)
+	branches := NewMockBranchLookup(t)
+	svc := NewService(repo, branches)
 
 	repo.EXPECT().SalesAggregate(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).
 		Return(SalesAggregate{Gross: d("50.00"), Discounts: d("0"), Count: 2}, nil).Once()
@@ -190,7 +195,8 @@ func TestService_GetTodayReport_ComposesAllFourQueries(t *testing.T) {
 
 func TestService_GetRevenueTrend_MapsBucketsToPoints(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := NewService(repo)
+	branches := NewMockBranchLookup(t)
+	svc := NewService(repo, branches)
 
 	repo.EXPECT().Trend(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything, GranularityDaily).
 		Return([]TrendBucket{{Period: "2026-01-01", Revenue: d("20.00"), Count: 1}}, nil).Once()
@@ -205,7 +211,8 @@ func TestService_GetRevenueTrend_MapsBucketsToPoints(t *testing.T) {
 
 func TestService_GetRevenueTrend_InvalidGranularity_ReturnsBadRequestWithoutQuerying(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := NewService(repo)
+	branches := NewMockBranchLookup(t)
+	svc := NewService(repo, branches)
 	// Trend must never be called - rejected before any query.
 
 	_, err := svc.GetRevenueTrend(context.Background(), 7, nil, nil, nil, "hourly")
@@ -215,7 +222,8 @@ func TestService_GetRevenueTrend_InvalidGranularity_ReturnsBadRequestWithoutQuer
 
 func TestService_GetSalesSummary_ComposesTotalsAndAllThreeBreakdowns(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := NewService(repo)
+	branches := NewMockBranchLookup(t)
+	svc := NewService(repo, branches)
 
 	repo.EXPECT().SalesAggregate(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).
 		Return(SalesAggregate{Gross: d("200.00"), Discounts: d("20.00"), Count: 10}, nil).Once()
@@ -239,7 +247,8 @@ func TestService_GetSalesSummary_ComposesTotalsAndAllThreeBreakdowns(t *testing.
 
 func TestService_GetSalesTrend_MapsBucketsToPointsWithCount(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := NewService(repo)
+	branches := NewMockBranchLookup(t)
+	svc := NewService(repo, branches)
 
 	repo.EXPECT().Trend(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything, GranularityWeekly).
 		Return([]TrendBucket{{Period: "2026-01-01", Revenue: d("300.00"), Count: 15}}, nil).Once()
@@ -253,7 +262,8 @@ func TestService_GetSalesTrend_MapsBucketsToPointsWithCount(t *testing.T) {
 
 func TestService_GetPaymentMethodsReport_ComputesTotalAndPercentages(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := NewService(repo)
+	branches := NewMockBranchLookup(t)
+	svc := NewService(repo, branches)
 
 	repo.EXPECT().PaymentMethodBreakdown(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).
 		Return([]PaymentMethodBreakdown{
@@ -270,7 +280,8 @@ func TestService_GetPaymentMethodsReport_ComputesTotalAndPercentages(t *testing.
 
 func TestService_GetTransactionsReport_DefaultsPagination(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := NewService(repo)
+	branches := NewMockBranchLookup(t)
+	svc := NewService(repo, branches)
 
 	repo.EXPECT().
 		ListTransactions(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything, 1, 20).
@@ -284,7 +295,8 @@ func TestService_GetTransactionsReport_DefaultsPagination(t *testing.T) {
 
 func TestService_GetTransactionsReport_PassesThroughExplicitPagination(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := NewService(repo)
+	branches := NewMockBranchLookup(t)
+	svc := NewService(repo, branches)
 
 	repo.EXPECT().
 		ListTransactions(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything, 2, 50).
@@ -299,7 +311,8 @@ func TestService_GetTransactionsReport_PassesThroughExplicitPagination(t *testin
 
 func TestService_GetProductSalesReport_PassesCategoryIDThrough(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := NewService(repo)
+	branches := NewMockBranchLookup(t)
+	svc := NewService(repo, branches)
 
 	categoryID := uint(3)
 	repo.EXPECT().
@@ -313,7 +326,8 @@ func TestService_GetProductSalesReport_PassesCategoryIDThrough(t *testing.T) {
 
 func TestService_GetTopProducts_DefaultsLimitToTen(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := NewService(repo)
+	branches := NewMockBranchLookup(t)
+	svc := NewService(repo, branches)
 
 	repo.EXPECT().
 		ProductSales(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything, (*uint)(nil), mock.MatchedBy(func(l *int) bool { return l != nil && *l == 10 })).
@@ -325,7 +339,8 @@ func TestService_GetTopProducts_DefaultsLimitToTen(t *testing.T) {
 
 func TestService_GetTopProducts_PassesThroughExplicitLimit(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := NewService(repo)
+	branches := NewMockBranchLookup(t)
+	svc := NewService(repo, branches)
 
 	limit := 3
 	repo.EXPECT().
@@ -336,9 +351,80 @@ func TestService_GetTopProducts_PassesThroughExplicitLimit(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestService_GetProfitAndLoss_OrgWide_ComposesAllFourFigures(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	svc := NewService(repo, branches)
+
+	orgBranches := []identity.Branch{{ID: 5, OrgID: 7}, {ID: 6, OrgID: 7}}
+	repo.EXPECT().SalesAggregate(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).
+		Return(SalesAggregate{Gross: d("500.00"), Discounts: d("20.00"), Count: 10}, nil).Once()
+	repo.EXPECT().ReturnsTotal(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).
+		Return(d("30.00"), nil).Once()
+	repo.EXPECT().COGS(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).
+		Return(d("200.00"), nil).Once()
+	branches.EXPECT().ListBranches(mock.Anything, uint(7)).Return(orgBranches, nil).Once()
+	repo.EXPECT().Expenses(mock.Anything, []uint{5, 6}, mock.Anything, mock.Anything).
+		Return(d("50.00"), nil).Once()
+
+	got, err := svc.GetProfitAndLoss(context.Background(), 7, nil, nil, nil)
+	require.NoError(t, err)
+	// NetSales = 500 - 20 - 30 = 450
+	require.True(t, got.NetSales.Equal(d("450.00")))
+	require.True(t, got.COGS.Equal(d("200.00")))
+	// GrossProfit = 450 - 200 = 250
+	require.True(t, got.GrossProfit.Equal(d("250.00")))
+	require.True(t, got.Expenses.Equal(d("50.00")))
+	// NetProfit = 250 - 50 = 200
+	require.True(t, got.NetProfit.Equal(d("200.00")))
+}
+
+func TestService_GetProfitAndLoss_ScopedToOneBranch(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	svc := NewService(repo, branches)
+
+	branchID := uint(5)
+	repo.EXPECT().SalesAggregate(mock.Anything, uint(7), &branchID, mock.Anything, mock.Anything).
+		Return(SalesAggregate{Gross: d("100.00"), Discounts: d("0"), Count: 2}, nil).Once()
+	repo.EXPECT().ReturnsTotal(mock.Anything, uint(7), &branchID, mock.Anything, mock.Anything).
+		Return(decimal.Zero, nil).Once()
+	repo.EXPECT().COGS(mock.Anything, uint(7), &branchID, mock.Anything, mock.Anything).
+		Return(d("40.00"), nil).Once()
+	branches.EXPECT().GetBranch(mock.Anything, uint(7), uint(5)).Return(&identity.Branch{ID: 5, OrgID: 7}, nil).Once()
+	repo.EXPECT().Expenses(mock.Anything, []uint{5}, mock.Anything, mock.Anything).
+		Return(d("10.00"), nil).Once()
+
+	got, err := svc.GetProfitAndLoss(context.Background(), 7, &branchID, nil, nil)
+	require.NoError(t, err)
+	require.True(t, got.NetSales.Equal(d("100.00")))
+	require.True(t, got.GrossProfit.Equal(d("60.00")))
+	require.True(t, got.NetProfit.Equal(d("50.00")))
+}
+
+func TestService_GetProfitAndLoss_PropagatesCOGSError(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	svc := NewService(repo, branches)
+
+	repo.EXPECT().SalesAggregate(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).
+		Return(SalesAggregate{Gross: d("100.00")}, nil).Once()
+	repo.EXPECT().ReturnsTotal(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).
+		Return(decimal.Zero, nil).Once()
+	wantErr := common.SystemError("db read failed")
+	repo.EXPECT().COGS(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).
+		Return(decimal.Zero, wantErr).Once()
+	// Expenses must never be called - rejected before that query happens.
+
+	_, err := svc.GetProfitAndLoss(context.Background(), 7, nil, nil, nil)
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusInternalServerError)
+}
+
 func TestService_ExportReport_StaysNotImplemented(t *testing.T) {
 	repo := NewMockRepository(t)
-	svc := NewService(repo)
+	branches := NewMockBranchLookup(t)
+	svc := NewService(repo, branches)
 
 	_, err := svc.ExportReport(context.Background())
 	require.Error(t, err)

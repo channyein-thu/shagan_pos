@@ -72,6 +72,14 @@ type SaleItem struct {
 	// reasoning as UnitPrice/NameSnapshot. Summed into Sale.Tax rather than
 	// the caller supplying one flat sale-level tax figure.
 	Tax decimal.Decimal `gorm:"type:decimal(10,2);not null;default:0" json:"tax"`
+	// UnitCost is a snapshot of Product.CostPrice taken server-side at sale
+	// time (never client-supplied, unlike UnitPrice/NameSnapshot/Tax - cost
+	// is business-sensitive and a till has no business knowing it - see
+	// catalog.Product.CostPrice's own doc). Snapshotting it here, not just
+	// reading Product.CostPrice at report time, keeps a past sale's
+	// reported profit from silently changing if the product's cost changes
+	// later.
+	UnitCost decimal.Decimal `gorm:"type:decimal(10,2);not null;default:0" json:"-"`
 }
 
 // Payment maps to the "Payments" table in the ERD.

@@ -3,7 +3,21 @@ package reports
 import (
 	"context"
 	"time"
+
+	"shagan_pos/internal/identity"
 )
+
+// BranchLookup is what reports needs from identity: resolving an owner's
+// optional branch filter and enumerating an org's own branches - needed
+// only for GetProfitAndLoss's Expenses figure (shift.Expense carries no
+// OrgID of its own, unlike Sale, so every other Reports query gets away
+// with a plain org_id filter and never needed this). identity.Repository
+// already satisfies this signature - no adapter needed, same reasoning as
+// inventory.BranchLookup.
+type BranchLookup interface {
+	GetBranch(ctx context.Context, orgID uint, id uint) (*identity.Branch, error)
+	ListBranches(ctx context.Context, orgID uint) ([]identity.Branch, error)
+}
 
 // Interface defines the reports domain's use cases. Every method (other
 // than ExportReport, deferred - see its own doc) is read-only and scoped to
@@ -63,6 +77,11 @@ type Interface interface {
 	// limit 10) over from/to (default: the last 30 days) - same
 	// not-netted-against-Returns reasoning as GetProductSalesReport.
 	GetTopProducts(ctx context.Context, orgID uint, branchID *uint, from, to *time.Time, limit *int) (*TopProductsReport, error)
+	// GetProfitAndLoss is a real P&L statement (Net Sales − COGS = Gross
+	// Profit; Gross Profit − Expenses = Net Profit) over from/to (default:
+	// the last 30 days) - see ProfitAndLoss's own doc for COGS's
+	// reliability caveat on sales predating cost tracking.
+	GetProfitAndLoss(ctx context.Context, orgID uint, branchID *uint, from, to *time.Time) (*ProfitAndLoss, error)
 	// ExportReport stays deferred - out of the confirmed v1 spec (see
 	// docs/WORKFLOWS.md Section 11), matching the existing stub's own
 	// DEFER comment.

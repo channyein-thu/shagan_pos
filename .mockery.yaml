@@ -80,6 +80,9 @@ packages:
       AuditWriter:
         config:
           filename: "mock_sales_audit_writer_test.go"
+      ProductLookup:
+        config:
+          filename: "mock_sales_product_lookup_test.go"
   shagan_pos/internal/procurement:
     config:
       dir: "internal/procurement"
@@ -104,6 +107,9 @@ packages:
       Repository:
         config:
           filename: "mock_reports_repository_test.go"
+      BranchLookup:
+        config:
+          filename: "mock_reports_branch_lookup_test.go"
   shagan_pos/internal/returns:
     config:
       dir: "internal/returns"

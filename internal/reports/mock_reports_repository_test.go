@@ -86,6 +86,66 @@ func (_c *MockRepository_BranchBreakdown_Call) RunAndReturn(run func(context.Con
 	return _c
 }
 
+// COGS provides a mock function with given fields: ctx, orgID, branchID, from, to
+func (_m *MockRepository) COGS(ctx context.Context, orgID uint, branchID *uint, from time.Time, to time.Time) (decimal.Decimal, error) {
+	ret := _m.Called(ctx, orgID, branchID, from, to)
+
+	if len(ret) == 0 {
+		panic("no return value specified for COGS")
+	}
+
+	var r0 decimal.Decimal
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, uint, *uint, time.Time, time.Time) (decimal.Decimal, error)); ok {
+		return rf(ctx, orgID, branchID, from, to)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, uint, *uint, time.Time, time.Time) decimal.Decimal); ok {
+		r0 = rf(ctx, orgID, branchID, from, to)
+	} else {
+		r0 = ret.Get(0).(decimal.Decimal)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, uint, *uint, time.Time, time.Time) error); ok {
+		r1 = rf(ctx, orgID, branchID, from, to)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// MockRepository_COGS_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'COGS'
+type MockRepository_COGS_Call struct {
+	*mock.Call
+}
+
+// COGS is a helper method to define mock.On call
+//   - ctx context.Context
+//   - orgID uint
+//   - branchID *uint
+//   - from time.Time
+//   - to time.Time
+func (_e *MockRepository_Expecter) COGS(ctx interface{}, orgID interface{}, branchID interface{}, from interface{}, to interface{}) *MockRepository_COGS_Call {
+	return &MockRepository_COGS_Call{Call: _e.mock.On("COGS", ctx, orgID, branchID, from, to)}
+}
+
+func (_c *MockRepository_COGS_Call) Run(run func(ctx context.Context, orgID uint, branchID *uint, from time.Time, to time.Time)) *MockRepository_COGS_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(uint), args[2].(*uint), args[3].(time.Time), args[4].(time.Time))
+	})
+	return _c
+}
+
+func (_c *MockRepository_COGS_Call) Return(_a0 decimal.Decimal, _a1 error) *MockRepository_COGS_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *MockRepository_COGS_Call) RunAndReturn(run func(context.Context, uint, *uint, time.Time, time.Time) (decimal.Decimal, error)) *MockRepository_COGS_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // CategoryBreakdown provides a mock function with given fields: ctx, orgID, branchID, from, to
 func (_m *MockRepository) CategoryBreakdown(ctx context.Context, orgID uint, branchID *uint, from time.Time, to time.Time) ([]CategoryBreakdown, error) {
 	ret := _m.Called(ctx, orgID, branchID, from, to)
@@ -144,6 +204,65 @@ func (_c *MockRepository_CategoryBreakdown_Call) Return(_a0 []CategoryBreakdown,
 }
 
 func (_c *MockRepository_CategoryBreakdown_Call) RunAndReturn(run func(context.Context, uint, *uint, time.Time, time.Time) ([]CategoryBreakdown, error)) *MockRepository_CategoryBreakdown_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// Expenses provides a mock function with given fields: ctx, branchIDs, from, to
+func (_m *MockRepository) Expenses(ctx context.Context, branchIDs []uint, from time.Time, to time.Time) (decimal.Decimal, error) {
+	ret := _m.Called(ctx, branchIDs, from, to)
+
+	if len(ret) == 0 {
+		panic("no return value specified for Expenses")
+	}
+
+	var r0 decimal.Decimal
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, []uint, time.Time, time.Time) (decimal.Decimal, error)); ok {
+		return rf(ctx, branchIDs, from, to)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, []uint, time.Time, time.Time) decimal.Decimal); ok {
+		r0 = rf(ctx, branchIDs, from, to)
+	} else {
+		r0 = ret.Get(0).(decimal.Decimal)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, []uint, time.Time, time.Time) error); ok {
+		r1 = rf(ctx, branchIDs, from, to)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// MockRepository_Expenses_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Expenses'
+type MockRepository_Expenses_Call struct {
+	*mock.Call
+}
+
+// Expenses is a helper method to define mock.On call
+//   - ctx context.Context
+//   - branchIDs []uint
+//   - from time.Time
+//   - to time.Time
+func (_e *MockRepository_Expecter) Expenses(ctx interface{}, branchIDs interface{}, from interface{}, to interface{}) *MockRepository_Expenses_Call {
+	return &MockRepository_Expenses_Call{Call: _e.mock.On("Expenses", ctx, branchIDs, from, to)}
+}
+
+func (_c *MockRepository_Expenses_Call) Run(run func(ctx context.Context, branchIDs []uint, from time.Time, to time.Time)) *MockRepository_Expenses_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].([]uint), args[2].(time.Time), args[3].(time.Time))
+	})
+	return _c
+}
+
+func (_c *MockRepository_Expenses_Call) Return(_a0 decimal.Decimal, _a1 error) *MockRepository_Expenses_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *MockRepository_Expenses_Call) RunAndReturn(run func(context.Context, []uint, time.Time, time.Time) (decimal.Decimal, error)) *MockRepository_Expenses_Call {
 	_c.Call.Return(run)
 	return _c
 }

@@ -6,6 +6,8 @@ import (
 	context "context"
 	catalog "shagan_pos/internal/catalog"
 
+	gorm "gorm.io/gorm"
+
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -78,6 +80,54 @@ func (_c *MockProductLookup_GetProduct_Call) Return(_a0 *catalog.Product, _a1 er
 }
 
 func (_c *MockProductLookup_GetProduct_Call) RunAndReturn(run func(context.Context, uint, uint) (*catalog.Product, error)) *MockProductLookup_GetProduct_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// UpdateProduct provides a mock function with given fields: db, id, updates
+func (_m *MockProductLookup) UpdateProduct(db *gorm.DB, id uint, updates map[string]interface{}) error {
+	ret := _m.Called(db, id, updates)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateProduct")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(*gorm.DB, uint, map[string]interface{}) error); ok {
+		r0 = rf(db, id, updates)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// MockProductLookup_UpdateProduct_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdateProduct'
+type MockProductLookup_UpdateProduct_Call struct {
+	*mock.Call
+}
+
+// UpdateProduct is a helper method to define mock.On call
+//   - db *gorm.DB
+//   - id uint
+//   - updates map[string]interface{}
+func (_e *MockProductLookup_Expecter) UpdateProduct(db interface{}, id interface{}, updates interface{}) *MockProductLookup_UpdateProduct_Call {
+	return &MockProductLookup_UpdateProduct_Call{Call: _e.mock.On("UpdateProduct", db, id, updates)}
+}
+
+func (_c *MockProductLookup_UpdateProduct_Call) Run(run func(db *gorm.DB, id uint, updates map[string]interface{})) *MockProductLookup_UpdateProduct_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(*gorm.DB), args[1].(uint), args[2].(map[string]interface{}))
+	})
+	return _c
+}
+
+func (_c *MockProductLookup_UpdateProduct_Call) Return(_a0 error) *MockProductLookup_UpdateProduct_Call {
+	_c.Call.Return(_a0)
+	return _c
+}
+
+func (_c *MockProductLookup_UpdateProduct_Call) RunAndReturn(run func(*gorm.DB, uint, map[string]interface{}) error) *MockProductLookup_UpdateProduct_Call {
 	_c.Call.Return(run)
 	return _c
 }
