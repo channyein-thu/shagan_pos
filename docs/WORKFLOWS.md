@@ -188,8 +188,10 @@ what each grants).
    token identifies, never a client-supplied id.
 3. Rings sales (`POST /sales`): add items (optional per-item discount,
    optional combo grouping — see below), optional customer lookup/create,
-   one or more payments (split payment supported across cash/card/QR/mobile
-   wallet/store credit). Server derives `Subtotal`/`Discount`/`Tax`/`Total`
+   one or more payments (split payment supported across cash/QR — the only
+   2 methods accepted in this version; QR codes are managed per-branch via
+   Platform, up to 5 per branch, one per bank). Server derives
+   `Subtotal`/`Discount`/`Tax`/`Total`
    from the items — never trusts client-computed totals — and rejects if
    payments don't sum to the derived total.
 4. Can see current stock for their branch while ringing up a sale (same
@@ -219,8 +221,8 @@ what each grants).
     ends — **only the same staff who opened it may close it**, no
     exception in the normal path. Counts the physical cash drawer; a
     mismatch from the system's expected cash total requires a `reason`.
-    Only cash is physically counted — card/QR/mobile-wallet payments are
-    trusted to match what the system recorded.
+    Only cash is physically counted — QR payments are trusted to match
+    what the system recorded.
 11. **Rotation, not a whole-day lock**: a shift is a per-person session, not
     an all-day device lock. Multiple staff share one till across a day by
     each closing their own stretch before the next person opens a new one

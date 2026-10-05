@@ -158,3 +158,15 @@ packages:
       SalesWriter:
         config:
           filename: "mock_datasync_sales_writer_test.go"
+  shagan_pos/internal/platform:
+    config:
+      dir: "internal/platform"
+      outpkg: platform
+      inpackage: true
+    interfaces:
+      Repository:
+        config:
+          filename: "mock_platform_repository_test.go"
+      BranchLookup:
+        config:
+          filename: "mock_platform_branch_lookup_test.go"

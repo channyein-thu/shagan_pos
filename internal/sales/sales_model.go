@@ -20,16 +20,14 @@ const (
 	SaleStatusRefunded  SaleStatus = "refunded"
 )
 
-// PaymentMethod is a best-guess enum (ERD only specified "enum"; confirm real values).
+// PaymentMethod is confirmed as exactly these 2 values for this version -
+// cash and QR (bank QR codes managed via platform.PaymentQRCode). No card,
+// mobile wallet, store credit, or other methods are accepted.
 type PaymentMethod string
 
 const (
-	PaymentMethodCash         PaymentMethod = "cash"
-	PaymentMethodCard         PaymentMethod = "card"
-	PaymentMethodQR           PaymentMethod = "qr"
-	PaymentMethodMobileWallet PaymentMethod = "mobile_wallet"
-	PaymentMethodStoreCredit  PaymentMethod = "store_credit"
-	PaymentMethodOther        PaymentMethod = "other"
+	PaymentMethodCash PaymentMethod = "cash"
+	PaymentMethodQR   PaymentMethod = "qr"
 )
 
 // Sale maps to the "Sales" table in the ERD.
