@@ -13,8 +13,6 @@ import (
 
 	"shagan_pos/internal/catalog"
 	"shagan_pos/internal/common"
-	"shagan_pos/internal/identity"
-	"shagan_pos/internal/middleware"
 	"shagan_pos/internal/storage"
 )
 
@@ -23,7 +21,7 @@ type CatalogAPI struct {
 }
 
 func NewCatalogAPI(db *gorm.DB, store storage.Storage) *CatalogAPI {
-	return &CatalogAPI{service: catalog.NewService(catalog.NewRepository(db), identity.NewRepository(db), db, store)}
+	return &CatalogAPI{service: catalog.NewService(catalog.NewRepository(db), db, store)}
 }
 
 func (a *CatalogAPI) RegisterRoutes(rg *gin.RouterGroup) {
@@ -43,19 +41,14 @@ func (a *CatalogAPI) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.DELETE("/combos/:id", a.DeleteCombo)
 }
 
-// ListProducts handles `GET /products`. Restricted to the caller's own
-// branch when the caller's token carries one (a pos device) - org-wide for
-// owner/service_center, same reasoning as identity.ListStaff.
+// ListProducts handles `GET /products`. Org-wide - every caller in the org
+// sees the same catalog, regardless of which branch their token carries.
 func (a *CatalogAPI) ListProducts(c *gin.Context) {
 	orgID, ok := requireOrgID(c)
 	if !ok {
 		return
 	}
-	var branchID *uint
-	if bID, ok := middleware.BranchIDFromContext(c); ok {
-		branchID = &bID
-	}
-	result, err := a.service.ListProducts(c.Request.Context(), orgID, branchID)
+	result, err := a.service.ListProducts(c.Request.Context(), orgID)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -83,30 +76,16 @@ func (a *CatalogAPI) GetProduct(c *gin.Context) {
 }
 
 // GetProductByBarcode handles `GET /products/barcode/:code`. Exact-match
-// scan lookup, e.g. for a checkout scan. A barcode is only unique per branch
-// (not per org), so a branch is always required to resolve it unambiguously:
-// a pos-device token supplies its own branch automatically (same as
-// ListProducts); an owner/service_center token must pass ?branch_id=.
+// scan lookup, e.g. for a checkout scan. Barcode is unique per org, so this
+// resolves unambiguously without needing a branch.
 func (a *CatalogAPI) GetProductByBarcode(c *gin.Context) {
 	orgID, ok := requireOrgID(c)
 	if !ok {
 		return
 	}
 
-	var branchID uint
-	if bID, ok := middleware.BranchIDFromContext(c); ok {
-		branchID = bID
-	} else {
-		v, err := strconv.ParseUint(c.Query("branch_id"), 10, 64)
-		if err != nil {
-			common.HandleError(c, common.BadRequestError("branch_id is required"))
-			return
-		}
-		branchID = uint(v)
-	}
-
 	code := c.Param("code")
-	result, err := a.service.GetProductByBarcode(c.Request.Context(), orgID, branchID, code)
+	result, err := a.service.GetProductByBarcode(c.Request.Context(), orgID, code)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -115,10 +94,9 @@ func (a *CatalogAPI) GetProductByBarcode(c *gin.Context) {
 }
 
 // CreateProduct handles `POST /products`. Multipart form: every product
-// field as a form field (branch_id, category_id, name, barcode, price,
-// discount, tax, threshold, is_active, and optional modifier) plus "image"
-// (the required product photo) - a product can't be created without one, so
-// this isn't a
+// field as a form field (category_id, name, barcode, price, discount, tax,
+// threshold, is_active, and optional modifier) plus "image" (the required
+// product photo) - a product can't be created without one, so this isn't a
 // JSON endpoint like the other catalog creates.
 func (a *CatalogAPI) CreateProduct(c *gin.Context) {
 	orgID, ok := requireOrgID(c)
@@ -126,11 +104,6 @@ func (a *CatalogAPI) CreateProduct(c *gin.Context) {
 		return
 	}
 
-	branchID, err := strconv.ParseUint(c.PostForm("branch_id"), 10, 64)
-	if err != nil {
-		common.HandleError(c, common.BadRequestError("invalid branch_id"))
-		return
-	}
 	categoryID, err := strconv.ParseUint(c.PostForm("category_id"), 10, 64)
 	if err != nil {
 		common.HandleError(c, common.BadRequestError("invalid category_id"))
@@ -187,7 +160,6 @@ func (a *CatalogAPI) CreateProduct(c *gin.Context) {
 	defer file.Close()
 
 	in := catalog.CreateProductRequest{
-		BranchID:   uint(branchID),
 		CategoryID: uint(categoryID),
 		Name:       name,
 		Barcode:    barcode,
@@ -234,15 +206,6 @@ func (a *CatalogAPI) UpdateProduct(c *gin.Context) {
 	}
 
 	var in catalog.UpdateProductRequest
-	if v, ok := c.GetPostForm("branch_id"); ok {
-		branchID, err := strconv.ParseUint(v, 10, 64)
-		if err != nil {
-			common.HandleError(c, common.BadRequestError("invalid branch_id"))
-			return
-		}
-		bID := uint(branchID)
-		in.BranchID = &bID
-	}
 	if v, ok := c.GetPostForm("category_id"); ok {
 		categoryID, err := strconv.ParseUint(v, 10, 64)
 		if err != nil {

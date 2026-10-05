@@ -22,13 +22,9 @@ var _ Repository = (*RepositoryImpl)(nil)
 // ListProducts backs `GET /products`, scoped to orgID (Product carries its
 // own OrgID directly, so no join through branches is needed, unlike
 // identity.ListStaff).
-func (r *RepositoryImpl) ListProducts(ctx context.Context, orgID uint, branchID *uint) ([]Product, error) {
+func (r *RepositoryImpl) ListProducts(ctx context.Context, orgID uint) ([]Product, error) {
 	var products []Product
-	q := r.db.WithContext(ctx).Where("org_id = ?", orgID)
-	if branchID != nil {
-		q = q.Where("branch_id = ?", *branchID)
-	}
-	if err := q.Find(&products).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where("org_id = ?", orgID).Find(&products).Error; err != nil {
 		return nil, err
 	}
 	return products, nil
@@ -48,11 +44,11 @@ func (r *RepositoryImpl) GetProduct(ctx context.Context, orgID uint, id uint) (*
 }
 
 // GetProductByBarcode backs `GET /products/barcode/:code`. Exact-match
-// lookup, scoped to both orgID and branchID (see the interface doc).
-func (r *RepositoryImpl) GetProductByBarcode(ctx context.Context, orgID uint, branchID uint, code string) (*Product, error) {
+// lookup, scoped to orgID (see the interface doc).
+func (r *RepositoryImpl) GetProductByBarcode(ctx context.Context, orgID uint, code string) (*Product, error) {
 	var product Product
 	err := r.db.WithContext(ctx).
-		Where("barcode = ? AND org_id = ? AND branch_id = ?", code, orgID, branchID).
+		Where("barcode = ? AND org_id = ?", code, orgID).
 		First(&product).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -65,7 +61,7 @@ func (r *RepositoryImpl) GetProductByBarcode(ctx context.Context, orgID uint, br
 
 // CreateProduct backs Service.CreateProduct's first step. Plain insert -
 // whatever error the database gives back (including a unique-constraint
-// violation on ux_products_branch_barcode) is returned as-is; interpreting
+// violation on ux_products_org_barcode) is returned as-is; interpreting
 // it is the service's job, same reasoning as CreateCategory.
 func (r *RepositoryImpl) CreateProduct(db *gorm.DB, product *Product) error {
 	return db.Create(product).Error
@@ -88,7 +84,7 @@ func (r *RepositoryImpl) ListProductImagesByProductIDs(ctx context.Context, prod
 
 // UpdateProduct backs `PATCH /products/:id`. Plain write - updates is
 // already decided by the service; whatever error the database gives back
-// (including a unique-constraint violation on ux_products_branch_barcode)
+// (including a unique-constraint violation on ux_products_org_barcode)
 // is returned as-is, same reasoning as CreateProduct/UpdateCategory.
 func (r *RepositoryImpl) UpdateProduct(db *gorm.DB, id uint, updates map[string]any) error {
 	return db.Model(&Product{}).Where("id = ?", id).Updates(updates).Error

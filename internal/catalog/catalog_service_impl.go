@@ -45,20 +45,19 @@ func validateProductMoney(price, discount, tax decimal.Decimal) error {
 }
 
 type Service struct {
-	repo     Repository
-	branches BranchLookup
-	db       common.Transactioner
-	storage  storage.Storage
+	repo    Repository
+	db      common.Transactioner
+	storage storage.Storage
 }
 
-func NewService(repo Repository, branches BranchLookup, db common.Transactioner, store storage.Storage) *Service {
-	return &Service{repo: repo, branches: branches, db: db, storage: store}
+func NewService(repo Repository, db common.Transactioner, store storage.Storage) *Service {
+	return &Service{repo: repo, db: db, storage: store}
 }
 
 var _ Interface = (*Service)(nil)
 
-func (s *Service) ListProducts(ctx context.Context, orgID uint, branchID *uint) ([]ProductResult, error) {
-	products, err := s.repo.ListProducts(ctx, orgID, branchID)
+func (s *Service) ListProducts(ctx context.Context, orgID uint) ([]ProductResult, error) {
+	products, err := s.repo.ListProducts(ctx, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -122,8 +121,8 @@ func (s *Service) attachImages(ctx context.Context, products []Product) ([]Produ
 	return results, nil
 }
 
-func (s *Service) GetProductByBarcode(ctx context.Context, orgID uint, branchID uint, code string) (*ProductResult, error) {
-	product, err := s.repo.GetProductByBarcode(ctx, orgID, branchID, code)
+func (s *Service) GetProductByBarcode(ctx context.Context, orgID uint, code string) (*ProductResult, error) {
+	product, err := s.repo.GetProductByBarcode(ctx, orgID, code)
 	if err != nil {
 		return nil, err
 	}
@@ -134,19 +133,16 @@ func (s *Service) GetProductByBarcode(ctx context.Context, orgID uint, branchID 
 	return &results[0], nil
 }
 
-// CreateProduct confirms in.BranchID and in.CategoryID both belong to orgID
-// (same not-found-not-forbidden reasoning as identity's branch-ownership
-// checks - a product can't be attached to another org's branch or category),
-// enforces the price/discount/tax rules, decodes the uploaded image's real
-// pixel dimensions, then creates the Product and its ProductImage together as
-// one atomic unit of work: a product without its required image should never
-// exist. A duplicate barcode within the same branch (ux_products_branch_barcode)
+// CreateProduct confirms in.CategoryID belongs to orgID (same
+// not-found-not-forbidden reasoning as identity's branch-ownership checks -
+// a product can't be attached to another org's category), enforces the
+// price/discount/tax rules, decodes the uploaded image's real pixel
+// dimensions, then creates the Product and its ProductImage together as one
+// atomic unit of work: a product without its required image should never
+// exist. A duplicate barcode within the same org (ux_products_org_barcode)
 // surfaces as common.ConflictError - same pattern as CreateCategory's
 // duplicate-name handling.
 func (s *Service) CreateProduct(ctx context.Context, orgID uint, in CreateProductRequest, file io.ReadSeeker, fileSize int64, contentType, filename string) (*Product, error) {
-	if _, err := s.branches.GetBranch(ctx, orgID, in.BranchID); err != nil {
-		return nil, err
-	}
 	if _, err := s.repo.GetCategory(ctx, orgID, in.CategoryID); err != nil {
 		return nil, err
 	}
@@ -170,7 +166,6 @@ func (s *Service) CreateProduct(ctx context.Context, orgID uint, in CreateProduc
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		product := Product{
 			OrgID:      orgID,
-			BranchID:   in.BranchID,
 			CategoryID: in.CategoryID,
 			Name:       in.Name,
 			Barcode:    in.Barcode,
@@ -226,11 +221,6 @@ func (s *Service) UpdateProduct(ctx context.Context, orgID uint, id uint, in Upd
 		return nil, err
 	}
 
-	if in.BranchID != nil {
-		if _, err := s.branches.GetBranch(ctx, orgID, *in.BranchID); err != nil {
-			return nil, err
-		}
-	}
 	if in.CategoryID != nil {
 		if _, err := s.repo.GetCategory(ctx, orgID, *in.CategoryID); err != nil {
 			return nil, err
@@ -283,9 +273,6 @@ func (s *Service) UpdateProduct(ctx context.Context, orgID uint, id uint, in Upd
 	}
 
 	updates := map[string]any{}
-	if in.BranchID != nil {
-		updates["branch_id"] = *in.BranchID
-	}
 	if in.CategoryID != nil {
 		updates["category_id"] = *in.CategoryID
 	}

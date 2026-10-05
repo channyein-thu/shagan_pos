@@ -211,13 +211,24 @@ func (r *RepositoryImpl) ProductSales(ctx context.Context, orgID uint, branchID 
 func (r *RepositoryImpl) ProductCounts(ctx context.Context, orgID uint, branchID *uint) (ProductCounts, error) {
 	var counts ProductCounts
 
-	totalQ := r.db.WithContext(ctx).Table("products").Where("org_id = ?", orgID)
-	if branchID != nil {
-		totalQ = totalQ.Where("branch_id = ?", *branchID)
-	}
+	// Products are org-wide (see catalog.Product's doc), so a branch filter
+	// here means "products actually stocked at this branch" - counted via a
+	// distinct join through stock_levels, same shape as lowQ/outQ below -
+	// rather than a direct products.branch_id column, which no longer
+	// exists.
 	var total int64
-	if err := totalQ.Count(&total).Error; err != nil {
-		return ProductCounts{}, err
+	if branchID != nil {
+		totalQ := r.db.WithContext(ctx).Table("stock_levels").
+			Joins("JOIN products ON products.id = stock_levels.product_id").
+			Where("products.org_id = ? AND stock_levels.branch_id = ?", orgID, *branchID).
+			Distinct("products.id")
+		if err := totalQ.Count(&total).Error; err != nil {
+			return ProductCounts{}, err
+		}
+	} else {
+		if err := r.db.WithContext(ctx).Table("products").Where("org_id = ?", orgID).Count(&total).Error; err != nil {
+			return ProductCounts{}, err
+		}
 	}
 	counts.TotalProducts = int(total)
 

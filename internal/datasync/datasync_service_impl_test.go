@@ -48,16 +48,15 @@ func TestService_GetCatalogSnapshot_ComposesAllThreeAndComputesETag(t *testing.T
 	sw := NewMockSalesWriter(t)
 	svc := newTestService(repo, branches, cat, sw)
 
-	branchID := uint(5)
 	products := []catalog.ProductResult{{Product: catalog.Product{ID: 1, Name: "Cola"}}}
 	categories := []catalog.Category{{ID: 1, NameI18n: "Beverages"}}
 	combos := []catalog.ComboResult{{Combo: catalog.Combo{ID: 1}}}
 
-	cat.EXPECT().ListProducts(mock.Anything, uint(7), &branchID).Return(products, nil).Once()
+	cat.EXPECT().ListProducts(mock.Anything, uint(7)).Return(products, nil).Once()
 	cat.EXPECT().ListCategories(mock.Anything, uint(7)).Return(categories, nil).Once()
 	cat.EXPECT().ListCombos(mock.Anything, uint(7)).Return(combos, nil).Once()
 
-	got, etag, err := svc.GetCatalogSnapshot(context.Background(), 7, &branchID)
+	got, etag, err := svc.GetCatalogSnapshot(context.Background(), 7)
 	require.NoError(t, err)
 	require.Equal(t, products, got.Products)
 	require.Equal(t, categories, got.Categories)
@@ -73,13 +72,13 @@ func TestService_GetCatalogSnapshot_SameContentYieldsSameETag(t *testing.T) {
 	svc := newTestService(repo, branches, cat, sw)
 
 	products := []catalog.ProductResult{{Product: catalog.Product{ID: 1, Name: "Cola"}}}
-	cat.EXPECT().ListProducts(mock.Anything, uint(7), (*uint)(nil)).Return(products, nil).Twice()
+	cat.EXPECT().ListProducts(mock.Anything, uint(7)).Return(products, nil).Twice()
 	cat.EXPECT().ListCategories(mock.Anything, uint(7)).Return(nil, nil).Twice()
 	cat.EXPECT().ListCombos(mock.Anything, uint(7)).Return(nil, nil).Twice()
 
-	_, etag1, err := svc.GetCatalogSnapshot(context.Background(), 7, nil)
+	_, etag1, err := svc.GetCatalogSnapshot(context.Background(), 7)
 	require.NoError(t, err)
-	_, etag2, err := svc.GetCatalogSnapshot(context.Background(), 7, nil)
+	_, etag2, err := svc.GetCatalogSnapshot(context.Background(), 7)
 	require.NoError(t, err)
 	require.Equal(t, etag1, etag2)
 }
@@ -103,14 +102,14 @@ func TestService_GetCatalogSnapshot_DifferingOnlyByPresignedImageURL_YieldsSameE
 			Images:  []catalog.ProductImageResult{{ID: 10, URL: url, Width: 100, Height: 100}},
 		}}
 	}
-	cat.EXPECT().ListProducts(mock.Anything, uint(7), (*uint)(nil)).Return(productWithImage("https://cdn.example/a?sig=111"), nil).Once()
-	cat.EXPECT().ListProducts(mock.Anything, uint(7), (*uint)(nil)).Return(productWithImage("https://cdn.example/a?sig=222"), nil).Once()
+	cat.EXPECT().ListProducts(mock.Anything, uint(7)).Return(productWithImage("https://cdn.example/a?sig=111"), nil).Once()
+	cat.EXPECT().ListProducts(mock.Anything, uint(7)).Return(productWithImage("https://cdn.example/a?sig=222"), nil).Once()
 	cat.EXPECT().ListCategories(mock.Anything, uint(7)).Return(nil, nil).Twice()
 	cat.EXPECT().ListCombos(mock.Anything, uint(7)).Return(nil, nil).Twice()
 
-	_, etag1, err := svc.GetCatalogSnapshot(context.Background(), 7, nil)
+	_, etag1, err := svc.GetCatalogSnapshot(context.Background(), 7)
 	require.NoError(t, err)
-	_, etag2, err := svc.GetCatalogSnapshot(context.Background(), 7, nil)
+	_, etag2, err := svc.GetCatalogSnapshot(context.Background(), 7)
 	require.NoError(t, err)
 	require.Equal(t, etag1, etag2)
 }

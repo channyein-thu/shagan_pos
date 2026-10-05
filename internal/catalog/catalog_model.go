@@ -9,18 +9,17 @@ import (
 // TODO: relationships (belongs-to/has-many) are intentionally omitted here;
 // wire them up as needed in repository.go queries.
 
-// Product maps to the "Products" table in the ERD. Every product belongs to
-// exactly one branch - there is no "shared across all branches" mode; the
-// same real-world item at two branches is two separate Product rows. Barcode
-// is unique per BranchID (not per OrgID) - see ux_products_branch_barcode -
-// so the same barcode is expected to exist once per branch.
+// Product maps to the "Products" table in the ERD. Org-wide, not
+// branch-scoped - one catalog row per real-world item for the whole
+// organization, sellable at any of its branches. Per-branch stock quantity
+// lives separately in inventory.StockLevel, keyed by {ProductID, BranchID}.
+// Barcode is unique per OrgID - see ux_products_org_barcode.
 type Product struct {
 	ID         uint            `gorm:"primaryKey;autoIncrement" json:"id"`
-	OrgID      uint            `gorm:"index;not null" json:"org_id"`
-	BranchID   uint            `gorm:"not null;uniqueIndex:ux_products_branch_barcode" json:"branch_id"`
+	OrgID      uint            `gorm:"not null;uniqueIndex:ux_products_org_barcode" json:"org_id"`
 	CategoryID uint            `gorm:"index;not null" json:"category_id"`
 	Name       string          `gorm:"size:255;not null" json:"name"`
-	Barcode    string          `gorm:"size:255;uniqueIndex:ux_products_branch_barcode;not null" json:"barcode"`
+	Barcode    string          `gorm:"size:255;uniqueIndex:ux_products_org_barcode;not null" json:"barcode"`
 	Price      decimal.Decimal `gorm:"type:decimal(10,2);not null" json:"price"`
 	Discount   decimal.Decimal `gorm:"type:decimal(10,2);not null" json:"discount"`
 	Tax        decimal.Decimal `gorm:"type:decimal(10,2);not null" json:"tax"`

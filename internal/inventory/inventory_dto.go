@@ -3,19 +3,21 @@ package inventory
 import "github.com/shopspring/decimal"
 
 // CreateStockAdjustmentRequest is the request body for `POST
-// /inventory/adjustments`. BranchID isn't here - the adjustment always
-// applies to the branch in.ProductID's own Product row belongs to (a
-// product lives at exactly one branch), never a client-supplied one.
-// ActorID isn't here either - it's the authenticated caller's own user ID,
-// never client input, same reasoning as procurement.CreateGoodsReceiptRequest.
-// UnitCost is optional and only meaningful when Delta is positive (you're
-// adding stock, so you can say what it's worth) - when given, it blends
-// into the product's CostPrice by the same weighted-average method a
-// Procurement goods receipt uses (see catalog.Product.CostPrice's own
-// doc), closing the gap for stock that enters purely through a manual
-// count/correction rather than a real purchase order. Rejected (400) if
-// given alongside a zero-or-negative Delta.
+// /inventory/adjustments`. BranchID is a required client choice - products
+// are org-wide (see catalog.Product's doc), so the branch whose StockLevel
+// is being adjusted can no longer be derived from the product itself; the
+// service verifies it actually belongs to the caller's own org, same
+// reasoning as procurement.CreatePurchaseOrderRequest. ActorID isn't here -
+// it's the authenticated caller's own user ID, never client input, same
+// reasoning as procurement.CreateGoodsReceiptRequest. UnitCost is optional
+// and only meaningful when Delta is positive (you're adding stock, so you
+// can say what it's worth) - when given, it blends into the product's
+// CostPrice by the same weighted-average method a Procurement goods receipt
+// uses (see catalog.Product.CostPrice's own doc), closing the gap for stock
+// that enters purely through a manual count/correction rather than a real
+// purchase order. Rejected (400) if given alongside a zero-or-negative Delta.
 type CreateStockAdjustmentRequest struct {
+	BranchID  uint             `json:"branch_id" binding:"required"`
 	ProductID uint             `json:"product_id" binding:"required"`
 	Delta     int              `json:"delta" binding:"required"`
 	Reason    string           `json:"reason" binding:"required"`

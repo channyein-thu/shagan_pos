@@ -140,9 +140,9 @@ func (_c *MockCatalogReader_ListCombos_Call) RunAndReturn(run func(context.Conte
 	return _c
 }
 
-// ListProducts provides a mock function with given fields: ctx, orgID, branchID
-func (_m *MockCatalogReader) ListProducts(ctx context.Context, orgID uint, branchID *uint) ([]catalog.ProductResult, error) {
-	ret := _m.Called(ctx, orgID, branchID)
+// ListProducts provides a mock function with given fields: ctx, orgID
+func (_m *MockCatalogReader) ListProducts(ctx context.Context, orgID uint) ([]catalog.ProductResult, error) {
+	ret := _m.Called(ctx, orgID)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ListProducts")
@@ -150,19 +150,19 @@ func (_m *MockCatalogReader) ListProducts(ctx context.Context, orgID uint, branc
 
 	var r0 []catalog.ProductResult
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, uint, *uint) ([]catalog.ProductResult, error)); ok {
-		return rf(ctx, orgID, branchID)
+	if rf, ok := ret.Get(0).(func(context.Context, uint) ([]catalog.ProductResult, error)); ok {
+		return rf(ctx, orgID)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, uint, *uint) []catalog.ProductResult); ok {
-		r0 = rf(ctx, orgID, branchID)
+	if rf, ok := ret.Get(0).(func(context.Context, uint) []catalog.ProductResult); ok {
+		r0 = rf(ctx, orgID)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]catalog.ProductResult)
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, uint, *uint) error); ok {
-		r1 = rf(ctx, orgID, branchID)
+	if rf, ok := ret.Get(1).(func(context.Context, uint) error); ok {
+		r1 = rf(ctx, orgID)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -178,14 +178,13 @@ type MockCatalogReader_ListProducts_Call struct {
 // ListProducts is a helper method to define mock.On call
 //   - ctx context.Context
 //   - orgID uint
-//   - branchID *uint
-func (_e *MockCatalogReader_Expecter) ListProducts(ctx interface{}, orgID interface{}, branchID interface{}) *MockCatalogReader_ListProducts_Call {
-	return &MockCatalogReader_ListProducts_Call{Call: _e.mock.On("ListProducts", ctx, orgID, branchID)}
+func (_e *MockCatalogReader_Expecter) ListProducts(ctx interface{}, orgID interface{}) *MockCatalogReader_ListProducts_Call {
+	return &MockCatalogReader_ListProducts_Call{Call: _e.mock.On("ListProducts", ctx, orgID)}
 }
 
-func (_c *MockCatalogReader_ListProducts_Call) Run(run func(ctx context.Context, orgID uint, branchID *uint)) *MockCatalogReader_ListProducts_Call {
+func (_c *MockCatalogReader_ListProducts_Call) Run(run func(ctx context.Context, orgID uint)) *MockCatalogReader_ListProducts_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(uint), args[2].(*uint))
+		run(args[0].(context.Context), args[1].(uint))
 	})
 	return _c
 }
@@ -195,7 +194,7 @@ func (_c *MockCatalogReader_ListProducts_Call) Return(_a0 []catalog.ProductResul
 	return _c
 }
 
-func (_c *MockCatalogReader_ListProducts_Call) RunAndReturn(run func(context.Context, uint, *uint) ([]catalog.ProductResult, error)) *MockCatalogReader_ListProducts_Call {
+func (_c *MockCatalogReader_ListProducts_Call) RunAndReturn(run func(context.Context, uint) ([]catalog.ProductResult, error)) *MockCatalogReader_ListProducts_Call {
 	_c.Call.Return(run)
 	return _c
 }
