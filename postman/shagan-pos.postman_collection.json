@@ -131,7 +131,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"org_id\": \"{{uatOrgId}}\",\n  \"name\": \"UAT Main Branch\",\n  \"status\": \"active\",\n  \"address\": \"1 UAT Street\",\n  \"phone\": \"09-000-0001\"\n}",
+              "raw": "{\n  \"org_id\": {{uatOrgId}},\n  \"name\": \"UAT Main Branch\",\n  \"status\": \"active\",\n  \"address\": \"1 UAT Street\",\n  \"phone\": \"09-000-0001\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -186,7 +186,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"org_id\": \"{{uatOrgId}}\",\n  \"branch_id\": \"{{uatBranchId}}\",\n  \"name\": \"UAT Register 1\",\n  \"status\": \"active\"\n}",
+              "raw": "{\n  \"org_id\": {{uatOrgId}},\n  \"branch_id\": {{uatBranchId}},\n  \"name\": \"UAT Register 1\",\n  \"status\": \"active\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -242,7 +242,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"org_id\": \"{{uatOrgId}}\",\n  \"device_id\": \"{{uatDeviceId}}\",\n  \"email\": \"uat-pos1@example.com\",\n  \"password\": \"UatPass123!\"\n}",
+              "raw": "{\n  \"org_id\": {{uatOrgId}},\n  \"device_id\": {{uatDeviceId}},\n  \"email\": \"uat-pos1@example.com\",\n  \"password\": \"UatPass123!\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -336,7 +336,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"branch_id\": \"{{uatBranchId}}\",\n  \"name\": \"Manager Mia\",\n  \"role\": 3,\n  \"pin\": \"222222\",\n  \"phone\": \"09-000-0002\",\n  \"status\": \"active\"\n}",
+              "raw": "{\n  \"branch_id\": {{uatBranchId}},\n  \"name\": \"Manager Mia\",\n  \"role\": 3,\n  \"pin\": \"222222\",\n  \"phone\": \"09-000-0002\",\n  \"status\": \"active\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -390,7 +390,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"branch_id\": \"{{uatBranchId}}\",\n  \"name\": \"Cashier Cole\",\n  \"role\": 1,\n  \"pin\": \"123456\",\n  \"phone\": \"09-000-0003\",\n  \"status\": \"active\"\n}",
+              "raw": "{\n  \"branch_id\": {{uatBranchId}},\n  \"name\": \"Cashier Cole\",\n  \"role\": 1,\n  \"pin\": \"123456\",\n  \"phone\": \"09-000-0003\",\n  \"status\": \"active\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -650,7 +650,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"po_number\": \"UAT-PO-1001\",\n  \"supplier_id\": \"{{uatSupplierId}}\",\n  \"items\": [\n    {\n      \"product_id\": \"{{uatProductId}}\",\n      \"ordered_qty\": 20,\n      \"unit_cost\": \"300.00\"\n    }\n  ]\n}",
+              "raw": "{\n  \"po_number\": \"UAT-PO-1001\",\n  \"supplier_id\": {{uatSupplierId}},\n  \"items\": [\n    {\n      \"product_id\": {{uatProductId}},\n      \"ordered_qty\": 20,\n      \"unit_cost\": \"300.00\"\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -747,7 +747,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"received_at\": \"2026-10-01T09:00:00Z\",\n  \"items\": [\n    {\n      \"po_item_id\": \"{{uatPoItemId}}\",\n      \"received_qty\": 20\n    }\n  ]\n}",
+              "raw": "{\n  \"received_at\": \"2026-10-01T09:00:00Z\",\n  \"items\": [\n    {\n      \"po_item_id\": {{uatPoItemId}},\n      \"received_qty\": 20\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -902,7 +902,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"branch_id\": \"{{uatBranchId}}\",\n  \"device_id\": \"{{uatDeviceId}}\",\n  \"opening_cash\": \"100.00\"\n}",
+              "raw": "{\n  \"branch_id\": {{uatBranchId}},\n  \"device_id\": {{uatDeviceId}},\n  \"opening_cash\": \"100.00\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -960,7 +960,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"id\": \"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa\",\n  \"shift_id\": \"{{uatShiftId}}\",\n  \"device_id\": \"{{uatDeviceId}}\",\n  \"items\": [\n    {\n      \"product_id\": \"{{uatProductId}}\",\n      \"name_snapshot\": \"Instant Noodles\",\n      \"unit_price\": \"500.00\",\n      \"qty\": 1,\n      \"discount\": \"0\",\n      \"tax\": \"0\"\n    }\n  ],\n  \"payments\": [\n    {\n      \"method\": \"cash\",\n      \"amount\": \"500.00\",\n      \"amount_received\": \"500.00\"\n    }\n  ]\n}",
+              "raw": "{\n  \"id\": \"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa\",\n  \"shift_id\": {{uatShiftId}},\n  \"device_id\": {{uatDeviceId}},\n  \"items\": [\n    {\n      \"product_id\": {{uatProductId}},\n      \"name_snapshot\": \"Instant Noodles\",\n      \"unit_price\": \"500.00\",\n      \"qty\": 1,\n      \"discount\": \"0\",\n      \"tax\": \"0\"\n    }\n  ],\n  \"payments\": [\n    {\n      \"method\": \"cash\",\n      \"amount\": \"500.00\",\n      \"amount_received\": \"500.00\"\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1113,7 +1113,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"id\": \"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb\",\n  \"shift_id\": \"{{uatShiftId}}\",\n  \"device_id\": \"{{uatDeviceId}}\",\n  \"items\": [\n    {\n      \"product_id\": \"{{uatProductId}}\",\n      \"name_snapshot\": \"Instant Noodles\",\n      \"unit_price\": \"500.00\",\n      \"qty\": 3,\n      \"discount\": \"0\",\n      \"tax\": \"0\"\n    }\n  ],\n  \"payments\": [\n    {\n      \"method\": \"cash\",\n      \"amount\": \"1000.00\",\n      \"amount_received\": \"1000.00\"\n    },\n    {\n      \"method\": \"qr\",\n      \"amount\": \"500.00\"\n    }\n  ]\n}",
+              "raw": "{\n  \"id\": \"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb\",\n  \"shift_id\": {{uatShiftId}},\n  \"device_id\": {{uatDeviceId}},\n  \"items\": [\n    {\n      \"product_id\": {{uatProductId}},\n      \"name_snapshot\": \"Instant Noodles\",\n      \"unit_price\": \"500.00\",\n      \"qty\": 3,\n      \"discount\": \"0\",\n      \"tax\": \"0\"\n    }\n  ],\n  \"payments\": [\n    {\n      \"method\": \"cash\",\n      \"amount\": \"1000.00\",\n      \"amount_received\": \"1000.00\"\n    },\n    {\n      \"method\": \"qr\",\n      \"amount\": \"500.00\"\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1308,7 +1308,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"sale_id\": \"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb\",\n  \"items\": [\n    {\n      \"sale_item_id\": \"{{uatSaleBItemId}}\",\n      \"qty\": 1,\n      \"condition\": \"sellable\"\n    }\n  ],\n  \"reason_code\": \"changed_mind\",\n  \"refund_method\": \"cash\"\n}",
+              "raw": "{\n  \"sale_id\": \"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb\",\n  \"items\": [\n    {\n      \"sale_item_id\": {{uatSaleBItemId}},\n      \"qty\": 1,\n      \"condition\": \"sellable\"\n    }\n  ],\n  \"reason_code\": \"changed_mind\",\n  \"refund_method\": \"cash\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
