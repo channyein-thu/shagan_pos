@@ -3,30 +3,20 @@ package catalog
 import (
 	"context"
 	"io"
-
-	"shagan_pos/internal/identity"
 )
-
-// BranchLookup is the one identity operation catalog needs: confirming a
-// client-supplied BranchID actually belongs to the caller's org before a
-// Product gets attached to it. identity.Repository already satisfies this
-// signature - no adapter needed, see NewCatalogAPI's wiring.
-type BranchLookup interface {
-	GetBranch(ctx context.Context, orgID uint, id uint) (*identity.Branch, error)
-}
 
 // Interface defines the catalog domain's use cases.
 type Interface interface {
 	// ListProducts/GetProduct return ProductResult, not bare Product - each
 	// result's Images carry a temporary signed URL, not just a StorageKey,
 	// since the bucket is private and a raw key isn't usable by a client.
-	ListProducts(ctx context.Context, orgID uint, branchID *uint) ([]ProductResult, error)
+	// Products are org-wide, not branch-scoped, so there's no branch filter.
+	ListProducts(ctx context.Context, orgID uint) ([]ProductResult, error)
 	GetProduct(ctx context.Context, orgID uint, id uint) (*ProductResult, error)
-	// GetProductByBarcode requires a branchID for the same reason as the
-	// repository method it calls - a barcode is only unique per branch, so
-	// resolving one org-wide could be ambiguous. Returns ProductResult, same
-	// reasoning as GetProduct.
-	GetProductByBarcode(ctx context.Context, orgID uint, branchID uint, code string) (*ProductResult, error)
+	// GetProductByBarcode is scoped to orgID only - Barcode is unique per
+	// org (ux_products_org_barcode). Returns ProductResult, same reasoning
+	// as GetProduct.
+	GetProductByBarcode(ctx context.Context, orgID uint, code string) (*ProductResult, error)
 	// CreateProduct requires exactly one image at creation time - a product
 	// without one should never exist (see Service.CreateProduct). file must
 	// support Seek: its header gets read once to decode Width/Height, then
@@ -34,8 +24,8 @@ type Interface interface {
 	CreateProduct(ctx context.Context, orgID uint, in CreateProductRequest, file io.ReadSeeker, fileSize int64, contentType, filename string) (*Product, error)
 	// UpdateProduct confirms the product exists AND belongs to orgID before
 	// touching anything (not-found-not-forbidden, same reasoning as
-	// UpdateCategory). BranchID/CategoryID, if present, are re-verified
-	// against orgID same as CreateProduct. Price/Discount/Tax are validated
+	// UpdateCategory). CategoryID, if present, is re-verified against orgID
+	// same as CreateProduct. Price/Discount/Tax are validated
 	// against the resulting combined state (existing values for any field
 	// not present in the request), not just the fields actually being
 	// changed. file is optional (nil when the request didn't include one) -

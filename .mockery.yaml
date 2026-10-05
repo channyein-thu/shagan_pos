@@ -21,9 +21,6 @@ packages:
       Repository:
         config:
           filename: "mock_catalog_repository_test.go"
-      BranchLookup:
-        config:
-          filename: "mock_catalog_branch_lookup_test.go"
   shagan_pos/internal/storage:
     # Storage is used by catalog's tests, but a mock generated inside
     # storage/*_test.go would be invisible to catalog (Go excludes _test.go
@@ -92,6 +89,9 @@ packages:
       Repository:
         config:
           filename: "mock_procurement_repository_test.go"
+      BranchLookup:
+        config:
+          filename: "mock_procurement_branch_lookup_test.go"
       ProductLookup:
         config:
           filename: "mock_procurement_product_lookup_test.go"

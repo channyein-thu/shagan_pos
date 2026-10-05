@@ -35,10 +35,13 @@ type Supplier struct {
 // with no org_id column to actually include, GORM built it as a
 // globally-unique single-column index instead - two different orgs could
 // never use the same PO number. Now the index genuinely covers (org_id,
-// po_number).
+// po_number). BranchID is the branch placing the order - since Product is
+// org-wide (see catalog.Product's doc), a goods receipt against this order
+// credits BranchID's StockLevel, not a branch derived from the product.
 type PurchaseOrder struct {
 	ID         uint                `gorm:"primaryKey;autoIncrement" json:"id"`
 	OrgID      uint                `gorm:"index;not null;uniqueIndex:ux_purchase_orders_org_po_number" json:"org_id"`
+	BranchID   uint                `gorm:"index;not null" json:"branch_id"`
 	PoNumber   string              `gorm:"size:50;uniqueIndex:ux_purchase_orders_org_po_number;not null" json:"po_number"`
 	SupplierID uint                `gorm:"index;not null" json:"supplier_id"`
 	Status     PurchaseOrderStatus `gorm:"type:varchar(30);not null" json:"status"` // one of PurchaseOrderStatus* constants below (TODO: confirm real values)

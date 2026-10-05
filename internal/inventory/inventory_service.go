@@ -21,12 +21,12 @@ type BranchLookup interface {
 }
 
 // ProductLookup is what inventory needs from catalog: confirming a
-// client-supplied ProductID actually belongs to the caller's org, and
-// reading back its own BranchID - a Product belongs to exactly one branch,
-// so that's also the only branch whose StockLevel a stock adjustment can
-// ever apply to, or that a stock transfer can ever move it out of. Same
-// reasoning as procurement.ProductLookup; catalog.Repository already
-// satisfies this signature, no adapter needed.
+// client-supplied ProductID actually belongs to the caller's org (products
+// are org-wide, see catalog.Product's doc - the branch a stock
+// adjustment/transfer applies to is a separate, explicit client-supplied
+// BranchID, verified via BranchLookup instead). Same reasoning as
+// procurement.ProductLookup; catalog.Repository already satisfies this
+// signature, no adapter needed.
 type ProductLookup interface {
 	GetProduct(ctx context.Context, orgID uint, id uint) (*catalog.Product, error)
 	// UpdateProduct backs CreateStockAdjustment's optional weighted-average

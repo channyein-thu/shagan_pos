@@ -49,8 +49,8 @@ func (s *Service) resolveBranchIDs(ctx context.Context, orgID uint, branchID *ui
 	return branchIDs, nil
 }
 
-func (s *Service) GetCatalogSnapshot(ctx context.Context, orgID uint, branchID *uint) (*CatalogSnapshot, string, error) {
-	products, err := s.catalog.ListProducts(ctx, orgID, branchID)
+func (s *Service) GetCatalogSnapshot(ctx context.Context, orgID uint) (*CatalogSnapshot, string, error) {
+	products, err := s.catalog.ListProducts(ctx, orgID)
 	if err != nil {
 		return nil, "", err
 	}

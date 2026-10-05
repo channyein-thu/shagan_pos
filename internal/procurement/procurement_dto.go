@@ -34,8 +34,11 @@ type CreateGoodsReceiptItemRequest struct {
 }
 
 // CreatePurchaseOrderRequest is the request body for `POST
-// /purchase-orders`. SupplierID is a legitimate client choice, re-verified
-// against the caller's own org by the service. Status is deliberately not
+// /purchase-orders`. BranchID is the branch placing the order (re-verified
+// against the caller's own org) - since Product is org-wide (see
+// catalog.Product's doc), this is also the branch CreateGoodsReceipt later
+// credits stock to. SupplierID is likewise a legitimate client choice,
+// re-verified against the caller's own org by the service. Status is deliberately not
 // here - a new purchase order always starts at PurchaseOrderStatusSubmitted;
 // moving it along the lifecycle happens via UpdatePurchaseOrder (or, for
 // the Received transition specifically, only via CreateGoodsReceipt, which
@@ -46,6 +49,7 @@ type CreateGoodsReceiptItemRequest struct {
 // never a client-supplied one. Items must contain at least one entry with
 // no duplicate product_id - same reasoning as CreateComboRequest's Items.
 type CreatePurchaseOrderRequest struct {
+	BranchID   uint                             `json:"branch_id" binding:"required"`
 	PoNumber   string                           `json:"po_number" binding:"required"`
 	SupplierID uint                             `json:"supplier_id" binding:"required"`
 	Items      []CreatePurchaseOrderItemRequest `json:"items" binding:"required,min=1,unique=ProductID,dive"`

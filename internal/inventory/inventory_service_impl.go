@@ -70,16 +70,20 @@ func (s *Service) ListInventoryLedger(ctx context.Context, orgID uint, branchID 
 	return s.repo.ListInventoryLedger(ctx, orgID, branchID, productID)
 }
 
-// CreateStockAdjustment confirms in.ProductID belongs to orgID and takes the
-// product's own BranchID as the adjustment's branch (see the interface
-// doc), then applies Delta to that product's StockLevel and appends one
-// InventoryLedger entry, all atomically.
+// CreateStockAdjustment confirms in.BranchID belongs to orgID and
+// in.ProductID belongs to orgID (products are org-wide, see catalog.Product's
+// doc, so BranchID is a required client choice rather than derived from the
+// product), then applies Delta to that product's StockLevel at that branch
+// and appends one InventoryLedger entry, all atomically.
 func (s *Service) CreateStockAdjustment(ctx context.Context, orgID uint, actorID uint, in CreateStockAdjustmentRequest) (*StockAdjustment, error) {
 	if in.UnitCost != nil && in.Delta <= 0 {
 		return nil, common.BadRequestError("unit_cost is only meaningful for a positive delta")
 	}
 	if in.UnitCost != nil && in.UnitCost.IsNegative() {
 		return nil, common.BadRequestError("unit_cost must be zero or greater")
+	}
+	if _, err := s.branches.GetBranch(ctx, orgID, in.BranchID); err != nil {
+		return nil, err
 	}
 	product, err := s.products.GetProduct(ctx, orgID, in.ProductID)
 	if err != nil {
@@ -88,7 +92,7 @@ func (s *Service) CreateStockAdjustment(ctx context.Context, orgID uint, actorID
 
 	var adjustment StockAdjustment
 	err = s.db.Transaction(func(tx *gorm.DB) error {
-		newQty, err := s.applyStockDelta(tx, in.ProductID, product.BranchID, in.Delta)
+		newQty, err := s.applyStockDelta(tx, in.ProductID, in.BranchID, in.Delta)
 		if err != nil {
 			return err
 		}
@@ -103,7 +107,7 @@ func (s *Service) CreateStockAdjustment(ctx context.Context, orgID uint, actorID
 
 		adjustment = StockAdjustment{
 			ProductID: in.ProductID,
-			BranchID:  product.BranchID,
+			BranchID:  in.BranchID,
 			Delta:     in.Delta,
 			Reason:    in.Reason,
 			ActorID:   actorID,
@@ -115,7 +119,7 @@ func (s *Service) CreateStockAdjustment(ctx context.Context, orgID uint, actorID
 		return s.repo.CreateInventoryLedgerEntry(tx, &InventoryLedger{
 			OrgID:         orgID,
 			ProductID:     in.ProductID,
-			BranchID:      product.BranchID,
+			BranchID:      in.BranchID,
 			Type:          LedgerEntryTypeAdjustment,
 			Qty:           in.Delta,
 			BalanceAfter:  newQty,
@@ -183,9 +187,17 @@ func (s *Service) ListStockTransfers(ctx context.Context, orgID uint, branchID *
 }
 
 // CreateStockTransfer confirms FromBranch/ToBranch both belong to orgID and
-// differ, and every item's product belongs to orgID AND to FromBranch
-// specifically - see the interface doc for why. No stock movement happens
-// here; only UpdateStockTransfer completing it does.
+// differ, every item's product belongs to orgID, and FromBranch's
+// StockLevel covers each item's qty - see the interface doc for why
+// (products are org-wide, see catalog.Product's doc, so there's no
+// product-belongs-to-a-branch check anymore, only a stock-sufficiency one).
+// The sufficiency check runs inside the same transaction as creation, not
+// before it, so it can't race with another movement against the same
+// StockLevel row. No stock actually moves here though; only
+// UpdateStockTransfer completing it does - this is a soft, point-in-time
+// sanity check, not the real enforcement (applyStockDelta's own
+// negative-qty guard is what protects completion time, since stock can
+// still change while a transfer sits pending).
 func (s *Service) CreateStockTransfer(ctx context.Context, orgID uint, actorID uint, in CreateStockTransferRequest) (*StockTransfer, error) {
 	if in.FromBranch == in.ToBranch {
 		return nil, common.BadRequestError("from_branch and to_branch must be different")
@@ -197,22 +209,33 @@ func (s *Service) CreateStockTransfer(ctx context.Context, orgID uint, actorID u
 		return nil, err
 	}
 	for _, item := range in.Items {
-		product, err := s.products.GetProduct(ctx, orgID, item.ProductID)
-		if err != nil {
+		if _, err := s.products.GetProduct(ctx, orgID, item.ProductID); err != nil {
 			return nil, err
-		}
-		if product.BranchID != in.FromBranch {
-			return nil, common.BadRequestError("product does not belong to from_branch")
 		}
 	}
 
-	transfer := StockTransfer{
-		FromBranch: in.FromBranch,
-		ToBranch:   in.ToBranch,
-		Status:     TransferStatusPending,
-		ActorID:    actorID,
-	}
+	var transfer StockTransfer
 	err := s.db.Transaction(func(tx *gorm.DB) error {
+		for _, item := range in.Items {
+			level, err := s.repo.GetStockLevel(tx, item.ProductID, in.FromBranch)
+			if err != nil {
+				return err
+			}
+			available := 0
+			if level != nil {
+				available = level.Qty
+			}
+			if available < item.Qty {
+				return common.ConflictError("insufficient stock at from_branch for this transfer")
+			}
+		}
+
+		transfer = StockTransfer{
+			FromBranch: in.FromBranch,
+			ToBranch:   in.ToBranch,
+			Status:     TransferStatusPending,
+			ActorID:    actorID,
+		}
 		if err := s.repo.CreateStockTransfer(tx, &transfer); err != nil {
 			return err
 		}

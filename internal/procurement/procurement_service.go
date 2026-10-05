@@ -6,16 +6,26 @@ import (
 	"gorm.io/gorm"
 
 	"shagan_pos/internal/catalog"
+	"shagan_pos/internal/identity"
 	"shagan_pos/internal/inventory"
 )
 
+// BranchLookup is the one identity operation procurement needs: confirming
+// a client-supplied BranchID actually belongs to the caller's org before a
+// PurchaseOrder gets placed by it (products are org-wide, see
+// catalog.Product's doc, so the branch a goods receipt credits now comes
+// from the order itself, not the product). identity.Repository already
+// satisfies this signature - no adapter needed, same reasoning as
+// catalog.BranchLookup.
+type BranchLookup interface {
+	GetBranch(ctx context.Context, orgID uint, id uint) (*identity.Branch, error)
+}
+
 // ProductLookup is the one catalog operation procurement needs: confirming
 // a client-supplied ProductID actually belongs to the caller's org before a
-// PurchaseOrderItem gets attached to it, and reading back the product's own
-// BranchID at receipt time (a Product belongs to exactly one branch, so
-// that's also the branch whose StockLevel a goods receipt credits - see
-// Service.CreateGoodsReceipt). catalog.Repository already satisfies this
-// signature - no adapter needed, same reasoning as inventory.ProductLookup.
+// PurchaseOrderItem gets attached to it. catalog.Repository already
+// satisfies this signature - no adapter needed, same reasoning as
+// inventory.ProductLookup.
 type ProductLookup interface {
 	GetProduct(ctx context.Context, orgID uint, id uint) (*catalog.Product, error)
 	// UpdateProduct backs CreateGoodsReceipt's weighted-average cost blend
@@ -54,15 +64,15 @@ type Interface interface {
 	// organization - returns bare PurchaseOrder rows (headers only), same
 	// reasoning as PurchaseOrderResult's doc.
 	ListPurchaseOrders(ctx context.Context, orgID uint) ([]PurchaseOrder, error)
-	// CreatePurchaseOrder confirms in.SupplierID belongs to orgID and every
-	// item's ProductID does too (same not-found-not-forbidden reasoning as
-	// catalog.CreateProduct's branch/category ownership checks), computes
-	// Total from the items, then creates the PurchaseOrder and its
-	// PurchaseOrderItems together as one atomic unit of work: a purchase
-	// order without its line items should never exist. Starts at
-	// PurchaseOrderStatusSubmitted - see CreatePurchaseOrderRequest's doc.
-	// createdBy is the authenticated caller's own user ID, never a
-	// client-supplied one.
+	// CreatePurchaseOrder confirms in.BranchID and in.SupplierID both belong
+	// to orgID, and every item's ProductID does too (same
+	// not-found-not-forbidden reasoning as catalog.CreateProduct's category
+	// ownership check), computes Total from the items, then creates the
+	// PurchaseOrder and its PurchaseOrderItems together as one atomic unit
+	// of work: a purchase order without its line items should never exist.
+	// Starts at PurchaseOrderStatusSubmitted - see
+	// CreatePurchaseOrderRequest's doc. createdBy is the authenticated
+	// caller's own user ID, never a client-supplied one.
 	CreatePurchaseOrder(ctx context.Context, orgID uint, createdBy uint, in CreatePurchaseOrderRequest) (*PurchaseOrder, error)
 	// GetPurchaseOrder returns PurchaseOrderResult (the order plus its
 	// items), confirming the order exists AND belongs to orgID
@@ -80,8 +90,9 @@ type Interface interface {
 	// (validating po_item_id actually belongs to this order, and requiring
 	// variance_note whenever received_qty differs from ordered_qty),
 	// atomically: creates the GoodsReceipt and its GoodsReceiptItems,
-	// credits each product's StockLevel at its own branch by exactly
-	// received_qty (creating the row if none exists yet - never the
+	// credits each product's StockLevel at the purchase order's own
+	// BranchID by exactly received_qty (creating the row if none exists
+	// yet - never the
 	// ordered_qty, since only what actually arrived should ever increase
 	// real stock), appends one InventoryLedger entry per item reflecting
 	// that same real movement (the lost/short quantity is recorded via

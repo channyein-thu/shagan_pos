@@ -9,6 +9,7 @@ import (
 
 	"shagan_pos/internal/catalog"
 	"shagan_pos/internal/common"
+	"shagan_pos/internal/identity"
 	"shagan_pos/internal/inventory"
 	"shagan_pos/internal/middleware"
 	"shagan_pos/internal/procurement"
@@ -20,7 +21,7 @@ type ProcurementAPI struct {
 
 func NewProcurementAPI(db *gorm.DB) *ProcurementAPI {
 	return &ProcurementAPI{
-		service: procurement.NewService(procurement.NewRepository(db), catalog.NewRepository(db), inventory.NewRepository(db), db),
+		service: procurement.NewService(procurement.NewRepository(db), identity.NewRepository(db), catalog.NewRepository(db), inventory.NewRepository(db), db),
 	}
 }
 

@@ -43,10 +43,9 @@ type CreateComboItemRequest struct {
 }
 
 // CreateProductRequest is the request body for `POST /products`. OrgID is
-// deliberately not here - same reasoning as CreateCategoryRequest. BranchID
-// is a legitimate client choice (an org can have several branches, so the
-// caller picks which one, same as identity.CreateStaffRequest) - the service
-// verifies it actually belongs to the caller's own org before using it.
+// deliberately not here - same reasoning as CreateCategoryRequest. Products
+// are org-wide, not branch-scoped, so there's no BranchID either - stock at
+// a given branch is established separately via Inventory/Procurement.
 // Price, Discount, and Tax carry no binding tag: decimal.Decimal is a
 // struct, so go-playground/validator's `required` is a no-op on it and can't
 // do numeric comparisons without a custom type registration -
@@ -55,7 +54,6 @@ type CreateComboItemRequest struct {
 // deliberately - required on a bool rejects its zero value, which would make
 // false unrepresentable.
 type CreateProductRequest struct {
-	BranchID   uint            `json:"branch_id" binding:"required"`
 	CategoryID uint            `json:"category_id" binding:"required"`
 	Name       string          `json:"name" binding:"required"`
 	Barcode    string          `json:"barcode" binding:"required"`
@@ -101,15 +99,14 @@ type UpdateComboRequest struct {
 // from "field sent" for each one, since a plain multipart form field can't
 // otherwise distinguish the two. OrgID is deliberately not here - a product
 // can never be reassigned to a different organization via a client update,
-// same reasoning as identity.UpdateBranchRequest. BranchID/CategoryID are
-// re-verified against the caller's own org by the service if present, same
-// reasoning as CreateProductRequest. Every field is a plain pointer, so
-// (like every other Update*Request in this codebase) there's no way to
-// distinguish "omitted" from "explicitly sent as null" - a nil Modifier
-// always means "leave it as-is," never "clear it back to NULL"; clearing an
-// existing Modifier isn't supported yet.
+// same reasoning as identity.UpdateBranchRequest. There's no BranchID either
+// - products are org-wide, same reasoning as CreateProductRequest. CategoryID
+// is re-verified against the caller's own org by the service if present.
+// Every field is a plain pointer, so (like every other Update*Request in
+// this codebase) there's no way to distinguish "omitted" from "explicitly
+// sent as null" - a nil Modifier always means "leave it as-is," never
+// "clear it back to NULL"; clearing an existing Modifier isn't supported yet.
 type UpdateProductRequest struct {
-	BranchID   *uint            `json:"branch_id" binding:"omitempty"`
 	CategoryID *uint            `json:"category_id" binding:"omitempty"`
 	Name       *string          `json:"name" binding:"omitempty"`
 	Barcode    *string          `json:"barcode" binding:"omitempty"`

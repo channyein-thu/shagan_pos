@@ -14,13 +14,14 @@ import (
 
 type Service struct {
 	repo     Repository
+	branches BranchLookup
 	products ProductLookup
 	stock    InventoryWriter
 	db       common.Transactioner
 }
 
-func NewService(repo Repository, products ProductLookup, stock InventoryWriter, db common.Transactioner) *Service {
-	return &Service{repo: repo, products: products, stock: stock, db: db}
+func NewService(repo Repository, branches BranchLookup, products ProductLookup, stock InventoryWriter, db common.Transactioner) *Service {
+	return &Service{repo: repo, branches: branches, products: products, stock: stock, db: db}
 }
 
 var _ Interface = (*Service)(nil)
@@ -92,13 +93,16 @@ func (s *Service) ListPurchaseOrders(ctx context.Context, orgID uint) ([]Purchas
 	return s.repo.ListPurchaseOrders(ctx, orgID)
 }
 
-// CreatePurchaseOrder confirms in.SupplierID and every item's ProductID
-// belong to orgID, validates each item's UnitCost is actually positive
-// (decimal.Decimal's zero value can't do that from a struct tag - see
-// CreatePurchaseOrderItemRequest's doc), computes Total from the items,
+// CreatePurchaseOrder confirms in.BranchID, in.SupplierID, and every item's
+// ProductID belong to orgID, validates each item's UnitCost is actually
+// positive (decimal.Decimal's zero value can't do that from a struct tag -
+// see CreatePurchaseOrderItemRequest's doc), computes Total from the items,
 // then creates the PurchaseOrder and its PurchaseOrderItems together as one
 // atomic unit of work.
 func (s *Service) CreatePurchaseOrder(ctx context.Context, orgID uint, createdBy uint, in CreatePurchaseOrderRequest) (*PurchaseOrder, error) {
+	if _, err := s.branches.GetBranch(ctx, orgID, in.BranchID); err != nil {
+		return nil, err
+	}
 	if _, err := s.repo.GetSupplier(ctx, orgID, in.SupplierID); err != nil {
 		return nil, err
 	}
@@ -117,6 +121,8 @@ func (s *Service) CreatePurchaseOrder(ctx context.Context, orgID uint, createdBy
 	var result *PurchaseOrder
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		po := PurchaseOrder{
+			OrgID:      orgID,
+			BranchID:   in.BranchID,
 			PoNumber:   in.PoNumber,
 			SupplierID: in.SupplierID,
 			Status:     PurchaseOrderStatusSubmitted,
@@ -214,11 +220,12 @@ func (s *Service) UpdatePurchaseOrder(ctx context.Context, orgID uint, id uint, 
 // requested item against its PurchaseOrderItem (validating po_item_id
 // actually belongs to this order, and requiring variance_note whenever
 // received_qty differs from ordered_qty), then atomically: creates the
-// GoodsReceipt and its GoodsReceiptItems, credits each product's
-// StockLevel at its own branch (from ProductLookup - a product belongs to
-// exactly one branch) by exactly received_qty, appends one
-// InventoryLedger entry per item reflecting that same real movement, and
-// marks the purchase order Received.
+// GoodsReceipt and its GoodsReceiptItems, credits each product's StockLevel
+// at the purchase order's own BranchID (products are org-wide, see
+// catalog.Product's doc, so the order itself is what carries the branch
+// now) by exactly received_qty, appends one InventoryLedger entry per item
+// reflecting that same real movement, and marks the purchase order
+// Received.
 func (s *Service) CreateGoodsReceipt(ctx context.Context, orgID uint, poID uint, receivedBy uint, in CreateGoodsReceiptRequest) (*GoodsReceipt, error) {
 	po, err := s.repo.GetPurchaseOrder(ctx, orgID, poID)
 	if err != nil {
@@ -243,7 +250,6 @@ func (s *Service) CreateGoodsReceipt(ctx context.Context, orgID uint, poID uint,
 	type resolvedItem struct {
 		req             CreateGoodsReceiptItemRequest
 		poItem          PurchaseOrderItem
-		branchID        uint
 		costPriceBefore decimal.Decimal
 	}
 	resolved := make([]resolvedItem, len(in.Items))
@@ -269,7 +275,7 @@ func (s *Service) CreateGoodsReceipt(ctx context.Context, orgID uint, poID uint,
 		if shortfall := poItem.OrderedQty - item.ReceivedQty; shortfall > 0 {
 			varianceCount += shortfall
 		}
-		resolved[i] = resolvedItem{req: item, poItem: poItem, branchID: product.BranchID, costPriceBefore: product.CostPrice}
+		resolved[i] = resolvedItem{req: item, poItem: poItem, costPriceBefore: product.CostPrice}
 	}
 
 	var result *GoodsReceipt
@@ -305,7 +311,7 @@ func (s *Service) CreateGoodsReceipt(ctx context.Context, orgID uint, poID uint,
 				continue
 			}
 
-			level, err := s.stock.GetStockLevel(tx, r.poItem.ProductID, r.branchID)
+			level, err := s.stock.GetStockLevel(tx, r.poItem.ProductID, po.BranchID)
 			if err != nil {
 				return err
 			}
@@ -317,7 +323,7 @@ func (s *Service) CreateGoodsReceipt(ctx context.Context, orgID uint, poID uint,
 				currentQty = 0
 				if err := s.stock.CreateStockLevel(tx, &inventory.StockLevel{
 					ProductID: r.poItem.ProductID,
-					BranchID:  r.branchID,
+					BranchID:  po.BranchID,
 					Qty:       newQty,
 				}); err != nil {
 					return err
@@ -338,7 +344,7 @@ func (s *Service) CreateGoodsReceipt(ctx context.Context, orgID uint, poID uint,
 			if err := s.stock.CreateInventoryLedgerEntry(tx, &inventory.InventoryLedger{
 				OrgID:         orgID,
 				ProductID:     r.poItem.ProductID,
-				BranchID:      r.branchID,
+				BranchID:      po.BranchID,
 				Type:          inventory.LedgerEntryTypePurchaseReceipt,
 				Qty:           r.req.ReceivedQty,
 				BalanceAfter:  newQty,

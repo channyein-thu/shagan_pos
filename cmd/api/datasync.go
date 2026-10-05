@@ -27,7 +27,7 @@ func NewSyncAPI(db *gorm.DB, store storage.Storage) *SyncAPI {
 		service: datasync.NewService(
 			datasync.NewRepository(db),
 			identity.NewRepository(db),
-			catalog.NewService(catalog.NewRepository(db), identity.NewRepository(db), db, store),
+			catalog.NewService(catalog.NewRepository(db), db, store),
 			sales.NewService(sales.NewRepository(db), inventory.NewRepository(db), catalog.NewRepository(db), audit.NewRepository(db), db),
 			db,
 		),
@@ -53,11 +53,7 @@ func (a *SyncAPI) GetCatalogSnapshot(c *gin.Context) {
 	if !ok {
 		return
 	}
-	branchID, ok := reportBranchID(c)
-	if !ok {
-		return
-	}
-	snapshot, etag, err := a.service.GetCatalogSnapshot(c.Request.Context(), orgID, branchID)
+	snapshot, etag, err := a.service.GetCatalogSnapshot(c.Request.Context(), orgID)
 	if err != nil {
 		common.HandleError(c, err)
 		return

@@ -287,6 +287,20 @@ what each grants).
   (same login, gated by PIN only).
 - **`PurchaseOrder` numbers**: unique per-org (`org_id` + `po_number`), not
   globally unique.
+- **Products are org-wide, not branch-scoped** (confirmed 2026-10-05,
+  overriding an earlier unconfirmed guess baked into the code - a product
+  belongs to the whole organization, sellable at any of its branches; the
+  same real-world item never needs two separate `Product` rows for two
+  branches). Barcode is unique per org (`ux_products_org_barcode`), not
+  per branch. Per-branch stock quantity lives separately in
+  `StockLevel` (`{ProductID, BranchID}`), independent of the product
+  itself. `CostPrice` is likewise one shared, org-wide weighted-average
+  figure per product, blended across every branch's receipts/adjustments
+  combined - not tracked separately per branch. A branch-specific
+  operation (`CreateStockAdjustment`, `CreateStockTransfer`,
+  `CreatePurchaseOrder`/`CreateGoodsReceipt`) always takes an explicit,
+  client-supplied `branch_id`, verified against the caller's own org -
+  never derived from the product.
 
 ---
 

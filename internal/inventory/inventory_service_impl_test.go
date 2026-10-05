@@ -240,7 +240,8 @@ func TestService_CreateStockAdjustment_HappyPath_ExistingStockLevel_CreditsAndLo
 	products := NewMockProductLookup(t)
 	svc := NewService(repo, branches, products, fakeTransactioner{})
 
-	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7, BranchID: 5}, nil).Once()
+	branches.EXPECT().GetBranch(mock.Anything, uint(7), uint(5)).Return(&identity.Branch{ID: 5, OrgID: 7}, nil).Once()
+	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7}, nil).Once()
 	repo.EXPECT().GetStockLevel(mock.Anything, uint(1), uint(5)).Return(&StockLevel{ID: 50, ProductID: 1, BranchID: 5, Qty: 10}, nil).Once()
 	repo.EXPECT().UpdateStockLevelQty(mock.Anything, uint(50), 7).Return(nil).Once()
 	repo.EXPECT().
@@ -259,7 +260,7 @@ func TestService_CreateStockAdjustment_HappyPath_ExistingStockLevel_CreditsAndLo
 		Return(nil).
 		Once()
 
-	got, err := svc.CreateStockAdjustment(context.Background(), 7, 42, CreateStockAdjustmentRequest{ProductID: 1, Delta: -3, Reason: "damaged"})
+	got, err := svc.CreateStockAdjustment(context.Background(), 7, 42, CreateStockAdjustmentRequest{BranchID: 5, ProductID: 1, Delta: -3, Reason: "damaged"})
 	require.NoError(t, err)
 	require.Equal(t, uint(100), got.ID)
 }
@@ -270,7 +271,8 @@ func TestService_CreateStockAdjustment_NoExistingStockLevel_CreatesOne(t *testin
 	products := NewMockProductLookup(t)
 	svc := NewService(repo, branches, products, fakeTransactioner{})
 
-	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7, BranchID: 5}, nil).Once()
+	branches.EXPECT().GetBranch(mock.Anything, uint(7), uint(5)).Return(&identity.Branch{ID: 5, OrgID: 7}, nil).Once()
+	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7}, nil).Once()
 	repo.EXPECT().GetStockLevel(mock.Anything, uint(1), uint(5)).Return(nil, nil).Once()
 	repo.EXPECT().
 		CreateStockLevel(mock.Anything, mock.MatchedBy(func(l *StockLevel) bool {
@@ -281,7 +283,7 @@ func TestService_CreateStockAdjustment_NoExistingStockLevel_CreatesOne(t *testin
 	repo.EXPECT().CreateStockAdjustment(mock.Anything, mock.Anything).Return(nil).Once()
 	repo.EXPECT().CreateInventoryLedgerEntry(mock.Anything, mock.Anything).Return(nil).Once()
 
-	_, err := svc.CreateStockAdjustment(context.Background(), 7, 42, CreateStockAdjustmentRequest{ProductID: 1, Delta: 20, Reason: "initial count"})
+	_, err := svc.CreateStockAdjustment(context.Background(), 7, 42, CreateStockAdjustmentRequest{BranchID: 5, ProductID: 1, Delta: 20, Reason: "initial count"})
 	require.NoError(t, err)
 }
 
@@ -291,12 +293,13 @@ func TestService_CreateStockAdjustment_InsufficientStock_ReturnsConflict(t *test
 	products := NewMockProductLookup(t)
 	svc := NewService(repo, branches, products, fakeTransactioner{})
 
-	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7, BranchID: 5}, nil).Once()
+	branches.EXPECT().GetBranch(mock.Anything, uint(7), uint(5)).Return(&identity.Branch{ID: 5, OrgID: 7}, nil).Once()
+	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7}, nil).Once()
 	repo.EXPECT().GetStockLevel(mock.Anything, uint(1), uint(5)).Return(&StockLevel{ID: 50, ProductID: 1, BranchID: 5, Qty: 2}, nil).Once()
 	// CreateStockAdjustment/CreateInventoryLedgerEntry must never be called -
 	// the movement is rejected before either write happens.
 
-	_, err := svc.CreateStockAdjustment(context.Background(), 7, 42, CreateStockAdjustmentRequest{ProductID: 1, Delta: -5, Reason: "damaged"})
+	_, err := svc.CreateStockAdjustment(context.Background(), 7, 42, CreateStockAdjustmentRequest{BranchID: 5, ProductID: 1, Delta: -5, Reason: "damaged"})
 	require.Error(t, err)
 	requireRestErrorStatus(t, err, http.StatusConflict)
 }
@@ -307,10 +310,11 @@ func TestService_CreateStockAdjustment_UnknownProduct_PropagatesNotFound(t *test
 	products := NewMockProductLookup(t)
 	svc := NewService(repo, branches, products, fakeTransactioner{})
 
+	branches.EXPECT().GetBranch(mock.Anything, uint(7), uint(5)).Return(&identity.Branch{ID: 5, OrgID: 7}, nil).Once()
 	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(99)).Return(nil, common.NotFoundError("product not found")).Once()
 	// GetStockLevel must never be called - the product lookup failed first.
 
-	_, err := svc.CreateStockAdjustment(context.Background(), 7, 42, CreateStockAdjustmentRequest{ProductID: 99, Delta: 5, Reason: "found extra"})
+	_, err := svc.CreateStockAdjustment(context.Background(), 7, 42, CreateStockAdjustmentRequest{BranchID: 5, ProductID: 99, Delta: 5, Reason: "found extra"})
 	require.Error(t, err)
 	requireRestErrorStatus(t, err, http.StatusNotFound)
 }
@@ -322,7 +326,8 @@ func TestService_CreateStockAdjustment_WithUnitCost_BlendsWeightedAverageCost(t 
 	svc := NewService(repo, branches, products, fakeTransactioner{})
 
 	unitCost := d("3.00")
-	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7, BranchID: 5, CostPrice: d("1.00")}, nil).Once()
+	branches.EXPECT().GetBranch(mock.Anything, uint(7), uint(5)).Return(&identity.Branch{ID: 5, OrgID: 7}, nil).Once()
+	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7, CostPrice: d("1.00")}, nil).Once()
 	// existing 10 units @ 1.00 blended with 10 more @ 3.00: (10*1 + 10*3)/20 = 2.00
 	repo.EXPECT().GetStockLevel(mock.Anything, uint(1), uint(5)).Return(&StockLevel{ID: 50, ProductID: 1, BranchID: 5, Qty: 10}, nil).Once()
 	repo.EXPECT().UpdateStockLevelQty(mock.Anything, uint(50), 20).Return(nil).Once()
@@ -336,9 +341,23 @@ func TestService_CreateStockAdjustment_WithUnitCost_BlendsWeightedAverageCost(t 
 	repo.EXPECT().CreateInventoryLedgerEntry(mock.Anything, mock.Anything).Return(nil).Once()
 
 	_, err := svc.CreateStockAdjustment(context.Background(), 7, 42, CreateStockAdjustmentRequest{
-		ProductID: 1, Delta: 10, Reason: "restocked", UnitCost: &unitCost,
+		BranchID: 5, ProductID: 1, Delta: 10, Reason: "restocked", UnitCost: &unitCost,
 	})
 	require.NoError(t, err)
+}
+
+func TestService_CreateStockAdjustment_BranchNotInOrg_PropagatesNotFound(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	products := NewMockProductLookup(t)
+	svc := NewService(repo, branches, products, fakeTransactioner{})
+
+	branches.EXPECT().GetBranch(mock.Anything, uint(7), uint(9)).Return(nil, common.NotFoundError("branch not found")).Once()
+	// GetProduct/GetStockLevel must never be called - the branch isn't ours.
+
+	_, err := svc.CreateStockAdjustment(context.Background(), 7, 42, CreateStockAdjustmentRequest{BranchID: 9, ProductID: 1, Delta: 5, Reason: "found extra"})
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusNotFound)
 }
 
 func TestService_CreateStockAdjustment_UnitCostWithNonPositiveDelta_ReturnsBadRequest(t *testing.T) {
@@ -394,7 +413,8 @@ func TestService_CreateStockTransfer_HappyPath_CreatesPendingTransferWithItems(t
 
 	branches.EXPECT().GetBranch(mock.Anything, uint(7), uint(5)).Return(&identity.Branch{ID: 5, OrgID: 7}, nil).Once()
 	branches.EXPECT().GetBranch(mock.Anything, uint(7), uint(6)).Return(&identity.Branch{ID: 6, OrgID: 7}, nil).Once()
-	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7, BranchID: 5}, nil).Once()
+	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7}, nil).Once()
+	repo.EXPECT().GetStockLevel(mock.Anything, uint(1), uint(5)).Return(&StockLevel{ID: 50, ProductID: 1, BranchID: 5, Qty: 10}, nil).Once()
 
 	repo.EXPECT().
 		CreateStockTransfer(mock.Anything, mock.MatchedBy(func(tr *StockTransfer) bool {
@@ -433,7 +453,7 @@ func TestService_CreateStockTransfer_SameFromAndToBranch_ReturnsBadRequest(t *te
 	requireRestErrorStatus(t, err, http.StatusBadRequest)
 }
 
-func TestService_CreateStockTransfer_ProductNotInFromBranch_ReturnsBadRequest(t *testing.T) {
+func TestService_CreateStockTransfer_InsufficientStockAtFromBranch_ReturnsConflict(t *testing.T) {
 	repo := NewMockRepository(t)
 	branches := NewMockBranchLookup(t)
 	products := NewMockProductLookup(t)
@@ -441,13 +461,32 @@ func TestService_CreateStockTransfer_ProductNotInFromBranch_ReturnsBadRequest(t 
 
 	branches.EXPECT().GetBranch(mock.Anything, uint(7), uint(5)).Return(&identity.Branch{ID: 5, OrgID: 7}, nil).Once()
 	branches.EXPECT().GetBranch(mock.Anything, uint(7), uint(6)).Return(&identity.Branch{ID: 6, OrgID: 7}, nil).Once()
-	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7, BranchID: 6}, nil).Once()
+	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7}, nil).Once()
+	repo.EXPECT().GetStockLevel(mock.Anything, uint(1), uint(5)).Return(&StockLevel{ID: 50, ProductID: 1, BranchID: 5, Qty: 2}, nil).Once()
 	// CreateStockTransfer must never be called - rejected before any write.
 
 	in := CreateStockTransferRequest{FromBranch: 5, ToBranch: 6, Items: []CreateStockTransferItemRequest{{ProductID: 1, Qty: 4}}}
 	_, err := svc.CreateStockTransfer(context.Background(), 7, 42, in)
 	require.Error(t, err)
-	requireRestErrorStatus(t, err, http.StatusBadRequest)
+	requireRestErrorStatus(t, err, http.StatusConflict)
+}
+
+func TestService_CreateStockTransfer_NoExistingStockLevelAtFromBranch_ReturnsConflict(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	products := NewMockProductLookup(t)
+	svc := NewService(repo, branches, products, fakeTransactioner{})
+
+	branches.EXPECT().GetBranch(mock.Anything, uint(7), uint(5)).Return(&identity.Branch{ID: 5, OrgID: 7}, nil).Once()
+	branches.EXPECT().GetBranch(mock.Anything, uint(7), uint(6)).Return(&identity.Branch{ID: 6, OrgID: 7}, nil).Once()
+	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7}, nil).Once()
+	repo.EXPECT().GetStockLevel(mock.Anything, uint(1), uint(5)).Return(nil, nil).Once()
+	// CreateStockTransfer must never be called - rejected before any write.
+
+	in := CreateStockTransferRequest{FromBranch: 5, ToBranch: 6, Items: []CreateStockTransferItemRequest{{ProductID: 1, Qty: 4}}}
+	_, err := svc.CreateStockTransfer(context.Background(), 7, 42, in)
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusConflict)
 }
 
 func TestService_CreateStockTransfer_ToBranchNotInOrg_PropagatesNotFound(t *testing.T) {

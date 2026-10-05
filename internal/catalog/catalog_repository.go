@@ -10,23 +10,19 @@ import (
 type Repository interface {
 	// ListProducts backs `GET /products`, scoped to the authenticated
 	// caller's own organization - same reasoning as identity's org-scoped
-	// lists. branchID additionally restricts to one branch when set - the
-	// caller's own branch (from a pos-device token), never a client-supplied
-	// ID, same reasoning as identity.ListStaff.
-	ListProducts(ctx context.Context, orgID uint, branchID *uint) ([]Product, error)
+	// lists. Products are org-wide, not branch-scoped, so there's no further
+	// branch filter.
+	ListProducts(ctx context.Context, orgID uint) ([]Product, error)
 	// GetProduct backs `GET /products/:id`. Scoped to orgID - returns
 	// common.NotFoundError for a product that exists but belongs to a
 	// different org, same as one that doesn't exist at all, so a caller can
 	// never distinguish "not mine" from "doesn't exist" by probing IDs (same
-	// reasoning as identity's GetBranch/GetStaff). Not further restricted to
-	// the caller's own branch - same as identity.GetStaff.
+	// reasoning as identity's GetBranch/GetStaff).
 	GetProduct(ctx context.Context, orgID uint, id uint) (*Product, error)
-	// GetProductByBarcode backs `GET /products/barcode/:code`. Scoped to both
-	// orgID and branchID - Barcode is only unique per branch
-	// (ux_products_branch_barcode), not per org, so without a branch a
-	// barcode could match more than one product across an org's branches.
-	// Same not-found-not-forbidden reasoning as GetProduct.
-	GetProductByBarcode(ctx context.Context, orgID uint, branchID uint, code string) (*Product, error)
+	// GetProductByBarcode backs `GET /products/barcode/:code`. Scoped to
+	// orgID - Barcode is unique per org (ux_products_org_barcode), same
+	// not-found-not-forbidden reasoning as GetProduct.
+	GetProductByBarcode(ctx context.Context, orgID uint, code string) (*Product, error)
 	// CreateProduct backs Service.CreateProduct's first step. Plain insert -
 	// GORM sets the row's ID on the pointer it's given. Mapping the
 	// request/orgID into a Product, and validating it, happens in the

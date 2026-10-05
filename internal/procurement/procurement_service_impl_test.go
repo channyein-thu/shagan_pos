@@ -16,6 +16,7 @@ import (
 
 	"shagan_pos/internal/catalog"
 	"shagan_pos/internal/common"
+	"shagan_pos/internal/identity"
 	"shagan_pos/internal/inventory"
 )
 
@@ -39,9 +40,10 @@ func (fakeTransactioner) Transaction(fc func(tx *gorm.DB) error, _ ...*sql.TxOpt
 
 func TestService_ListSuppliers_DelegatesToRepository(t *testing.T) {
 	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
 	products := NewMockProductLookup(t)
 	stock := NewMockInventoryWriter(t)
-	svc := NewService(repo, products, stock, fakeTransactioner{})
+	svc := NewService(repo, branches, products, stock, fakeTransactioner{})
 
 	want := []Supplier{{ID: 1, OrgID: 7, Name: "Acme Foods"}, {ID: 2, OrgID: 7, Name: "Fresh Produce Co"}}
 	repo.EXPECT().ListSuppliers(mock.Anything, uint(7)).Return(want, nil).Once()
@@ -53,9 +55,10 @@ func TestService_ListSuppliers_DelegatesToRepository(t *testing.T) {
 
 func TestService_ListSuppliers_PropagatesRepositoryError(t *testing.T) {
 	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
 	products := NewMockProductLookup(t)
 	stock := NewMockInventoryWriter(t)
-	svc := NewService(repo, products, stock, fakeTransactioner{})
+	svc := NewService(repo, branches, products, stock, fakeTransactioner{})
 
 	wantErr := common.SystemError("db read failed")
 	repo.EXPECT().ListSuppliers(mock.Anything, uint(7)).Return(nil, wantErr).Once()
@@ -67,9 +70,10 @@ func TestService_ListSuppliers_PropagatesRepositoryError(t *testing.T) {
 
 func TestService_CreateSupplier_HappyPath_StampsLastOrderAtAndReturns(t *testing.T) {
 	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
 	products := NewMockProductLookup(t)
 	stock := NewMockInventoryWriter(t)
-	svc := NewService(repo, products, stock, fakeTransactioner{})
+	svc := NewService(repo, branches, products, stock, fakeTransactioner{})
 
 	before := time.Now()
 	repo.EXPECT().
@@ -93,9 +97,10 @@ func TestService_CreateSupplier_HappyPath_StampsLastOrderAtAndReturns(t *testing
 
 func TestService_CreateSupplier_PropagatesRepositoryError(t *testing.T) {
 	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
 	products := NewMockProductLookup(t)
 	stock := NewMockInventoryWriter(t)
-	svc := NewService(repo, products, stock, fakeTransactioner{})
+	svc := NewService(repo, branches, products, stock, fakeTransactioner{})
 
 	dbErr := errors.New("connection refused")
 	repo.EXPECT().CreateSupplier(mock.Anything, mock.Anything).Return(dbErr).Once()
@@ -106,9 +111,10 @@ func TestService_CreateSupplier_PropagatesRepositoryError(t *testing.T) {
 
 func TestService_UpdateSupplier_HappyPath_UpdatesAndReturns(t *testing.T) {
 	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
 	products := NewMockProductLookup(t)
 	stock := NewMockInventoryWriter(t)
-	svc := NewService(repo, products, stock, fakeTransactioner{})
+	svc := NewService(repo, branches, products, stock, fakeTransactioner{})
 
 	existing := &Supplier{ID: 1, OrgID: 7, Name: "Acme Foods"}
 	updated := &Supplier{ID: 1, OrgID: 7, Name: "Acme Foods Ltd"}
@@ -126,9 +132,10 @@ func TestService_UpdateSupplier_HappyPath_UpdatesAndReturns(t *testing.T) {
 
 func TestService_UpdateSupplier_NoFieldsProvided_SkipsWrite(t *testing.T) {
 	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
 	products := NewMockProductLookup(t)
 	stock := NewMockInventoryWriter(t)
-	svc := NewService(repo, products, stock, fakeTransactioner{})
+	svc := NewService(repo, branches, products, stock, fakeTransactioner{})
 
 	existing := &Supplier{ID: 1, OrgID: 7, Name: "Acme Foods"}
 
@@ -143,9 +150,10 @@ func TestService_UpdateSupplier_NoFieldsProvided_SkipsWrite(t *testing.T) {
 
 func TestService_UpdateSupplier_PropagatesNotFound(t *testing.T) {
 	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
 	products := NewMockProductLookup(t)
 	stock := NewMockInventoryWriter(t)
-	svc := NewService(repo, products, stock, fakeTransactioner{})
+	svc := NewService(repo, branches, products, stock, fakeTransactioner{})
 
 	wantErr := common.NotFoundError("supplier not found")
 	repo.EXPECT().GetSupplier(mock.Anything, uint(7), uint(999)).Return(nil, wantErr).Once()
@@ -158,9 +166,10 @@ func TestService_UpdateSupplier_PropagatesNotFound(t *testing.T) {
 
 func TestService_DeleteSupplier_HappyPath_Deletes(t *testing.T) {
 	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
 	products := NewMockProductLookup(t)
 	stock := NewMockInventoryWriter(t)
-	svc := NewService(repo, products, stock, fakeTransactioner{})
+	svc := NewService(repo, branches, products, stock, fakeTransactioner{})
 
 	existing := &Supplier{ID: 1, OrgID: 7, Name: "Acme Foods"}
 	repo.EXPECT().GetSupplier(mock.Anything, uint(7), uint(1)).Return(existing, nil).Once()
@@ -173,9 +182,10 @@ func TestService_DeleteSupplier_HappyPath_Deletes(t *testing.T) {
 
 func TestService_DeleteSupplier_InUseByPurchaseOrders_ReturnsConflict(t *testing.T) {
 	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
 	products := NewMockProductLookup(t)
 	stock := NewMockInventoryWriter(t)
-	svc := NewService(repo, products, stock, fakeTransactioner{})
+	svc := NewService(repo, branches, products, stock, fakeTransactioner{})
 
 	existing := &Supplier{ID: 1, OrgID: 7, Name: "Acme Foods"}
 	repo.EXPECT().GetSupplier(mock.Anything, uint(7), uint(1)).Return(existing, nil).Once()
@@ -191,9 +201,10 @@ func TestService_DeleteSupplier_InUseByPurchaseOrders_ReturnsConflict(t *testing
 
 func TestService_DeleteSupplier_PropagatesNotFound(t *testing.T) {
 	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
 	products := NewMockProductLookup(t)
 	stock := NewMockInventoryWriter(t)
-	svc := NewService(repo, products, stock, fakeTransactioner{})
+	svc := NewService(repo, branches, products, stock, fakeTransactioner{})
 
 	wantErr := common.NotFoundError("supplier not found")
 	repo.EXPECT().GetSupplier(mock.Anything, uint(7), uint(999)).Return(nil, wantErr).Once()
@@ -207,6 +218,7 @@ func TestService_DeleteSupplier_PropagatesNotFound(t *testing.T) {
 
 func validCreatePurchaseOrderRequest() CreatePurchaseOrderRequest {
 	return CreatePurchaseOrderRequest{
+		BranchID:   5,
 		PoNumber:   "PO-1001",
 		SupplierID: 5,
 		Items: []CreatePurchaseOrderItemRequest{
@@ -218,10 +230,12 @@ func validCreatePurchaseOrderRequest() CreatePurchaseOrderRequest {
 
 func TestService_CreatePurchaseOrder_HappyPath_CreatesOrderAndItems(t *testing.T) {
 	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
 	products := NewMockProductLookup(t)
 	stock := NewMockInventoryWriter(t)
-	svc := NewService(repo, products, stock, fakeTransactioner{})
+	svc := NewService(repo, branches, products, stock, fakeTransactioner{})
 
+	branches.EXPECT().GetBranch(mock.Anything, uint(7), uint(5)).Return(&identity.Branch{ID: 5, OrgID: 7}, nil).Once()
 	repo.EXPECT().GetSupplier(mock.Anything, uint(7), uint(5)).Return(&Supplier{ID: 5, OrgID: 7}, nil).Once()
 	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7}, nil).Once()
 	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(2)).Return(&catalog.Product{ID: 2, OrgID: 7}, nil).Once()
@@ -246,12 +260,31 @@ func TestService_CreatePurchaseOrder_HappyPath_CreatesOrderAndItems(t *testing.T
 	require.Equal(t, uint(1), got.ID)
 }
 
-func TestService_CreatePurchaseOrder_SupplierNotInOrg_PropagatesNotFound(t *testing.T) {
+func TestService_CreatePurchaseOrder_BranchNotInOrg_PropagatesNotFound(t *testing.T) {
 	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
 	products := NewMockProductLookup(t)
 	stock := NewMockInventoryWriter(t)
-	svc := NewService(repo, products, stock, fakeTransactioner{})
+	svc := NewService(repo, branches, products, stock, fakeTransactioner{})
 
+	wantErr := common.NotFoundError("branch not found")
+	branches.EXPECT().GetBranch(mock.Anything, uint(7), uint(5)).Return(nil, wantErr).Once()
+	// Neither GetSupplier nor GetProduct nor CreatePurchaseOrder must be
+	// called for a branch that isn't ours.
+
+	_, err := svc.CreatePurchaseOrder(context.Background(), 7, 42, validCreatePurchaseOrderRequest())
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusNotFound)
+}
+
+func TestService_CreatePurchaseOrder_SupplierNotInOrg_PropagatesNotFound(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	products := NewMockProductLookup(t)
+	stock := NewMockInventoryWriter(t)
+	svc := NewService(repo, branches, products, stock, fakeTransactioner{})
+
+	branches.EXPECT().GetBranch(mock.Anything, uint(7), uint(5)).Return(&identity.Branch{ID: 5, OrgID: 7}, nil).Once()
 	wantErr := common.NotFoundError("supplier not found")
 	repo.EXPECT().GetSupplier(mock.Anything, uint(7), uint(5)).Return(nil, wantErr).Once()
 	// Neither GetProduct nor CreatePurchaseOrder must be called for a
@@ -264,10 +297,12 @@ func TestService_CreatePurchaseOrder_SupplierNotInOrg_PropagatesNotFound(t *test
 
 func TestService_CreatePurchaseOrder_ProductNotInOrg_PropagatesNotFound(t *testing.T) {
 	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
 	products := NewMockProductLookup(t)
 	stock := NewMockInventoryWriter(t)
-	svc := NewService(repo, products, stock, fakeTransactioner{})
+	svc := NewService(repo, branches, products, stock, fakeTransactioner{})
 
+	branches.EXPECT().GetBranch(mock.Anything, uint(7), uint(5)).Return(&identity.Branch{ID: 5, OrgID: 7}, nil).Once()
 	repo.EXPECT().GetSupplier(mock.Anything, uint(7), uint(5)).Return(&Supplier{ID: 5, OrgID: 7}, nil).Once()
 	wantErr := common.NotFoundError("product not found")
 	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(nil, wantErr).Once()
@@ -281,10 +316,12 @@ func TestService_CreatePurchaseOrder_ProductNotInOrg_PropagatesNotFound(t *testi
 
 func TestService_CreatePurchaseOrder_NonPositiveUnitCost_RejectsBeforeTouchingRepository(t *testing.T) {
 	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
 	products := NewMockProductLookup(t)
 	stock := NewMockInventoryWriter(t)
-	svc := NewService(repo, products, stock, fakeTransactioner{})
+	svc := NewService(repo, branches, products, stock, fakeTransactioner{})
 
+	branches.EXPECT().GetBranch(mock.Anything, uint(7), uint(5)).Return(&identity.Branch{ID: 5, OrgID: 7}, nil).Once()
 	repo.EXPECT().GetSupplier(mock.Anything, uint(7), uint(5)).Return(&Supplier{ID: 5, OrgID: 7}, nil).Once()
 	// GetProduct/CreatePurchaseOrder must never be called - unit_cost fails
 	// validation first.
@@ -299,10 +336,12 @@ func TestService_CreatePurchaseOrder_NonPositiveUnitCost_RejectsBeforeTouchingRe
 
 func TestService_CreatePurchaseOrder_DuplicatePoNumber_ReturnsConflict(t *testing.T) {
 	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
 	products := NewMockProductLookup(t)
 	stock := NewMockInventoryWriter(t)
-	svc := NewService(repo, products, stock, fakeTransactioner{})
+	svc := NewService(repo, branches, products, stock, fakeTransactioner{})
 
+	branches.EXPECT().GetBranch(mock.Anything, uint(7), uint(5)).Return(&identity.Branch{ID: 5, OrgID: 7}, nil).Once()
 	repo.EXPECT().GetSupplier(mock.Anything, uint(7), uint(5)).Return(&Supplier{ID: 5, OrgID: 7}, nil).Once()
 	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7}, nil).Once()
 	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(2)).Return(&catalog.Product{ID: 2, OrgID: 7}, nil).Once()
@@ -320,10 +359,12 @@ func TestService_CreatePurchaseOrder_DuplicatePoNumber_ReturnsConflict(t *testin
 
 func TestService_CreatePurchaseOrder_RepositoryError_PropagatesAsIs(t *testing.T) {
 	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
 	products := NewMockProductLookup(t)
 	stock := NewMockInventoryWriter(t)
-	svc := NewService(repo, products, stock, fakeTransactioner{})
+	svc := NewService(repo, branches, products, stock, fakeTransactioner{})
 
+	branches.EXPECT().GetBranch(mock.Anything, uint(7), uint(5)).Return(&identity.Branch{ID: 5, OrgID: 7}, nil).Once()
 	repo.EXPECT().GetSupplier(mock.Anything, uint(7), uint(5)).Return(&Supplier{ID: 5, OrgID: 7}, nil).Once()
 	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7}, nil).Once()
 	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(2)).Return(&catalog.Product{ID: 2, OrgID: 7}, nil).Once()
@@ -336,9 +377,10 @@ func TestService_CreatePurchaseOrder_RepositoryError_PropagatesAsIs(t *testing.T
 
 func TestService_GetPurchaseOrder_HappyPath_ReturnsOrderWithItems(t *testing.T) {
 	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
 	products := NewMockProductLookup(t)
 	stock := NewMockInventoryWriter(t)
-	svc := NewService(repo, products, stock, fakeTransactioner{})
+	svc := NewService(repo, branches, products, stock, fakeTransactioner{})
 
 	po := &PurchaseOrder{ID: 1, SupplierID: 5, Status: PurchaseOrderStatusSubmitted}
 	items := []PurchaseOrderItem{{ID: 10, PoID: 1, ProductID: 1, OrderedQty: 10}}
@@ -353,9 +395,10 @@ func TestService_GetPurchaseOrder_HappyPath_ReturnsOrderWithItems(t *testing.T) 
 
 func TestService_GetPurchaseOrder_PropagatesNotFound(t *testing.T) {
 	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
 	products := NewMockProductLookup(t)
 	stock := NewMockInventoryWriter(t)
-	svc := NewService(repo, products, stock, fakeTransactioner{})
+	svc := NewService(repo, branches, products, stock, fakeTransactioner{})
 
 	wantErr := common.NotFoundError("purchase order not found")
 	repo.EXPECT().GetPurchaseOrder(mock.Anything, uint(7), uint(999)).Return(nil, wantErr).Once()
@@ -367,9 +410,10 @@ func TestService_GetPurchaseOrder_PropagatesNotFound(t *testing.T) {
 
 func TestService_ListPurchaseOrders_DelegatesToRepository(t *testing.T) {
 	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
 	products := NewMockProductLookup(t)
 	stock := NewMockInventoryWriter(t)
-	svc := NewService(repo, products, stock, fakeTransactioner{})
+	svc := NewService(repo, branches, products, stock, fakeTransactioner{})
 
 	want := []PurchaseOrder{{ID: 1, SupplierID: 5}, {ID: 2, SupplierID: 6}}
 	repo.EXPECT().ListPurchaseOrders(mock.Anything, uint(7)).Return(want, nil).Once()
@@ -381,9 +425,10 @@ func TestService_ListPurchaseOrders_DelegatesToRepository(t *testing.T) {
 
 func TestService_ListPurchaseOrders_PropagatesRepositoryError(t *testing.T) {
 	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
 	products := NewMockProductLookup(t)
 	stock := NewMockInventoryWriter(t)
-	svc := NewService(repo, products, stock, fakeTransactioner{})
+	svc := NewService(repo, branches, products, stock, fakeTransactioner{})
 
 	wantErr := common.SystemError("db read failed")
 	repo.EXPECT().ListPurchaseOrders(mock.Anything, uint(7)).Return(nil, wantErr).Once()
@@ -395,9 +440,10 @@ func TestService_ListPurchaseOrders_PropagatesRepositoryError(t *testing.T) {
 
 func TestService_UpdatePurchaseOrder_HappyPath_UpdatesAndReturns(t *testing.T) {
 	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
 	products := NewMockProductLookup(t)
 	stock := NewMockInventoryWriter(t)
-	svc := NewService(repo, products, stock, fakeTransactioner{})
+	svc := NewService(repo, branches, products, stock, fakeTransactioner{})
 
 	existing := &PurchaseOrder{ID: 1, SupplierID: 5, Status: PurchaseOrderStatusSubmitted}
 	updated := &PurchaseOrder{ID: 1, SupplierID: 5, Status: PurchaseOrderStatusApproved}
@@ -415,9 +461,10 @@ func TestService_UpdatePurchaseOrder_HappyPath_UpdatesAndReturns(t *testing.T) {
 
 func TestService_UpdatePurchaseOrder_NoFieldsProvided_SkipsWrite(t *testing.T) {
 	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
 	products := NewMockProductLookup(t)
 	stock := NewMockInventoryWriter(t)
-	svc := NewService(repo, products, stock, fakeTransactioner{})
+	svc := NewService(repo, branches, products, stock, fakeTransactioner{})
 
 	existing := &PurchaseOrder{ID: 1, SupplierID: 5, Status: PurchaseOrderStatusSubmitted}
 	repo.EXPECT().GetPurchaseOrder(mock.Anything, uint(7), uint(1)).Return(existing, nil).Twice()
@@ -430,9 +477,10 @@ func TestService_UpdatePurchaseOrder_NoFieldsProvided_SkipsWrite(t *testing.T) {
 
 func TestService_UpdatePurchaseOrder_PropagatesNotFound(t *testing.T) {
 	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
 	products := NewMockProductLookup(t)
 	stock := NewMockInventoryWriter(t)
-	svc := NewService(repo, products, stock, fakeTransactioner{})
+	svc := NewService(repo, branches, products, stock, fakeTransactioner{})
 
 	wantErr := common.NotFoundError("purchase order not found")
 	repo.EXPECT().GetPurchaseOrder(mock.Anything, uint(7), uint(999)).Return(nil, wantErr).Once()
@@ -444,9 +492,10 @@ func TestService_UpdatePurchaseOrder_PropagatesNotFound(t *testing.T) {
 
 func TestService_UpdatePurchaseOrder_TerminalState_ReturnsConflict(t *testing.T) {
 	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
 	products := NewMockProductLookup(t)
 	stock := NewMockInventoryWriter(t)
-	svc := NewService(repo, products, stock, fakeTransactioner{})
+	svc := NewService(repo, branches, products, stock, fakeTransactioner{})
 
 	existing := &PurchaseOrder{ID: 1, SupplierID: 5, Status: PurchaseOrderStatusReceived}
 	repo.EXPECT().GetPurchaseOrder(mock.Anything, uint(7), uint(1)).Return(existing, nil).Once()
@@ -460,9 +509,10 @@ func TestService_UpdatePurchaseOrder_TerminalState_ReturnsConflict(t *testing.T)
 
 func TestService_UpdatePurchaseOrder_RejectsStatusReceived_ReturnsBadRequest(t *testing.T) {
 	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
 	products := NewMockProductLookup(t)
 	stock := NewMockInventoryWriter(t)
-	svc := NewService(repo, products, stock, fakeTransactioner{})
+	svc := NewService(repo, branches, products, stock, fakeTransactioner{})
 
 	existing := &PurchaseOrder{ID: 1, SupplierID: 5, Status: PurchaseOrderStatusSubmitted}
 	repo.EXPECT().GetPurchaseOrder(mock.Anything, uint(7), uint(1)).Return(existing, nil).Once()
@@ -477,9 +527,10 @@ func TestService_UpdatePurchaseOrder_RejectsStatusReceived_ReturnsBadRequest(t *
 
 func TestService_UpdatePurchaseOrder_NewSupplierNotInOrg_PropagatesNotFound(t *testing.T) {
 	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
 	products := NewMockProductLookup(t)
 	stock := NewMockInventoryWriter(t)
-	svc := NewService(repo, products, stock, fakeTransactioner{})
+	svc := NewService(repo, branches, products, stock, fakeTransactioner{})
 
 	existing := &PurchaseOrder{ID: 1, SupplierID: 5, Status: PurchaseOrderStatusSubmitted}
 	repo.EXPECT().GetPurchaseOrder(mock.Anything, uint(7), uint(1)).Return(existing, nil).Once()
@@ -505,19 +556,20 @@ func validCreateGoodsReceiptRequest() CreateGoodsReceiptRequest {
 
 func TestService_CreateGoodsReceipt_HappyPath_CreditsStockAndLedgerAndMarksReceived(t *testing.T) {
 	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
 	products := NewMockProductLookup(t)
 	stock := NewMockInventoryWriter(t)
-	svc := NewService(repo, products, stock, fakeTransactioner{})
+	svc := NewService(repo, branches, products, stock, fakeTransactioner{})
 
-	po := &PurchaseOrder{ID: 1, SupplierID: 5, Status: PurchaseOrderStatusSubmitted}
+	po := &PurchaseOrder{ID: 1, BranchID: 5, SupplierID: 5, Status: PurchaseOrderStatusSubmitted}
 	poItems := []PurchaseOrderItem{
 		{ID: 10, PoID: 1, ProductID: 1, OrderedQty: 10, UnitCost: decimal.NewFromFloat(2.00)},
 		{ID: 11, PoID: 1, ProductID: 2, OrderedQty: 5, UnitCost: decimal.NewFromFloat(1.00)},
 	}
 	repo.EXPECT().GetPurchaseOrder(mock.Anything, uint(7), uint(1)).Return(po, nil).Once()
 	repo.EXPECT().ListPurchaseOrderItemsByPoID(mock.Anything, uint(1)).Return(poItems, nil).Once()
-	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7, BranchID: 5}, nil).Once()
-	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(2)).Return(&catalog.Product{ID: 2, OrgID: 7, BranchID: 5}, nil).Once()
+	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7}, nil).Once()
+	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(2)).Return(&catalog.Product{ID: 2, OrgID: 7}, nil).Once()
 
 	repo.EXPECT().
 		CreateGoodsReceipt(mock.Anything, mock.MatchedBy(func(r *GoodsReceipt) bool {
@@ -584,15 +636,16 @@ func TestService_CreateGoodsReceipt_HappyPath_CreditsStockAndLedgerAndMarksRecei
 
 func TestService_CreateGoodsReceipt_ZeroReceivedQty_NoStockOrLedgerMovement(t *testing.T) {
 	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
 	products := NewMockProductLookup(t)
 	stock := NewMockInventoryWriter(t)
-	svc := NewService(repo, products, stock, fakeTransactioner{})
+	svc := NewService(repo, branches, products, stock, fakeTransactioner{})
 
 	po := &PurchaseOrder{ID: 1, SupplierID: 5, Status: PurchaseOrderStatusSubmitted}
 	poItems := []PurchaseOrderItem{{ID: 10, PoID: 1, ProductID: 1, OrderedQty: 10, UnitCost: decimal.NewFromFloat(2.00)}}
 	repo.EXPECT().GetPurchaseOrder(mock.Anything, uint(7), uint(1)).Return(po, nil).Once()
 	repo.EXPECT().ListPurchaseOrderItemsByPoID(mock.Anything, uint(1)).Return(poItems, nil).Once()
-	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7, BranchID: 5}, nil).Once()
+	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7}, nil).Once()
 	repo.EXPECT().CreateGoodsReceipt(mock.Anything, mock.Anything).Run(func(_ *gorm.DB, r *GoodsReceipt) { r.ID = 100 }).Return(nil).Once()
 	repo.EXPECT().CreateGoodsReceiptItems(mock.Anything, mock.Anything).Return(nil).Once()
 	// GetStockLevel/CreateStockLevel/UpdateStockLevelQty/
@@ -609,9 +662,10 @@ func TestService_CreateGoodsReceipt_ZeroReceivedQty_NoStockOrLedgerMovement(t *t
 
 func TestService_CreateGoodsReceipt_AlreadyReceived_ReturnsConflict(t *testing.T) {
 	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
 	products := NewMockProductLookup(t)
 	stock := NewMockInventoryWriter(t)
-	svc := NewService(repo, products, stock, fakeTransactioner{})
+	svc := NewService(repo, branches, products, stock, fakeTransactioner{})
 
 	po := &PurchaseOrder{ID: 1, SupplierID: 5, Status: PurchaseOrderStatusReceived}
 	repo.EXPECT().GetPurchaseOrder(mock.Anything, uint(7), uint(1)).Return(po, nil).Once()
@@ -624,9 +678,10 @@ func TestService_CreateGoodsReceipt_AlreadyReceived_ReturnsConflict(t *testing.T
 
 func TestService_CreateGoodsReceipt_Cancelled_ReturnsConflict(t *testing.T) {
 	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
 	products := NewMockProductLookup(t)
 	stock := NewMockInventoryWriter(t)
-	svc := NewService(repo, products, stock, fakeTransactioner{})
+	svc := NewService(repo, branches, products, stock, fakeTransactioner{})
 
 	po := &PurchaseOrder{ID: 1, SupplierID: 5, Status: PurchaseOrderStatusCancelled}
 	repo.EXPECT().GetPurchaseOrder(mock.Anything, uint(7), uint(1)).Return(po, nil).Once()
@@ -638,9 +693,10 @@ func TestService_CreateGoodsReceipt_Cancelled_ReturnsConflict(t *testing.T) {
 
 func TestService_CreateGoodsReceipt_UnknownPoItemID_PropagatesNotFound(t *testing.T) {
 	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
 	products := NewMockProductLookup(t)
 	stock := NewMockInventoryWriter(t)
-	svc := NewService(repo, products, stock, fakeTransactioner{})
+	svc := NewService(repo, branches, products, stock, fakeTransactioner{})
 
 	po := &PurchaseOrder{ID: 1, SupplierID: 5, Status: PurchaseOrderStatusSubmitted}
 	poItems := []PurchaseOrderItem{{ID: 10, PoID: 1, ProductID: 1, OrderedQty: 10, UnitCost: decimal.NewFromFloat(2.00)}}
@@ -659,9 +715,10 @@ func TestService_CreateGoodsReceipt_UnknownPoItemID_PropagatesNotFound(t *testin
 
 func TestService_CreateGoodsReceipt_NegativeReceivedQty_ReturnsBadRequest(t *testing.T) {
 	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
 	products := NewMockProductLookup(t)
 	stock := NewMockInventoryWriter(t)
-	svc := NewService(repo, products, stock, fakeTransactioner{})
+	svc := NewService(repo, branches, products, stock, fakeTransactioner{})
 
 	po := &PurchaseOrder{ID: 1, SupplierID: 5, Status: PurchaseOrderStatusSubmitted}
 	poItems := []PurchaseOrderItem{{ID: 10, PoID: 1, ProductID: 1, OrderedQty: 10, UnitCost: decimal.NewFromFloat(2.00)}}
@@ -678,9 +735,10 @@ func TestService_CreateGoodsReceipt_NegativeReceivedQty_ReturnsBadRequest(t *tes
 
 func TestService_CreateGoodsReceipt_MissingVarianceNoteOnShortfall_ReturnsBadRequest(t *testing.T) {
 	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
 	products := NewMockProductLookup(t)
 	stock := NewMockInventoryWriter(t)
-	svc := NewService(repo, products, stock, fakeTransactioner{})
+	svc := NewService(repo, branches, products, stock, fakeTransactioner{})
 
 	po := &PurchaseOrder{ID: 1, SupplierID: 5, Status: PurchaseOrderStatusSubmitted}
 	poItems := []PurchaseOrderItem{{ID: 10, PoID: 1, ProductID: 1, OrderedQty: 10, UnitCost: decimal.NewFromFloat(2.00)}}
@@ -699,9 +757,10 @@ func TestService_CreateGoodsReceipt_MissingVarianceNoteOnShortfall_ReturnsBadReq
 
 func TestService_CreateGoodsReceipt_PurchaseOrderNotFound_PropagatesNotFound(t *testing.T) {
 	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
 	products := NewMockProductLookup(t)
 	stock := NewMockInventoryWriter(t)
-	svc := NewService(repo, products, stock, fakeTransactioner{})
+	svc := NewService(repo, branches, products, stock, fakeTransactioner{})
 
 	wantErr := common.NotFoundError("purchase order not found")
 	repo.EXPECT().GetPurchaseOrder(mock.Anything, uint(7), uint(999)).Return(nil, wantErr).Once()
