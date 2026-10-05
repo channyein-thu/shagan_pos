@@ -41,6 +41,1452 @@
       ]
     },
     {
+      "name": "UAT - Full User Flow (Owner -> Manager -> Staff)",
+      "description": "Run top-to-bottom with Postman's Collection Runner (or Ctrl/Cmd+Enter through each request in order) against a clean environment. Each step auto-saves the IDs/tokens the next one needs via a Test script - no manual copy/pasting required, except CreateProduct's image file (Postman can't attach a local file from a saved collection without you picking it once). Mirrors docs/WORKFLOWS.md Sections 3-5 (Owner/Manager/Staff Journeys): tenant provisioning, owner setup (staff/catalog/procurement), a cashier's full shift (open -> void with manager approval -> a cash+QR split sale -> close), a manager-approved return after the shift closes, then owner back-office oversight (reports + audit log).",
+      "item": [
+        {
+          "name": "0.1 CreateAccount (Shagan Team provisions the org)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Internal-Key",
+                "value": "{{internalKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/internal/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "accounts"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"organization_name\": \"UAT Flow Co\",\n  \"owner_email\": \"uat-owner@example.com\",\n  \"owner_password\": \"UatPass123!\",\n  \"service_center_email\": \"uat-sc@example.com\",\n  \"service_center_password\": \"UatPass123!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Step 1 of the UAT flow. Creates a fresh Organization + Owner + Service Center login. Saves the new org's id for every following request."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const data = pm.response.json();",
+                  "    pm.environment.set('uatOrgId', data.organization.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "0.2 CreateBranchInternal",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Internal-Key",
+                "value": "{{internalKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/internal/branches",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "branches"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"org_id\": \"{{uatOrgId}}\",\n  \"name\": \"UAT Main Branch\",\n  \"status\": \"active\",\n  \"address\": \"1 UAT Street\",\n  \"phone\": \"09-000-0001\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const data = pm.response.json();",
+                  "    pm.environment.set('uatBranchId', data.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "0.3 CreateDeviceInternal",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Internal-Key",
+                "value": "{{internalKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/internal/devices",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "devices"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"org_id\": \"{{uatOrgId}}\",\n  \"branch_id\": \"{{uatBranchId}}\",\n  \"name\": \"UAT Register 1\",\n  \"status\": \"active\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const data = pm.response.json();",
+                  "    pm.environment.set('uatDeviceId', data.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "0.4 CreatePosAccount",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Internal-Key",
+                "value": "{{internalKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/internal/accounts/pos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "accounts",
+                "pos"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"org_id\": \"{{uatOrgId}}\",\n  \"device_id\": \"{{uatDeviceId}}\",\n  \"email\": \"uat-pos1@example.com\",\n  \"password\": \"UatPass123!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Attaches the login this register's staff will use in Stage 2. No id needs saving - the email/password are already fixed literals this folder reuses."
+          },
+          "response": []
+        },
+        {
+          "name": "1.1 Login as Owner",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"uat-owner@example.com\",\n  \"password\": \"UatPass123!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Owner session for every Stage 1 setup call below. Auto-saves {{token}}/{{refreshToken}} (same script as the regular Login request).",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const data = pm.response.json();",
+                  "    if (data.access_token) pm.environment.set('token', data.access_token);",
+                  "    if (data.refresh_token) pm.environment.set('refreshToken', data.refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.2 CreateStaff (Manager Mia)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/staff",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "staff"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"branch_id\": \"{{uatBranchId}}\",\n  \"name\": \"Manager Mia\",\n  \"role\": 3,\n  \"pin\": \"222222\",\n  \"phone\": \"09-000-0002\",\n  \"status\": \"active\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "role 3 = manager (see GET /roles). pin is Manager Mia's own PIN, used later for VerifyManagerPIN approvals."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const data = pm.response.json();",
+                  "    pm.environment.set('uatManagerStaffId', data.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.3 CreateStaff (Cashier Cole)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/staff",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "staff"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"branch_id\": \"{{uatBranchId}}\",\n  \"name\": \"Cashier Cole\",\n  \"role\": 1,\n  \"pin\": \"123456\",\n  \"phone\": \"09-000-0003\",\n  \"status\": \"active\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "role 1 = staff (cashier). This is who rings the sales in Stage 2."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const data = pm.response.json();",
+                  "    pm.environment.set('uatCashierStaffId', data.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.4 CreateCategory",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/categories",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "categories"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name_i18n\": \"Snacks\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const data = pm.response.json();",
+                  "    pm.environment.set('uatCategoryId', data.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.5 CreateProduct (MANUAL: attach an image file)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products"
+              ]
+            },
+            "description": "MANUAL STEP: a product needs a real image and Postman can't ship a local file inside an exported collection - click the \"image\" field below and pick any picture once before running this request (the Collection Runner will then reuse whatever you picked). Everything else is already filled in and chained.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "branch_id",
+                  "value": "{{uatBranchId}}",
+                  "type": "text"
+                },
+                {
+                  "key": "category_id",
+                  "value": "{{uatCategoryId}}",
+                  "type": "text"
+                },
+                {
+                  "key": "name",
+                  "value": "Instant Noodles",
+                  "type": "text"
+                },
+                {
+                  "key": "barcode",
+                  "value": "UAT0000000001",
+                  "type": "text"
+                },
+                {
+                  "key": "price",
+                  "value": "500.00",
+                  "type": "text"
+                },
+                {
+                  "key": "discount",
+                  "value": "0",
+                  "type": "text"
+                },
+                {
+                  "key": "tax",
+                  "value": "0",
+                  "type": "text"
+                },
+                {
+                  "key": "threshold",
+                  "value": "5",
+                  "type": "text"
+                },
+                {
+                  "key": "is_active",
+                  "value": "true",
+                  "type": "text"
+                },
+                {
+                  "key": "modifier",
+                  "value": "",
+                  "type": "text"
+                },
+                {
+                  "key": "image",
+                  "type": "file",
+                  "value": null
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const data = pm.response.json();",
+                  "    pm.environment.set('uatProductId', data.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.6 CreateSupplier",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/suppliers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "suppliers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"UAT Supplier Co\",\n  \"phone\": \"09-000-0004\",\n  \"address\": \"2 Supplier Rd\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const data = pm.response.json();",
+                  "    pm.environment.set('uatSupplierId', data.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.7 CreatePurchaseOrder (20 units @ cost 300)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/purchase-orders",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "purchase-orders"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"po_number\": \"UAT-PO-1001\",\n  \"supplier_id\": \"{{uatSupplierId}}\",\n  \"items\": [\n    {\n      \"product_id\": \"{{uatProductId}}\",\n      \"ordered_qty\": 20,\n      \"unit_cost\": \"300.00\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Sets the product's weighted-average cost basis once received below, so Stage 4's GetProfitAndLoss has a real, non-zero COGS."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const data = pm.response.json();",
+                  "    pm.environment.set('uatPoId', data.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.8 GetPurchaseOrder (to read the po_item id)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/purchase-orders/{{uatPoId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "purchase-orders",
+                "{{uatPoId}}"
+              ]
+            },
+            "description": "CreatePurchaseOrder's response doesn't include each item's own id - fetch it here so the goods receipt below can reference it."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const data = pm.response.json();",
+                  "    pm.environment.set('uatPoItemId', data.items[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.9 CreateGoodsReceipt (receive all 20, no variance)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/purchase-orders/{{uatPoId}}/receipts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "purchase-orders",
+                "{{uatPoId}}",
+                "receipts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"received_at\": \"2026-10-01T09:00:00Z\",\n  \"items\": [\n    {\n      \"po_item_id\": \"{{uatPoItemId}}\",\n      \"received_qty\": 20\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Stocks the product (20 units) and blends its cost basis via weighted-average (0 -> 300.00, since there was no prior stock)."
+          },
+          "response": []
+        },
+        {
+          "name": "2.1 Login as the POS device",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"uat-pos1@example.com\",\n  \"password\": \"UatPass123!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Switches {{token}} from the Owner's org-wide session to this register's branch-bound session - everything from here through Stage 3 needs a branch-bound token (org_id AND branch_id both come from it, never the request body).",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const data = pm.response.json();",
+                  "    if (data.access_token) pm.environment.set('token', data.access_token);",
+                  "    if (data.refresh_token) pm.environment.set('refreshToken', data.refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.2 VerifyStaffPIN (Cashier Cole signs in)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/staff/{{uatCashierStaffId}}/pin/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "staff",
+                "{{uatCashierStaffId}}",
+                "pin",
+                "verify"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pin\": \"123456\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const data = pm.response.json();",
+                  "    pm.environment.set('staffToken', data.token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.3 OpenShift (opening float 100)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "X-Staff-Token",
+                "value": "{{staffToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/shifts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "shifts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"branch_id\": \"{{uatBranchId}}\",\n  \"device_id\": \"{{uatDeviceId}}\",\n  \"opening_cash\": \"100.00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const data = pm.response.json();",
+                  "    pm.environment.set('uatShiftId', data.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.4 CreateSale A (rung up by mistake)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "X-Staff-Token",
+                "value": "{{staffToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/sales",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "sales"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa\",\n  \"shift_id\": \"{{uatShiftId}}\",\n  \"device_id\": \"{{uatDeviceId}}\",\n  \"items\": [\n    {\n      \"product_id\": \"{{uatProductId}}\",\n      \"name_snapshot\": \"Instant Noodles\",\n      \"unit_price\": \"500.00\",\n      \"qty\": 1,\n      \"discount\": \"0\",\n      \"tax\": \"0\"\n    }\n  ],\n  \"payments\": [\n    {\n      \"method\": \"cash\",\n      \"amount\": \"500.00\",\n      \"amount_received\": \"500.00\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "A throwaway sale, rung up wrong on purpose so the next two steps can demonstrate a manager-approved void."
+          },
+          "response": []
+        },
+        {
+          "name": "2.5 VerifyManagerPIN (approve_void, Manager Mia)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/staff/{{uatManagerStaffId}}/manager-pin/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "staff",
+                "{{uatManagerStaffId}}",
+                "manager-pin",
+                "verify"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pin\": \"222222\",\n  \"permission\": \"approve_void\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const data = pm.response.json();",
+                  "    pm.environment.set('managerApprovalToken', data.token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.6 VoidSale A (using the manager approval)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "X-Staff-Token",
+                "value": "{{staffToken}}",
+                "type": "text"
+              },
+              {
+                "key": "X-Manager-Approval-Token",
+                "value": "{{managerApprovalToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/sales/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/void",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "sales",
+                "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+                "void"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"staff_error\",\n  \"explanation\": \"UAT: rang up the wrong item\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Restores Sale A's stock and excludes it from the shift's cash reconciliation (only completed sales count)."
+          },
+          "response": []
+        },
+        {
+          "name": "2.7 CreateSale B (cash + QR split payment)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "X-Staff-Token",
+                "value": "{{staffToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/sales",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "sales"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb\",\n  \"shift_id\": \"{{uatShiftId}}\",\n  \"device_id\": \"{{uatDeviceId}}\",\n  \"items\": [\n    {\n      \"product_id\": \"{{uatProductId}}\",\n      \"name_snapshot\": \"Instant Noodles\",\n      \"unit_price\": \"500.00\",\n      \"qty\": 3,\n      \"discount\": \"0\",\n      \"tax\": \"0\"\n    }\n  ],\n  \"payments\": [\n    {\n      \"method\": \"cash\",\n      \"amount\": \"1000.00\",\n      \"amount_received\": \"1000.00\"\n    },\n    {\n      \"method\": \"qr\",\n      \"amount\": \"500.00\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "The real sale that stays on the books - 3 units, split cash+QR (the only 2 accepted payment methods this version). Kept for Stage 3's return and Stage 4's reports."
+          },
+          "response": []
+        },
+        {
+          "name": "2.8 CloseShift (cash drawer matches exactly)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "X-Staff-Token",
+                "value": "{{staffToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/shifts/{{uatShiftId}}/close",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "shifts",
+                "{{uatShiftId}}",
+                "close"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"closing_cash\": \"1100.00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Expected cash = opening 100 + Sale B's cash portion 1000 (Sale A doesn't count - it was voided, not completed). closing_cash matches exactly, so no reason is required."
+          },
+          "response": []
+        },
+        {
+          "name": "3.1 GetSaleReceipt (Sale B, to read its sale_item id)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/sales/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/receipt",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "sales",
+                "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+                "receipt"
+              ]
+            },
+            "description": "CreateSale's response doesn't include each line's own id - fetch it here so the return below can reference it."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const data = pm.response.json();",
+                  "    pm.environment.set('uatSaleBItemId', data.items[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.2 VerifyManagerPIN (approve_return, Manager Mia)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/staff/{{uatManagerStaffId}}/manager-pin/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "staff",
+                "{{uatManagerStaffId}}",
+                "manager-pin",
+                "verify"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pin\": \"222222\",\n  \"permission\": \"approve_return\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const data = pm.response.json();",
+                  "    pm.environment.set('managerApprovalToken', data.token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.3 CreateReturn (1 of the 3 units, customer changed mind)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "X-Staff-Token",
+                "value": "{{staffToken}}",
+                "type": "text"
+              },
+              {
+                "key": "X-Manager-Approval-Token",
+                "value": "{{managerApprovalToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/returns",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "returns"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sale_id\": \"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb\",\n  \"items\": [\n    {\n      \"sale_item_id\": \"{{uatSaleBItemId}}\",\n      \"qty\": 1,\n      \"condition\": \"sellable\"\n    }\n  ],\n  \"reason_code\": \"changed_mind\",\n  \"refund_method\": \"cash\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Can happen any time after a completed sale (no shift-open requirement, unlike Void) - restocks the 1 returned unit since condition is sellable."
+          },
+          "response": []
+        },
+        {
+          "name": "4.1 Login as Owner (to see org-wide back office)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"uat-owner@example.com\",\n  \"password\": \"UatPass123!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Switches {{token}} back to the Owner's org-wide session for the reports/audit calls below.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const data = pm.response.json();",
+                  "    if (data.access_token) pm.environment.set('token', data.access_token);",
+                  "    if (data.refresh_token) pm.environment.set('refreshToken', data.refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.2 GetTodayReport",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/reports/today?branch_id={{uatBranchId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "reports",
+                "today"
+              ],
+              "query": [
+                {
+                  "key": "branch_id",
+                  "value": "{{uatBranchId}}",
+                  "description": ""
+                }
+              ]
+            },
+            "description": "Should show Sale B's 1500 gross, the 1 returned unit, cash+QR split, and Instant Noodles as the top product - Sale A doesn't appear anywhere, it was voided."
+          },
+          "response": []
+        },
+        {
+          "name": "4.3 GetProfitAndLoss",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/reports/profit-loss?branch_id={{uatBranchId}}&from=2026-10-01&to=2026-10-31",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "reports",
+                "profit-loss"
+              ],
+              "query": [
+                {
+                  "key": "branch_id",
+                  "value": "{{uatBranchId}}",
+                  "description": ""
+                },
+                {
+                  "key": "from",
+                  "value": "2026-10-01",
+                  "description": ""
+                },
+                {
+                  "key": "to",
+                  "value": "2026-10-31",
+                  "description": ""
+                }
+              ]
+            },
+            "description": "Net Sales minus COGS (3 units sold @ cost 300, less the 1 returned unit's cost) minus Expenses (0, none logged) = Net Profit. Adjust from/to if you run this outside October 2026."
+          },
+          "response": []
+        },
+        {
+          "name": "4.4 ListAuditLog",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/audit-log?branch_id={{uatBranchId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "audit-log"
+              ],
+              "query": [
+                {
+                  "key": "branch_id",
+                  "value": "{{uatBranchId}}",
+                  "description": ""
+                }
+              ]
+            },
+            "description": "Should show the manager-approved void and the manager-approved return, newest first."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
       "name": "Internal (Shagan Team)",
       "item": [
         {
@@ -3360,11 +4806,18 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/receipt-settings",
+              "raw": "{{baseUrl}}/api/v1/receipt-settings?branch_id=5",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "receipt-settings"]
+              "path": ["api", "v1", "receipt-settings"],
+              "query": [
+                {
+                  "key": "branch_id",
+                  "value": "5",
+                  "description": "Optional - omit for the org-wide default. Ignored (uses the caller's own branch) for a pos-device/manager token."
+                }
+              ]
             },
-            "description": "Needed for the edit form's pre-fill / live preview"
+            "description": "Returns branch_id's override if one exists, else falls back to the org-wide default."
           },
           "response": []
         },
@@ -3386,7 +4839,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{}",
+              "raw": "{\n  \"branch_id\": 5,\n  \"shop_name\": \"Shagan Mart - Main Branch\",\n  \"address\": \"1 Main St\",\n  \"phone\": \"09-111222\",\n  \"thank_you\": \"Thanks for shopping with us!\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3398,7 +4851,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "receipt-settings"]
             },
-            "description": "UpdateReceiptSettings"
+            "description": "Upserts the org-wide default (omit branch_id) or a branch-specific override (set branch_id). OrgID always comes from the token."
           },
           "response": []
         },
@@ -3414,11 +4867,18 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/printers/test",
+              "raw": "{{baseUrl}}/api/v1/printers/test?branch_id=5",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "printers", "test"]
+              "path": ["api", "v1", "printers", "test"],
+              "query": [
+                {
+                  "key": "branch_id",
+                  "value": "5",
+                  "description": "Required for an owner/service_center token. Ignored (uses the caller's own branch) for a pos-device/manager token."
+                }
+              ]
             },
-            "description": "No table; renders a test payload"
+            "description": "Pure simulation - no real printer integration. Confirms branch ownership and renders a canned test-receipt payload; nothing is persisted."
           },
           "response": []
         },
@@ -3437,8 +4897,8 @@
               "mode": "formdata",
               "formdata": [
                 {
-                  "key": "provider",
-                  "value": "kbzpay",
+                  "key": "bank_name",
+                  "value": "KBZ Bank",
                   "type": "text"
                 },
                 {
@@ -3459,7 +4919,7 @@
                 }
               ]
             },
-            "description": "Multipart upload: \"file\" (the QR image) + \"provider\" (e.g. kbzpay, wavepay)."
+            "description": "Multipart upload: \"file\" (the QR image) + \"bank_name\". At most 5 active QR codes per branch, one per bank - delete an existing one to free a slot."
           },
           "response": []
         },
@@ -3484,7 +4944,8 @@
                   "value": "1"
                 }
               ]
-            }
+            },
+            "description": "Lists the branch's active QR codes only, each with a temporary signed image URL."
           },
           "response": []
         },
@@ -3520,7 +4981,8 @@
                   "value": "1"
                 }
               ]
-            }
+            },
+            "description": "Soft-deletes - sets is_active false and removes the image from storage, freeing a cap slot while keeping the row for history."
           },
           "response": []
         }

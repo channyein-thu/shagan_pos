@@ -58,7 +58,7 @@ type CreateSaleItemRequest struct {
 // CreateSalePaymentRequest is one payment applied to a CreateSaleRequest -
 // there can be more than one (split payment, e.g. part cash part QR).
 type CreateSalePaymentRequest struct {
-	Method         PaymentMethod   `json:"method" binding:"required,oneof=cash card qr mobile_wallet store_credit other"`
+	Method         PaymentMethod   `json:"method" binding:"required,oneof=cash qr"`
 	Amount         decimal.Decimal `json:"amount" binding:"required"`
 	AmountReceived decimal.Decimal `json:"amount_received"`
 	ChangeGiven    decimal.Decimal `json:"change_given"`

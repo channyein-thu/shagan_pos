@@ -396,11 +396,7 @@ func TestRepository_CloseShift_ClosesAtomicallyAndWritesPaymentSnapshot(t *testi
 	require.NoError(t, db.Create(&sale).Error)
 	payments := []sales.Payment{
 		{SaleID: sale.ID, Method: sales.PaymentMethodCash, Amount: decimal.RequireFromString("50.25")},
-		{SaleID: sale.ID, Method: sales.PaymentMethodCard, Amount: decimal.NewFromInt(20)},
 		{SaleID: sale.ID, Method: sales.PaymentMethodQR, Amount: decimal.NewFromInt(10)},
-		{SaleID: sale.ID, Method: sales.PaymentMethodMobileWallet, Amount: decimal.NewFromInt(5)},
-		{SaleID: sale.ID, Method: sales.PaymentMethodStoreCredit, Amount: decimal.NewFromInt(1)},
-		{SaleID: sale.ID, Method: sales.PaymentMethodOther, Amount: decimal.NewFromInt(1)},
 	}
 	require.NoError(t, db.Create(&payments).Error)
 	closedAt := time.Date(2026, time.September, 15, 14, 45, 0, 0, time.UTC)
@@ -417,13 +413,10 @@ func TestRepository_CloseShift_ClosesAtomicallyAndWritesPaymentSnapshot(t *testi
 
 	var reconciliations []ShiftReconciliation
 	require.NoError(t, db.Where("shift_id = ?", shift.ID).Find(&reconciliations).Error)
-	require.Len(t, reconciliations, 5)
+	require.Len(t, reconciliations, 2)
 	wantExpected := map[ReconciliationMethod]decimal.Decimal{
-		ReconciliationMethodCash:   decimal.RequireFromString("150.25"),
-		ReconciliationMethodCard:   decimal.NewFromInt(20),
-		ReconciliationMethodQR:     decimal.NewFromInt(10),
-		ReconciliationMethodMobile: decimal.NewFromInt(5),
-		ReconciliationMethodOther:  decimal.NewFromInt(2),
+		ReconciliationMethodCash: decimal.RequireFromString("150.25"),
+		ReconciliationMethodQR:   decimal.NewFromInt(10),
 	}
 	for _, reconciliation := range reconciliations {
 		want, ok := wantExpected[reconciliation.Method]
@@ -696,7 +689,7 @@ func TestRepository_GetShiftSummary_ReturnsTenantScopedTotals(t *testing.T) {
 	require.NoError(t, db.Create(&[]sales.Sale{completed, voided}).Error)
 	require.NoError(t, db.Create(&[]sales.Payment{
 		{SaleID: completed.ID, Method: sales.PaymentMethodCash, Amount: decimal.NewFromInt(50)},
-		{SaleID: completed.ID, Method: sales.PaymentMethodCard, Amount: decimal.NewFromInt(25)},
+		{SaleID: completed.ID, Method: sales.PaymentMethodQR, Amount: decimal.NewFromInt(25)},
 		{SaleID: voided.ID, Method: sales.PaymentMethodCash, Amount: decimal.NewFromInt(999)},
 	}).Error)
 	reconciliation := ShiftReconciliation{
@@ -713,7 +706,7 @@ func TestRepository_GetShiftSummary_ReturnsTenantScopedTotals(t *testing.T) {
 	require.True(t, decimal.NewFromInt(150).Equal(got["expected_cash"].(decimal.Decimal)))
 	paymentTotals := got["payment_totals"].(map[string]decimal.Decimal)
 	require.True(t, decimal.NewFromInt(50).Equal(paymentTotals[string(sales.PaymentMethodCash)]))
-	require.True(t, decimal.NewFromInt(25).Equal(paymentTotals[string(sales.PaymentMethodCard)]))
+	require.True(t, decimal.NewFromInt(25).Equal(paymentTotals[string(sales.PaymentMethodQR)]))
 	require.Len(t, got["reconciliations"].([]ShiftReconciliation), 1)
 
 	_, err = NewRepository(db).GetShiftSummary(context.Background(), AccessScope{OrgID: 99}, shift.ID)
@@ -726,7 +719,7 @@ func TestRepository_ListShiftReconciliations_EnforcesBranchScope(t *testing.T) {
 	shift := seedShift(t, db, branch.ID, staff.ID, device.ID, ShiftStatusClosed)
 	require.NoError(t, db.Create(&[]ShiftReconciliation{
 		{ShiftID: shift.ID, Method: ReconciliationMethodCash},
-		{ShiftID: shift.ID, Method: ReconciliationMethodCard},
+		{ShiftID: shift.ID, Method: ReconciliationMethodQR},
 	}).Error)
 
 	branchID := branch.ID

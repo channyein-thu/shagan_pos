@@ -2,55 +2,113 @@ package platform
 
 import (
 	"context"
-	"io"
+	"errors"
 
 	"gorm.io/gorm"
 
 	"shagan_pos/internal/common"
-	"shagan_pos/internal/storage"
 )
 
 type RepositoryImpl struct {
-	db      *gorm.DB
-	storage storage.Storage
+	db *gorm.DB
 }
 
-func NewRepository(db *gorm.DB, store storage.Storage) Repository {
-	return &RepositoryImpl{db: db, storage: store}
+func NewRepository(db *gorm.DB) Repository {
+	return &RepositoryImpl{db: db}
 }
 
 var _ Repository = (*RepositoryImpl)(nil)
 
-// GetReceiptSettings backs `GET /receipt-settings`. Needed for the edit form's pre-fill / live preview
-func (r *RepositoryImpl) GetReceiptSettings(ctx context.Context) (*ReceiptSetting, error) {
-	return nil, common.ErrNotImplemented
+// GetReceiptSettings backs Service.GetReceiptSettings' lookups.
+func (r *RepositoryImpl) GetReceiptSettings(ctx context.Context, orgID uint, branchID *uint) (*ReceiptSetting, error) {
+	var setting ReceiptSetting
+	query := r.db.WithContext(ctx).Where("org_id = ?", orgID)
+	if branchID != nil {
+		query = query.Where("branch_id = ?", *branchID)
+	} else {
+		query = query.Where("branch_id IS NULL")
+	}
+	if err := query.First(&setting).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, common.NotFoundError("receipt settings not found")
+		}
+		return nil, err
+	}
+	return &setting, nil
 }
 
-// UpdateReceiptSettings backs `PUT /receipt-settings`.
-func (r *RepositoryImpl) UpdateReceiptSettings(ctx context.Context, in UpdateReceiptSettingsRequest) (*ReceiptSetting, error) {
-	return nil, common.ErrNotImplemented
+// UpsertReceiptSettings backs Service.UpdateReceiptSettings.
+func (r *RepositoryImpl) UpsertReceiptSettings(ctx context.Context, orgID uint, in UpdateReceiptSettingsRequest) (*ReceiptSetting, error) {
+	var setting ReceiptSetting
+	query := r.db.WithContext(ctx).Where("org_id = ?", orgID)
+	if in.BranchID != nil {
+		query = query.Where("branch_id = ?", *in.BranchID)
+	} else {
+		query = query.Where("branch_id IS NULL")
+	}
+
+	err := query.First(&setting).Error
+	switch {
+	case err == nil:
+		setting.ShopName = in.ShopName
+		setting.Address = in.Address
+		setting.Phone = in.Phone
+		setting.ThankYou = in.ThankYou
+		if err := r.db.WithContext(ctx).Save(&setting).Error; err != nil {
+			return nil, err
+		}
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		setting = ReceiptSetting{
+			OrgID:    orgID,
+			BranchID: in.BranchID,
+			ShopName: in.ShopName,
+			Address:  in.Address,
+			Phone:    in.Phone,
+			ThankYou: in.ThankYou,
+			IsGlobal: in.BranchID == nil,
+		}
+		if err := r.db.WithContext(ctx).Create(&setting).Error; err != nil {
+			return nil, err
+		}
+	default:
+		return nil, err
+	}
+	return &setting, nil
 }
 
-// TestPrinter backs `POST /printers/test`. No table; renders a test payload
-func (r *RepositoryImpl) TestPrinter(ctx context.Context) (map[string]any, error) {
-	return nil, common.ErrNotImplemented
+// CreatePaymentQRCode backs Service.UploadPaymentQRCode's first step. Plain
+// insert - GORM sets the row's ID on the pointer it's given.
+func (r *RepositoryImpl) CreatePaymentQRCode(db *gorm.DB, qr *PaymentQRCode) error {
+	return db.Create(qr).Error
 }
 
-// UploadPaymentQRCode backs `POST /branches/:id/payment-qr-codes`.
-// TODO: upload `file` to r.storage under a key like
-// fmt.Sprintf("qr-codes/branch-%d/%s", branchID, provider), then insert a
-// PaymentQRCode row pointing at that key.
-func (r *RepositoryImpl) UploadPaymentQRCode(ctx context.Context, branchID uint, provider string, file io.Reader, size int64, contentType string) (*PaymentQRCode, error) {
-	return nil, common.ErrNotImplemented
+// ListActivePaymentQRCodes backs Service.ListPaymentQRCodes and the
+// cap/duplicate-bank-name checks in Service.UploadPaymentQRCode.
+func (r *RepositoryImpl) ListActivePaymentQRCodes(ctx context.Context, branchID uint) ([]PaymentQRCode, error) {
+	var codes []PaymentQRCode
+	if err := r.db.WithContext(ctx).
+		Where("branch_id = ? AND is_active = ?", branchID, true).
+		Order("created_at").
+		Find(&codes).Error; err != nil {
+		return nil, err
+	}
+	return codes, nil
 }
 
-// ListPaymentQRCodes backs `GET /branches/:id/payment-qr-codes`.
-func (r *RepositoryImpl) ListPaymentQRCodes(ctx context.Context, branchID uint) ([]PaymentQRCode, error) {
-	return nil, common.ErrNotImplemented
+// GetPaymentQRCode backs Service.DeletePaymentQRCode's existence/ownership check.
+func (r *RepositoryImpl) GetPaymentQRCode(ctx context.Context, branchID uint, id uint) (*PaymentQRCode, error) {
+	var qr PaymentQRCode
+	err := r.db.WithContext(ctx).Where("id = ? AND branch_id = ?", id, branchID).First(&qr).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, common.NotFoundError("payment QR code not found")
+		}
+		return nil, err
+	}
+	return &qr, nil
 }
 
-// DeletePaymentQRCode backs `DELETE /branches/:id/payment-qr-codes/:qrId`.
-// TODO: also delete the object from r.storage, not just the DB row.
-func (r *RepositoryImpl) DeletePaymentQRCode(ctx context.Context, branchID uint, qrID uint) error {
-	return common.ErrNotImplemented
+// DeactivatePaymentQRCode backs Service.DeletePaymentQRCode's second step.
+func (r *RepositoryImpl) DeactivatePaymentQRCode(db *gorm.DB, id uint) error {
+	return db.Model(&PaymentQRCode{}).Where("id = ?", id).Update("is_active", false).Error
 }

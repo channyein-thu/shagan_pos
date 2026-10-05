@@ -17,15 +17,13 @@ const (
 	ShiftStatusClosed ShiftStatus = "closed"
 )
 
-// ReconciliationMethod is a best-guess enum (ERD only specified "enum"; confirm real values).
+// ReconciliationMethod mirrors sales.PaymentMethod - cash and QR only, for
+// this version.
 type ReconciliationMethod string
 
 const (
-	ReconciliationMethodCash   ReconciliationMethod = "cash"
-	ReconciliationMethodCard   ReconciliationMethod = "card"
-	ReconciliationMethodQR     ReconciliationMethod = "qr"
-	ReconciliationMethodMobile ReconciliationMethod = "mobile"
-	ReconciliationMethodOther  ReconciliationMethod = "other"
+	ReconciliationMethodCash ReconciliationMethod = "cash"
+	ReconciliationMethodQR   ReconciliationMethod = "qr"
 )
 
 // Shift maps to the "Shifts" table in the ERD.

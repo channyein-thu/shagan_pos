@@ -210,17 +210,14 @@ func (r *RepositoryImpl) closeShift(ctx context.Context, scope AccessScope, id u
 
 		orderedMethods := []ReconciliationMethod{
 			ReconciliationMethodCash,
-			ReconciliationMethodCard,
 			ReconciliationMethodQR,
-			ReconciliationMethodMobile,
-			ReconciliationMethodOther,
 		}
-		// Only cash is physically counted at close - card/QR/mobile-wallet
-		// payments settle electronically, so they're trusted to match what
-		// was recorded (Counted == Expected, Difference always zero). Cash
-		// uses what was actually counted in the drawer; a non-zero
-		// difference requires a reason, since that's the one number that can
-		// genuinely be short or over.
+		// Only cash is physically counted at close - QR payments settle
+		// electronically, so they're trusted to match what was recorded
+		// (Counted == Expected, Difference always zero). Cash uses what was
+		// actually counted in the drawer; a non-zero difference requires a
+		// reason, since that's the one number that can genuinely be short or
+		// over.
 		expectedCash := expectedByMethod[ReconciliationMethodCash]
 		cashDifference := in.ClosingCash.Sub(expectedCash)
 		if !cashDifference.IsZero() && strings.TrimSpace(in.Reason) == "" {
@@ -272,16 +269,10 @@ func (r *RepositoryImpl) closeShift(ctx context.Context, scope AccessScope, id u
 
 func reconciliationMethodForPayment(method sales.PaymentMethod) ReconciliationMethod {
 	switch method {
-	case sales.PaymentMethodCash:
-		return ReconciliationMethodCash
-	case sales.PaymentMethodCard:
-		return ReconciliationMethodCard
 	case sales.PaymentMethodQR:
 		return ReconciliationMethodQR
-	case sales.PaymentMethodMobileWallet:
-		return ReconciliationMethodMobile
 	default:
-		return ReconciliationMethodOther
+		return ReconciliationMethodCash
 	}
 }
 
