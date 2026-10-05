@@ -23,6 +23,63 @@ func (_m *MockRepository) EXPECT() *MockRepository_Expecter {
 	return &MockRepository_Expecter{mock: &_m.Mock}
 }
 
+// CountPurchaseOrders provides a mock function with given fields: db, orgID
+func (_m *MockRepository) CountPurchaseOrders(db *gorm.DB, orgID uint) (int64, error) {
+	ret := _m.Called(db, orgID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CountPurchaseOrders")
+	}
+
+	var r0 int64
+	var r1 error
+	if rf, ok := ret.Get(0).(func(*gorm.DB, uint) (int64, error)); ok {
+		return rf(db, orgID)
+	}
+	if rf, ok := ret.Get(0).(func(*gorm.DB, uint) int64); ok {
+		r0 = rf(db, orgID)
+	} else {
+		r0 = ret.Get(0).(int64)
+	}
+
+	if rf, ok := ret.Get(1).(func(*gorm.DB, uint) error); ok {
+		r1 = rf(db, orgID)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// MockRepository_CountPurchaseOrders_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CountPurchaseOrders'
+type MockRepository_CountPurchaseOrders_Call struct {
+	*mock.Call
+}
+
+// CountPurchaseOrders is a helper method to define mock.On call
+//   - db *gorm.DB
+//   - orgID uint
+func (_e *MockRepository_Expecter) CountPurchaseOrders(db interface{}, orgID interface{}) *MockRepository_CountPurchaseOrders_Call {
+	return &MockRepository_CountPurchaseOrders_Call{Call: _e.mock.On("CountPurchaseOrders", db, orgID)}
+}
+
+func (_c *MockRepository_CountPurchaseOrders_Call) Run(run func(db *gorm.DB, orgID uint)) *MockRepository_CountPurchaseOrders_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(*gorm.DB), args[1].(uint))
+	})
+	return _c
+}
+
+func (_c *MockRepository_CountPurchaseOrders_Call) Return(_a0 int64, _a1 error) *MockRepository_CountPurchaseOrders_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *MockRepository_CountPurchaseOrders_Call) RunAndReturn(run func(*gorm.DB, uint) (int64, error)) *MockRepository_CountPurchaseOrders_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // CreateGoodsReceipt provides a mock function with given fields: db, receipt
 func (_m *MockRepository) CreateGoodsReceipt(db *gorm.DB, receipt *GoodsReceipt) error {
 	ret := _m.Called(db, receipt)

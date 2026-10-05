@@ -67,12 +67,15 @@ type Interface interface {
 	// CreatePurchaseOrder confirms in.BranchID and in.SupplierID both belong
 	// to orgID, and every item's ProductID does too (same
 	// not-found-not-forbidden reasoning as catalog.CreateProduct's category
-	// ownership check), computes Total from the items, then creates the
-	// PurchaseOrder and its PurchaseOrderItems together as one atomic unit
-	// of work: a purchase order without its line items should never exist.
-	// Starts at PurchaseOrderStatusSubmitted - see
-	// CreatePurchaseOrderRequest's doc. createdBy is the authenticated
-	// caller's own user ID, never a client-supplied one.
+	// ownership check), computes Total from the items, generates PoNumber
+	// as "PO-%04d" from orgID's existing purchase-order count plus one (so
+	// two different staff members can never collide on a number they each
+	// picked themselves), then creates the PurchaseOrder and its
+	// PurchaseOrderItems together as one atomic unit of work: a purchase
+	// order without its line items should never exist. Starts at
+	// PurchaseOrderStatusSubmitted - see CreatePurchaseOrderRequest's doc.
+	// createdBy is the authenticated caller's own user ID, never a
+	// client-supplied one.
 	CreatePurchaseOrder(ctx context.Context, orgID uint, createdBy uint, in CreatePurchaseOrderRequest) (*PurchaseOrder, error)
 	// GetPurchaseOrder returns PurchaseOrderResult (the order plus its
 	// items), confirming the order exists AND belongs to orgID

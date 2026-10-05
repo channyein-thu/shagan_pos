@@ -654,7 +654,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"branch_id\": {{uatBranchId}},\n  \"po_number\": \"UAT-PO-1001\",\n  \"supplier_id\": {{uatSupplierId}},\n  \"items\": [\n    {\n      \"product_id\": {{uatProductId}},\n      \"ordered_qty\": 20,\n      \"unit_cost\": \"300.00\"\n    }\n  ]\n}",
+              "raw": "{\n  \"branch_id\": {{uatBranchId}},\n  \"supplier_id\": {{uatSupplierId}},\n  \"items\": [\n    {\n      \"product_id\": {{uatProductId}},\n      \"ordered_qty\": 20,\n      \"unit_cost\": \"300.00\"\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4680,7 +4680,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"branch_id\": 1,\n  \"po_number\": \"PO-1001\",\n  \"supplier_id\": 1,\n  \"items\": [\n    {\n      \"product_id\": 1,\n      \"ordered_qty\": 10,\n      \"unit_cost\": \"2.50\"\n    }\n  ]\n}",
+              "raw": "{\n  \"branch_id\": 1,\n  \"supplier_id\": 1,\n  \"items\": [\n    {\n      \"product_id\": 1,\n      \"ordered_qty\": 10,\n      \"unit_cost\": \"2.50\"\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4692,7 +4692,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "purchase-orders"]
             },
-            "description": "Also writes purchase_order_items. branch_id is the branch placing the order (products are org-wide, so this is also the branch CreateGoodsReceipt later credits stock to). supplier_id and every item's product_id must belong to your own org. total is computed from items (sum of ordered_qty*unit_cost) - don't send it. status/created_by aren't accepted either - a new order always starts at \"submitted\"; created_by is the authenticated caller's own user ID."
+            "description": "Also writes purchase_order_items. branch_id is the branch placing the order (products are org-wide, so this is also the branch CreateGoodsReceipt later credits stock to). supplier_id and every item's product_id must belong to your own org. po_number is server-generated (\"PO-0001\", \"PO-0002\", ... sequential per org) - don't send one, and it can't be changed later via PATCH either. total is computed from items (sum of ordered_qty*unit_cost) - don't send it. status/created_by aren't accepted either - a new order always starts at \"submitted\"; created_by is the authenticated caller's own user ID."
           },
           "response": []
         },
@@ -4758,7 +4758,7 @@
                 }
               ]
             },
-            "description": "Status transitions: one of draft, submitted, approved, cancelled - NOT received (409). Marking an order received only happens via CreateGoodsReceipt, which requires an actual reconciled receipt. Blocked with 409 once the order is already received or cancelled (terminal states). supplier_id, if sent, must belong to your own org. total/created_by aren't editable here."
+            "description": "Status transitions: one of draft, submitted, approved, cancelled - NOT received (409). Marking an order received only happens via CreateGoodsReceipt, which requires an actual reconciled receipt. Blocked with 409 once the order is already received or cancelled (terminal states). supplier_id, if sent, must belong to your own org. po_number/total/created_by aren't editable here - po_number is server-generated at creation and permanent."
           },
           "response": []
         },

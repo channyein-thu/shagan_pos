@@ -285,8 +285,11 @@ what each grants).
   Purchase Orders and receiving are branch-scoped.
 - **Stock visibility**: per-branch, visible to both Staff and Manager
   (same login, gated by PIN only).
-- **`PurchaseOrder` numbers**: unique per-org (`org_id` + `po_number`), not
-  globally unique.
+- **`PurchaseOrder` numbers**: server-generated (confirmed 2026-10-05), not
+  client-supplied - `"PO-%04d"`, sequential per org (`org_id` + `po_number`
+  stays unique, not globally unique). Never editable afterward, including
+  via `UpdatePurchaseOrder` - letting it change later would reopen the
+  collision risk auto-generation exists to close.
 - **Products are org-wide, not branch-scoped** (confirmed 2026-10-05,
   overriding an earlier unconfirmed guess baked into the code - a product
   belongs to the whole organization, sellable at any of its branches; the

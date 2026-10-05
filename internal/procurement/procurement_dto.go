@@ -38,19 +38,22 @@ type CreateGoodsReceiptItemRequest struct {
 // against the caller's own org) - since Product is org-wide (see
 // catalog.Product's doc), this is also the branch CreateGoodsReceipt later
 // credits stock to. SupplierID is likewise a legitimate client choice,
-// re-verified against the caller's own org by the service. Status is deliberately not
-// here - a new purchase order always starts at PurchaseOrderStatusSubmitted;
-// moving it along the lifecycle happens via UpdatePurchaseOrder (or, for
-// the Received transition specifically, only via CreateGoodsReceipt, which
-// requires an actual reconciled receipt to exist first). Total is
-// deliberately not here either - it's computed by the service from Items
-// (sum of ordered_qty*unit_cost), never client-supplied. CreatedBy is
-// deliberately not here - it's the authenticated caller's own user ID,
-// never a client-supplied one. Items must contain at least one entry with
-// no duplicate product_id - same reasoning as CreateComboRequest's Items.
+// re-verified against the caller's own org by the service. PoNumber is
+// deliberately not here - the server generates it (see
+// Service.CreatePurchaseOrder's doc), so two different staff members can
+// never collide on a number they each picked themselves. Status is
+// deliberately not here either - a new purchase order always starts at
+// PurchaseOrderStatusSubmitted; moving it along the lifecycle happens via
+// UpdatePurchaseOrder (or, for the Received transition specifically, only
+// via CreateGoodsReceipt, which requires an actual reconciled receipt to
+// exist first). Total is deliberately not here either - it's computed by
+// the service from Items (sum of ordered_qty*unit_cost), never
+// client-supplied. CreatedBy is deliberately not here - it's the
+// authenticated caller's own user ID, never a client-supplied one. Items
+// must contain at least one entry with no duplicate product_id - same
+// reasoning as CreateComboRequest's Items.
 type CreatePurchaseOrderRequest struct {
 	BranchID   uint                             `json:"branch_id" binding:"required"`
-	PoNumber   string                           `json:"po_number" binding:"required"`
 	SupplierID uint                             `json:"supplier_id" binding:"required"`
 	Items      []CreatePurchaseOrderItemRequest `json:"items" binding:"required,min=1,unique=ProductID,dive"`
 }
@@ -86,12 +89,15 @@ type CreateSupplierRequest struct {
 // CreatePurchaseOrderRequest. Status can move to any value except
 // PurchaseOrderStatusReceived - that transition only happens via
 // CreateGoodsReceipt, which requires an actual reconciled receipt to
-// exist first; see Service.UpdatePurchaseOrder. Total/CreatedBy are
-// deliberately not here - Total is derived from the order's items (not
-// editable by this endpoint, which doesn't touch items), and CreatedBy is
-// an immutable audit field, same reasoning as CreatedAt.
+// exist first; see Service.UpdatePurchaseOrder. PoNumber isn't here either
+// - it's server-generated at creation and never editable afterward, same
+// reasoning as CreateProductRequest never accepting one; letting it be
+// changed later would reopen the exact collision risk auto-generation
+// exists to close. Total/CreatedBy are deliberately not here either -
+// Total is derived from the order's items (not editable by this endpoint,
+// which doesn't touch items), and CreatedBy is an immutable audit field,
+// same reasoning as CreatedAt.
 type UpdatePurchaseOrderRequest struct {
-	PoNumber   *string              `json:"po_number" binding:"omitempty"`
 	SupplierID *uint                `json:"supplier_id" binding:"omitempty"`
 	Status     *PurchaseOrderStatus `json:"status" binding:"omitempty"`
 }

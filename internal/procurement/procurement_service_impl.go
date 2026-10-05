@@ -2,6 +2,7 @@ package procurement
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -96,8 +97,10 @@ func (s *Service) ListPurchaseOrders(ctx context.Context, orgID uint) ([]Purchas
 // CreatePurchaseOrder confirms in.BranchID, in.SupplierID, and every item's
 // ProductID belong to orgID, validates each item's UnitCost is actually
 // positive (decimal.Decimal's zero value can't do that from a struct tag -
-// see CreatePurchaseOrderItemRequest's doc), computes Total from the items,
-// then creates the PurchaseOrder and its PurchaseOrderItems together as one
+// see CreatePurchaseOrderItemRequest's doc), computes Total from the items
+// and PoNumber from orgID's existing purchase-order count (see Service's
+// interface doc), then creates the PurchaseOrder and its PurchaseOrderItems
+// together as one
 // atomic unit of work.
 func (s *Service) CreatePurchaseOrder(ctx context.Context, orgID uint, createdBy uint, in CreatePurchaseOrderRequest) (*PurchaseOrder, error) {
 	if _, err := s.branches.GetBranch(ctx, orgID, in.BranchID); err != nil {
@@ -120,10 +123,14 @@ func (s *Service) CreatePurchaseOrder(ctx context.Context, orgID uint, createdBy
 
 	var result *PurchaseOrder
 	err := s.db.Transaction(func(tx *gorm.DB) error {
+		count, err := s.repo.CountPurchaseOrders(tx, orgID)
+		if err != nil {
+			return err
+		}
 		po := PurchaseOrder{
 			OrgID:      orgID,
 			BranchID:   in.BranchID,
-			PoNumber:   in.PoNumber,
+			PoNumber:   fmt.Sprintf("PO-%04d", count+1),
 			SupplierID: in.SupplierID,
 			Status:     PurchaseOrderStatusSubmitted,
 			Total:      total,
@@ -131,7 +138,7 @@ func (s *Service) CreatePurchaseOrder(ctx context.Context, orgID uint, createdBy
 		}
 		if err := s.repo.CreatePurchaseOrder(tx, &po); err != nil {
 			if common.IsDuplicateError(err) {
-				return common.ConflictError("a purchase order with this po_number already exists")
+				return common.ConflictError("a purchase order number collided with an existing one - please retry")
 			}
 			return err
 		}
@@ -193,9 +200,6 @@ func (s *Service) UpdatePurchaseOrder(ctx context.Context, orgID uint, id uint, 
 	}
 
 	updates := map[string]any{}
-	if in.PoNumber != nil {
-		updates["po_number"] = *in.PoNumber
-	}
 	if in.SupplierID != nil {
 		updates["supplier_id"] = *in.SupplierID
 	}
@@ -205,9 +209,6 @@ func (s *Service) UpdatePurchaseOrder(ctx context.Context, orgID uint, id uint, 
 
 	if len(updates) > 0 {
 		if err := s.repo.UpdatePurchaseOrder(ctx, id, updates); err != nil {
-			if common.IsDuplicateError(err) {
-				return nil, common.ConflictError("a purchase order with this po_number already exists")
-			}
 			return nil, err
 		}
 	}

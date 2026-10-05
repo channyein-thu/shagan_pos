@@ -219,7 +219,6 @@ func TestService_DeleteSupplier_PropagatesNotFound(t *testing.T) {
 func validCreatePurchaseOrderRequest() CreatePurchaseOrderRequest {
 	return CreatePurchaseOrderRequest{
 		BranchID:   5,
-		PoNumber:   "PO-1001",
 		SupplierID: 5,
 		Items: []CreatePurchaseOrderItemRequest{
 			{ProductID: 1, OrderedQty: 10, UnitCost: decimal.NewFromFloat(2.50)},
@@ -239,9 +238,10 @@ func TestService_CreatePurchaseOrder_HappyPath_CreatesOrderAndItems(t *testing.T
 	repo.EXPECT().GetSupplier(mock.Anything, uint(7), uint(5)).Return(&Supplier{ID: 5, OrgID: 7}, nil).Once()
 	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7}, nil).Once()
 	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(2)).Return(&catalog.Product{ID: 2, OrgID: 7}, nil).Once()
+	repo.EXPECT().CountPurchaseOrders(mock.Anything, uint(7)).Return(int64(0), nil).Once()
 	repo.EXPECT().
 		CreatePurchaseOrder(mock.Anything, mock.MatchedBy(func(po *PurchaseOrder) bool {
-			return po.PoNumber == "PO-1001" && po.SupplierID == 5 && po.Status == PurchaseOrderStatusSubmitted &&
+			return po.PoNumber == "PO-0001" && po.SupplierID == 5 && po.Status == PurchaseOrderStatusSubmitted &&
 				po.CreatedBy == 42 && po.Total.Equal(decimal.NewFromFloat(30.00))
 		})).
 		Run(func(_ *gorm.DB, po *PurchaseOrder) { po.ID = 1 }).
@@ -334,7 +334,7 @@ func TestService_CreatePurchaseOrder_NonPositiveUnitCost_RejectsBeforeTouchingRe
 	requireRestErrorStatus(t, err, http.StatusBadRequest)
 }
 
-func TestService_CreatePurchaseOrder_DuplicatePoNumber_ReturnsConflict(t *testing.T) {
+func TestService_CreatePurchaseOrder_GeneratedPoNumberCollision_ReturnsConflict(t *testing.T) {
 	repo := NewMockRepository(t)
 	branches := NewMockBranchLookup(t)
 	products := NewMockProductLookup(t)
@@ -345,12 +345,15 @@ func TestService_CreatePurchaseOrder_DuplicatePoNumber_ReturnsConflict(t *testin
 	repo.EXPECT().GetSupplier(mock.Anything, uint(7), uint(5)).Return(&Supplier{ID: 5, OrgID: 7}, nil).Once()
 	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7}, nil).Once()
 	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(2)).Return(&catalog.Product{ID: 2, OrgID: 7}, nil).Once()
+	repo.EXPECT().CountPurchaseOrders(mock.Anything, uint(7)).Return(int64(0), nil).Once()
 	repo.EXPECT().
 		CreatePurchaseOrder(mock.Anything, mock.Anything).
 		Return(&pgconn.PgError{Code: "23505"}).
 		Once()
 	// CreatePurchaseOrderItems must never be called once the order insert
-	// itself fails.
+	// itself fails - a rare race between two concurrent requests computing
+	// the same count, not a client-supplied duplicate (po_number is
+	// server-generated now).
 
 	_, err := svc.CreatePurchaseOrder(context.Background(), 7, 42, validCreatePurchaseOrderRequest())
 	require.Error(t, err)
@@ -368,11 +371,36 @@ func TestService_CreatePurchaseOrder_RepositoryError_PropagatesAsIs(t *testing.T
 	repo.EXPECT().GetSupplier(mock.Anything, uint(7), uint(5)).Return(&Supplier{ID: 5, OrgID: 7}, nil).Once()
 	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7}, nil).Once()
 	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(2)).Return(&catalog.Product{ID: 2, OrgID: 7}, nil).Once()
+	repo.EXPECT().CountPurchaseOrders(mock.Anything, uint(7)).Return(int64(0), nil).Once()
 	dbErr := errors.New("connection refused")
 	repo.EXPECT().CreatePurchaseOrder(mock.Anything, mock.Anything).Return(dbErr).Once()
 
 	_, err := svc.CreatePurchaseOrder(context.Background(), 7, 42, validCreatePurchaseOrderRequest())
 	require.ErrorIs(t, err, dbErr)
+}
+
+func TestService_CreatePurchaseOrder_SecondOrderInOrg_GetsSequentialPoNumber(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	products := NewMockProductLookup(t)
+	stock := NewMockInventoryWriter(t)
+	svc := NewService(repo, branches, products, stock, fakeTransactioner{})
+
+	branches.EXPECT().GetBranch(mock.Anything, uint(7), uint(5)).Return(&identity.Branch{ID: 5, OrgID: 7}, nil).Once()
+	repo.EXPECT().GetSupplier(mock.Anything, uint(7), uint(5)).Return(&Supplier{ID: 5, OrgID: 7}, nil).Once()
+	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7}, nil).Once()
+	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(2)).Return(&catalog.Product{ID: 2, OrgID: 7}, nil).Once()
+	repo.EXPECT().CountPurchaseOrders(mock.Anything, uint(7)).Return(int64(1), nil).Once()
+	repo.EXPECT().
+		CreatePurchaseOrder(mock.Anything, mock.MatchedBy(func(po *PurchaseOrder) bool {
+			return po.PoNumber == "PO-0002"
+		})).
+		Return(nil).
+		Once()
+	repo.EXPECT().CreatePurchaseOrderItems(mock.Anything, mock.Anything).Return(nil).Once()
+
+	_, err := svc.CreatePurchaseOrder(context.Background(), 7, 42, validCreatePurchaseOrderRequest())
+	require.NoError(t, err)
 }
 
 func TestService_GetPurchaseOrder_HappyPath_ReturnsOrderWithItems(t *testing.T) {
@@ -499,10 +527,11 @@ func TestService_UpdatePurchaseOrder_TerminalState_ReturnsConflict(t *testing.T)
 
 	existing := &PurchaseOrder{ID: 1, SupplierID: 5, Status: PurchaseOrderStatusReceived}
 	repo.EXPECT().GetPurchaseOrder(mock.Anything, uint(7), uint(1)).Return(existing, nil).Once()
-	// UpdatePurchaseOrder must never be called - a received order is terminal.
+	// GetSupplier/UpdatePurchaseOrder must never be called - a received
+	// order is terminal.
 
-	name := "PO-9999"
-	_, err := svc.UpdatePurchaseOrder(context.Background(), 7, 1, UpdatePurchaseOrderRequest{PoNumber: &name})
+	supplierID := uint(9)
+	_, err := svc.UpdatePurchaseOrder(context.Background(), 7, 1, UpdatePurchaseOrderRequest{SupplierID: &supplierID})
 	require.Error(t, err)
 	requireRestErrorStatus(t, err, http.StatusConflict)
 }

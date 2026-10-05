@@ -85,6 +85,17 @@ func (r *RepositoryImpl) ListPurchaseOrders(ctx context.Context, orgID uint) ([]
 	return orders, nil
 }
 
+// CountPurchaseOrders backs Service.CreatePurchaseOrder's po_number
+// generation. Scoped directly by PurchaseOrder's own org_id column, unlike
+// ListPurchaseOrders/GetPurchaseOrder's supplier-subquery scoping above.
+func (r *RepositoryImpl) CountPurchaseOrders(db *gorm.DB, orgID uint) (int64, error) {
+	var count int64
+	if err := db.Model(&PurchaseOrder{}).Where("org_id = ?", orgID).Count(&count).Error; err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
 // CreatePurchaseOrder backs Service.CreatePurchaseOrder's first step. Plain
 // insert.
 func (r *RepositoryImpl) CreatePurchaseOrder(db *gorm.DB, po *PurchaseOrder) error {

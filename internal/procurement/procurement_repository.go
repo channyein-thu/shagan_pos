@@ -44,6 +44,15 @@ type Repository interface {
 	// orgBranchIDs helper (both are same-domain subqueries, not a
 	// cross-domain dependency).
 	ListPurchaseOrders(ctx context.Context, orgID uint) ([]PurchaseOrder, error)
+	// CountPurchaseOrders backs Service.CreatePurchaseOrder's po_number
+	// generation - the count of orgID's existing purchase orders becomes
+	// the next sequence number (see Service.CreatePurchaseOrder's doc). db
+	// is the same in-flight transaction the insert that follows
+	// participates in, keeping the read and the write as close together as
+	// this domain's other count-then-insert steps (same
+	// db-is-either-plain-or-in-flight-transaction reasoning as
+	// CreatePurchaseOrder below).
+	CountPurchaseOrders(db *gorm.DB, orgID uint) (int64, error)
 	// CreatePurchaseOrder backs Service.CreatePurchaseOrder's first step.
 	// Plain insert - GORM sets the row's ID on the pointer it's given.
 	// Mapping the request into a PurchaseOrder, and validating it, happens
