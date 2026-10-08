@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"gorm.io/gorm"
 
@@ -106,6 +107,36 @@ func (r *RepositoryImpl) ComboItemsExistForProduct(ctx context.Context, productI
 	return count > 0, nil
 }
 
+// productHistoryTables is every table outside catalog that references a
+// product by product_id - see Repository.ProductHasHistory. A new table
+// that stores a product_id must be added here, or deleting a product will
+// orphan it.
+var productHistoryTables = []string{
+	"sale_items",
+	"exchange_items",
+	"stock_levels",
+	"stock_adjustments",
+	"stock_transfers_items",
+	"inventory_ledger",
+	"purchase_order_items",
+}
+
+// ProductHasHistory backs Service.DeleteProduct's second referential-integrity
+// check: one query, short-circuiting on the first table that still has a row.
+func (r *RepositoryImpl) ProductHasHistory(ctx context.Context, productID uint) (bool, error) {
+	clauses := make([]string, len(productHistoryTables))
+	args := make([]any, len(productHistoryTables))
+	for i, table := range productHistoryTables {
+		clauses[i] = "EXISTS (SELECT 1 FROM " + table + " WHERE product_id = ?)"
+		args[i] = productID
+	}
+	var found bool
+	if err := r.db.WithContext(ctx).Raw("SELECT "+strings.Join(clauses, " OR "), args...).Scan(&found).Error; err != nil {
+		return false, err
+	}
+	return found, nil
+}
+
 // DeleteProduct backs `DELETE /products/:id`. Hard delete.
 func (r *RepositoryImpl) DeleteProduct(db *gorm.DB, id uint) error {
 	return db.Delete(&Product{}, id).Error
@@ -201,6 +232,15 @@ func (r *RepositoryImpl) GetCombo(ctx context.Context, orgID uint, id uint) (*Co
 		return nil, err
 	}
 	return &combo, nil
+}
+
+// ListComboItemsByComboIDs backs Service.ListCombos' component lookup.
+func (r *RepositoryImpl) ListComboItemsByComboIDs(ctx context.Context, comboIDs []uint) ([]ComboItem, error) {
+	var items []ComboItem
+	if err := r.db.WithContext(ctx).Where("combo_id IN (?)", comboIDs).Order("id").Find(&items).Error; err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 // ListComboImagesByComboIDs backs Service.ListCombos/UpdateCombo's image

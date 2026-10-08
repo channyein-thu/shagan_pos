@@ -269,9 +269,9 @@ func (_c *MockRepository_Expenses_Call) RunAndReturn(run func(context.Context, [
 	return _c
 }
 
-// HourlyTrend provides a mock function with given fields: ctx, orgID, branchID, dayStart, dayEnd
-func (_m *MockRepository) HourlyTrend(ctx context.Context, orgID uint, branchID *uint, dayStart time.Time, dayEnd time.Time) ([]TrendBucket, error) {
-	ret := _m.Called(ctx, orgID, branchID, dayStart, dayEnd)
+// HourlyTrend provides a mock function with given fields: ctx, orgID, branchID, dayStart, dayEnd, timezone
+func (_m *MockRepository) HourlyTrend(ctx context.Context, orgID uint, branchID *uint, dayStart time.Time, dayEnd time.Time, timezone string) ([]TrendBucket, error) {
+	ret := _m.Called(ctx, orgID, branchID, dayStart, dayEnd, timezone)
 
 	if len(ret) == 0 {
 		panic("no return value specified for HourlyTrend")
@@ -279,19 +279,19 @@ func (_m *MockRepository) HourlyTrend(ctx context.Context, orgID uint, branchID 
 
 	var r0 []TrendBucket
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, uint, *uint, time.Time, time.Time) ([]TrendBucket, error)); ok {
-		return rf(ctx, orgID, branchID, dayStart, dayEnd)
+	if rf, ok := ret.Get(0).(func(context.Context, uint, *uint, time.Time, time.Time, string) ([]TrendBucket, error)); ok {
+		return rf(ctx, orgID, branchID, dayStart, dayEnd, timezone)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, uint, *uint, time.Time, time.Time) []TrendBucket); ok {
-		r0 = rf(ctx, orgID, branchID, dayStart, dayEnd)
+	if rf, ok := ret.Get(0).(func(context.Context, uint, *uint, time.Time, time.Time, string) []TrendBucket); ok {
+		r0 = rf(ctx, orgID, branchID, dayStart, dayEnd, timezone)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]TrendBucket)
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, uint, *uint, time.Time, time.Time) error); ok {
-		r1 = rf(ctx, orgID, branchID, dayStart, dayEnd)
+	if rf, ok := ret.Get(1).(func(context.Context, uint, *uint, time.Time, time.Time, string) error); ok {
+		r1 = rf(ctx, orgID, branchID, dayStart, dayEnd, timezone)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -310,13 +310,14 @@ type MockRepository_HourlyTrend_Call struct {
 //   - branchID *uint
 //   - dayStart time.Time
 //   - dayEnd time.Time
-func (_e *MockRepository_Expecter) HourlyTrend(ctx interface{}, orgID interface{}, branchID interface{}, dayStart interface{}, dayEnd interface{}) *MockRepository_HourlyTrend_Call {
-	return &MockRepository_HourlyTrend_Call{Call: _e.mock.On("HourlyTrend", ctx, orgID, branchID, dayStart, dayEnd)}
+//   - timezone string
+func (_e *MockRepository_Expecter) HourlyTrend(ctx interface{}, orgID interface{}, branchID interface{}, dayStart interface{}, dayEnd interface{}, timezone interface{}) *MockRepository_HourlyTrend_Call {
+	return &MockRepository_HourlyTrend_Call{Call: _e.mock.On("HourlyTrend", ctx, orgID, branchID, dayStart, dayEnd, timezone)}
 }
 
-func (_c *MockRepository_HourlyTrend_Call) Run(run func(ctx context.Context, orgID uint, branchID *uint, dayStart time.Time, dayEnd time.Time)) *MockRepository_HourlyTrend_Call {
+func (_c *MockRepository_HourlyTrend_Call) Run(run func(ctx context.Context, orgID uint, branchID *uint, dayStart time.Time, dayEnd time.Time, timezone string)) *MockRepository_HourlyTrend_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(uint), args[2].(*uint), args[3].(time.Time), args[4].(time.Time))
+		run(args[0].(context.Context), args[1].(uint), args[2].(*uint), args[3].(time.Time), args[4].(time.Time), args[5].(string))
 	})
 	return _c
 }
@@ -326,7 +327,7 @@ func (_c *MockRepository_HourlyTrend_Call) Return(_a0 []TrendBucket, _a1 error) 
 	return _c
 }
 
-func (_c *MockRepository_HourlyTrend_Call) RunAndReturn(run func(context.Context, uint, *uint, time.Time, time.Time) ([]TrendBucket, error)) *MockRepository_HourlyTrend_Call {
+func (_c *MockRepository_HourlyTrend_Call) RunAndReturn(run func(context.Context, uint, *uint, time.Time, time.Time, string) ([]TrendBucket, error)) *MockRepository_HourlyTrend_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -765,9 +766,9 @@ func (_c *MockRepository_SalesAggregate_Call) RunAndReturn(run func(context.Cont
 	return _c
 }
 
-// Trend provides a mock function with given fields: ctx, orgID, branchID, from, to, granularity
-func (_m *MockRepository) Trend(ctx context.Context, orgID uint, branchID *uint, from time.Time, to time.Time, granularity Granularity) ([]TrendBucket, error) {
-	ret := _m.Called(ctx, orgID, branchID, from, to, granularity)
+// Trend provides a mock function with given fields: ctx, orgID, branchID, from, to, granularity, timezone
+func (_m *MockRepository) Trend(ctx context.Context, orgID uint, branchID *uint, from time.Time, to time.Time, granularity Granularity, timezone string) ([]TrendBucket, error) {
+	ret := _m.Called(ctx, orgID, branchID, from, to, granularity, timezone)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Trend")
@@ -775,19 +776,19 @@ func (_m *MockRepository) Trend(ctx context.Context, orgID uint, branchID *uint,
 
 	var r0 []TrendBucket
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, uint, *uint, time.Time, time.Time, Granularity) ([]TrendBucket, error)); ok {
-		return rf(ctx, orgID, branchID, from, to, granularity)
+	if rf, ok := ret.Get(0).(func(context.Context, uint, *uint, time.Time, time.Time, Granularity, string) ([]TrendBucket, error)); ok {
+		return rf(ctx, orgID, branchID, from, to, granularity, timezone)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, uint, *uint, time.Time, time.Time, Granularity) []TrendBucket); ok {
-		r0 = rf(ctx, orgID, branchID, from, to, granularity)
+	if rf, ok := ret.Get(0).(func(context.Context, uint, *uint, time.Time, time.Time, Granularity, string) []TrendBucket); ok {
+		r0 = rf(ctx, orgID, branchID, from, to, granularity, timezone)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]TrendBucket)
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, uint, *uint, time.Time, time.Time, Granularity) error); ok {
-		r1 = rf(ctx, orgID, branchID, from, to, granularity)
+	if rf, ok := ret.Get(1).(func(context.Context, uint, *uint, time.Time, time.Time, Granularity, string) error); ok {
+		r1 = rf(ctx, orgID, branchID, from, to, granularity, timezone)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -807,13 +808,14 @@ type MockRepository_Trend_Call struct {
 //   - from time.Time
 //   - to time.Time
 //   - granularity Granularity
-func (_e *MockRepository_Expecter) Trend(ctx interface{}, orgID interface{}, branchID interface{}, from interface{}, to interface{}, granularity interface{}) *MockRepository_Trend_Call {
-	return &MockRepository_Trend_Call{Call: _e.mock.On("Trend", ctx, orgID, branchID, from, to, granularity)}
+//   - timezone string
+func (_e *MockRepository_Expecter) Trend(ctx interface{}, orgID interface{}, branchID interface{}, from interface{}, to interface{}, granularity interface{}, timezone interface{}) *MockRepository_Trend_Call {
+	return &MockRepository_Trend_Call{Call: _e.mock.On("Trend", ctx, orgID, branchID, from, to, granularity, timezone)}
 }
 
-func (_c *MockRepository_Trend_Call) Run(run func(ctx context.Context, orgID uint, branchID *uint, from time.Time, to time.Time, granularity Granularity)) *MockRepository_Trend_Call {
+func (_c *MockRepository_Trend_Call) Run(run func(ctx context.Context, orgID uint, branchID *uint, from time.Time, to time.Time, granularity Granularity, timezone string)) *MockRepository_Trend_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(uint), args[2].(*uint), args[3].(time.Time), args[4].(time.Time), args[5].(Granularity))
+		run(args[0].(context.Context), args[1].(uint), args[2].(*uint), args[3].(time.Time), args[4].(time.Time), args[5].(Granularity), args[6].(string))
 	})
 	return _c
 }
@@ -823,7 +825,7 @@ func (_c *MockRepository_Trend_Call) Return(_a0 []TrendBucket, _a1 error) *MockR
 	return _c
 }
 
-func (_c *MockRepository_Trend_Call) RunAndReturn(run func(context.Context, uint, *uint, time.Time, time.Time, Granularity) ([]TrendBucket, error)) *MockRepository_Trend_Call {
+func (_c *MockRepository_Trend_Call) RunAndReturn(run func(context.Context, uint, *uint, time.Time, time.Time, Granularity, string) ([]TrendBucket, error)) *MockRepository_Trend_Call {
 	_c.Call.Return(run)
 	return _c
 }

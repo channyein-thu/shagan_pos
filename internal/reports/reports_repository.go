@@ -35,12 +35,15 @@ type Repository interface {
 	// branchID, within [from, to).
 	ReturnsTotal(ctx context.Context, orgID uint, branchID *uint, from, to time.Time) (decimal.Decimal, error)
 	// HourlyTrend backs GetTodayReport only - Gross-Discounts bucketed by
-	// hour of day (as "HH:00"), for the single day [dayStart, dayEnd).
-	HourlyTrend(ctx context.Context, orgID uint, branchID *uint, dayStart, dayEnd time.Time) ([]TrendBucket, error)
+	// hour of day (as "HH:00"), for the single day [dayStart, dayEnd). The
+	// hour is the org's local hour: buckets are cut in timezone (an IANA
+	// name), not in the database session's zone.
+	HourlyTrend(ctx context.Context, orgID uint, branchID *uint, dayStart, dayEnd time.Time, timezone string) ([]TrendBucket, error)
 	// Trend backs GetRevenueTrend/GetSalesTrend - Gross-Discounts and count
 	// bucketed by granularity (day/week/month, as "YYYY-MM-DD") across
-	// [from, to).
-	Trend(ctx context.Context, orgID uint, branchID *uint, from, to time.Time, granularity Granularity) ([]TrendBucket, error)
+	// [from, to). Day/week/month boundaries are the org's local ones: buckets
+	// are cut in timezone (an IANA name), not in the database session's zone.
+	Trend(ctx context.Context, orgID uint, branchID *uint, from, to time.Time, granularity Granularity, timezone string) ([]TrendBucket, error)
 	// BranchBreakdown backs SalesSummary.ByBranch - Gross-Discounts grouped
 	// by branch. A branch-scoped caller gets back exactly one row (its own).
 	BranchBreakdown(ctx context.Context, orgID uint, branchID *uint, from, to time.Time) ([]BranchBreakdown, error)
@@ -81,6 +84,9 @@ type Repository interface {
 	// Expenses backs GetProfitAndLoss - Σ Expense.Amount for branchIDs
 	// (already resolved by the service to the caller's own org, or one
 	// verified branch - shift.Expense carries no OrgID of its own, only
-	// BranchID) within [from, to), by Expense's own Date field.
+	// BranchID) within [from, to), by Expense's own Date field. from/to are
+	// calendar dates (only their Y/M/D is used), because Expense.Date is a
+	// plain DATE, not an instant - the service converts the org-local
+	// window's bounds with calendarDate.
 	Expenses(ctx context.Context, branchIDs []uint, from, to time.Time) (decimal.Decimal, error)
 }

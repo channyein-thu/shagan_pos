@@ -11,6 +11,7 @@ import (
 	"shagan_pos/internal/audit"
 	"shagan_pos/internal/catalog"
 	"shagan_pos/internal/common"
+	"shagan_pos/internal/identity"
 	"shagan_pos/internal/inventory"
 	"shagan_pos/internal/middleware"
 	"shagan_pos/internal/sales"
@@ -22,7 +23,7 @@ type SalesAPI struct {
 }
 
 func NewSalesAPI(db *gorm.DB, jwtSecret []byte) *SalesAPI {
-	return &SalesAPI{service: sales.NewService(sales.NewRepository(db), inventory.NewRepository(db), catalog.NewRepository(db), audit.NewRepository(db), db), jwtSecret: jwtSecret}
+	return &SalesAPI{service: sales.NewService(sales.NewRepository(db), inventory.NewRepository(db), catalog.NewRepository(db), audit.NewRepository(db), identity.NewRepository(db), db), jwtSecret: jwtSecret}
 }
 
 // requireBranchID reads the calling pos-device's branch from its access

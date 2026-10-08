@@ -82,6 +82,65 @@ func (_c *MockBranchLookup_GetBranch_Call) RunAndReturn(run func(context.Context
 	return _c
 }
 
+// GetOrganization provides a mock function with given fields: ctx, id
+func (_m *MockBranchLookup) GetOrganization(ctx context.Context, id uint) (*identity.Organization, error) {
+	ret := _m.Called(ctx, id)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetOrganization")
+	}
+
+	var r0 *identity.Organization
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, uint) (*identity.Organization, error)); ok {
+		return rf(ctx, id)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, uint) *identity.Organization); ok {
+		r0 = rf(ctx, id)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*identity.Organization)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, uint) error); ok {
+		r1 = rf(ctx, id)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// MockBranchLookup_GetOrganization_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetOrganization'
+type MockBranchLookup_GetOrganization_Call struct {
+	*mock.Call
+}
+
+// GetOrganization is a helper method to define mock.On call
+//   - ctx context.Context
+//   - id uint
+func (_e *MockBranchLookup_Expecter) GetOrganization(ctx interface{}, id interface{}) *MockBranchLookup_GetOrganization_Call {
+	return &MockBranchLookup_GetOrganization_Call{Call: _e.mock.On("GetOrganization", ctx, id)}
+}
+
+func (_c *MockBranchLookup_GetOrganization_Call) Run(run func(ctx context.Context, id uint)) *MockBranchLookup_GetOrganization_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(uint))
+	})
+	return _c
+}
+
+func (_c *MockBranchLookup_GetOrganization_Call) Return(_a0 *identity.Organization, _a1 error) *MockBranchLookup_GetOrganization_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *MockBranchLookup_GetOrganization_Call) RunAndReturn(run func(context.Context, uint) (*identity.Organization, error)) *MockBranchLookup_GetOrganization_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // ListBranches provides a mock function with given fields: ctx, orgID
 func (_m *MockBranchLookup) ListBranches(ctx context.Context, orgID uint) ([]identity.Branch, error) {
 	ret := _m.Called(ctx, orgID)

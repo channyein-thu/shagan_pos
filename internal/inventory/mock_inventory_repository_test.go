@@ -618,6 +618,65 @@ func (_c *MockRepository_ListStockTransferItems_Call) RunAndReturn(run func(*gor
 	return _c
 }
 
+// ListStockTransferItemsByTransferIDs provides a mock function with given fields: ctx, transferIDs
+func (_m *MockRepository) ListStockTransferItemsByTransferIDs(ctx context.Context, transferIDs []uint) ([]StockTransferItem, error) {
+	ret := _m.Called(ctx, transferIDs)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListStockTransferItemsByTransferIDs")
+	}
+
+	var r0 []StockTransferItem
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, []uint) ([]StockTransferItem, error)); ok {
+		return rf(ctx, transferIDs)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, []uint) []StockTransferItem); ok {
+		r0 = rf(ctx, transferIDs)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]StockTransferItem)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, []uint) error); ok {
+		r1 = rf(ctx, transferIDs)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// MockRepository_ListStockTransferItemsByTransferIDs_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListStockTransferItemsByTransferIDs'
+type MockRepository_ListStockTransferItemsByTransferIDs_Call struct {
+	*mock.Call
+}
+
+// ListStockTransferItemsByTransferIDs is a helper method to define mock.On call
+//   - ctx context.Context
+//   - transferIDs []uint
+func (_e *MockRepository_Expecter) ListStockTransferItemsByTransferIDs(ctx interface{}, transferIDs interface{}) *MockRepository_ListStockTransferItemsByTransferIDs_Call {
+	return &MockRepository_ListStockTransferItemsByTransferIDs_Call{Call: _e.mock.On("ListStockTransferItemsByTransferIDs", ctx, transferIDs)}
+}
+
+func (_c *MockRepository_ListStockTransferItemsByTransferIDs_Call) Run(run func(ctx context.Context, transferIDs []uint)) *MockRepository_ListStockTransferItemsByTransferIDs_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].([]uint))
+	})
+	return _c
+}
+
+func (_c *MockRepository_ListStockTransferItemsByTransferIDs_Call) Return(_a0 []StockTransferItem, _a1 error) *MockRepository_ListStockTransferItemsByTransferIDs_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *MockRepository_ListStockTransferItemsByTransferIDs_Call) RunAndReturn(run func(context.Context, []uint) ([]StockTransferItem, error)) *MockRepository_ListStockTransferItemsByTransferIDs_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // ListStockTransfers provides a mock function with given fields: ctx, branchIDs
 func (_m *MockRepository) ListStockTransfers(ctx context.Context, branchIDs []uint) ([]StockTransfer, error) {
 	ret := _m.Called(ctx, branchIDs)

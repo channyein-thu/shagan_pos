@@ -73,6 +73,10 @@ type Repository interface {
 	// same db-is-either-plain-or-in-flight-transaction reasoning as
 	// GetStockLevel.
 	GetStockTransfer(db *gorm.DB, branchIDs []uint, id uint, lock bool) (*StockTransfer, error)
+	// ListStockTransferItemsByTransferIDs backs ListStockTransfers' line
+	// items - one query across every transfer on the page, ordered by id so
+	// a transfer's lines come back in the order they were created.
+	ListStockTransferItemsByTransferIDs(ctx context.Context, transferIDs []uint) ([]StockTransferItem, error)
 	// ListStockTransferItems backs the completing-a-transfer path - the
 	// line items to actually move. Same db reasoning as GetStockTransfer.
 	ListStockTransferItems(db *gorm.DB, transferID uint) ([]StockTransferItem, error)

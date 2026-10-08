@@ -1014,6 +1014,65 @@ func (_c *MockRepository_ListDevices_Call) RunAndReturn(run func(context.Context
 	return _c
 }
 
+// ListOrgWideAccounts provides a mock function with given fields: ctx, orgID
+func (_m *MockRepository) ListOrgWideAccounts(ctx context.Context, orgID uint) ([]User, error) {
+	ret := _m.Called(ctx, orgID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListOrgWideAccounts")
+	}
+
+	var r0 []User
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, uint) ([]User, error)); ok {
+		return rf(ctx, orgID)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, uint) []User); ok {
+		r0 = rf(ctx, orgID)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]User)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, uint) error); ok {
+		r1 = rf(ctx, orgID)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// MockRepository_ListOrgWideAccounts_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListOrgWideAccounts'
+type MockRepository_ListOrgWideAccounts_Call struct {
+	*mock.Call
+}
+
+// ListOrgWideAccounts is a helper method to define mock.On call
+//   - ctx context.Context
+//   - orgID uint
+func (_e *MockRepository_Expecter) ListOrgWideAccounts(ctx interface{}, orgID interface{}) *MockRepository_ListOrgWideAccounts_Call {
+	return &MockRepository_ListOrgWideAccounts_Call{Call: _e.mock.On("ListOrgWideAccounts", ctx, orgID)}
+}
+
+func (_c *MockRepository_ListOrgWideAccounts_Call) Run(run func(ctx context.Context, orgID uint)) *MockRepository_ListOrgWideAccounts_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(uint))
+	})
+	return _c
+}
+
+func (_c *MockRepository_ListOrgWideAccounts_Call) Return(_a0 []User, _a1 error) *MockRepository_ListOrgWideAccounts_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *MockRepository_ListOrgWideAccounts_Call) RunAndReturn(run func(context.Context, uint) ([]User, error)) *MockRepository_ListOrgWideAccounts_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // ListOrganizations provides a mock function with given fields: ctx
 func (_m *MockRepository) ListOrganizations(ctx context.Context) ([]Organization, error) {
 	ret := _m.Called(ctx)
@@ -1366,6 +1425,54 @@ func (_c *MockRepository_ListStaff_Call) RunAndReturn(run func(context.Context, 
 	return _c
 }
 
+// ResetOrgWideAccountPassword provides a mock function with given fields: ctx, id, credentialHash
+func (_m *MockRepository) ResetOrgWideAccountPassword(ctx context.Context, id uint, credentialHash string) error {
+	ret := _m.Called(ctx, id, credentialHash)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ResetOrgWideAccountPassword")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, uint, string) error); ok {
+		r0 = rf(ctx, id, credentialHash)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// MockRepository_ResetOrgWideAccountPassword_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ResetOrgWideAccountPassword'
+type MockRepository_ResetOrgWideAccountPassword_Call struct {
+	*mock.Call
+}
+
+// ResetOrgWideAccountPassword is a helper method to define mock.On call
+//   - ctx context.Context
+//   - id uint
+//   - credentialHash string
+func (_e *MockRepository_Expecter) ResetOrgWideAccountPassword(ctx interface{}, id interface{}, credentialHash interface{}) *MockRepository_ResetOrgWideAccountPassword_Call {
+	return &MockRepository_ResetOrgWideAccountPassword_Call{Call: _e.mock.On("ResetOrgWideAccountPassword", ctx, id, credentialHash)}
+}
+
+func (_c *MockRepository_ResetOrgWideAccountPassword_Call) Run(run func(ctx context.Context, id uint, credentialHash string)) *MockRepository_ResetOrgWideAccountPassword_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(uint), args[2].(string))
+	})
+	return _c
+}
+
+func (_c *MockRepository_ResetOrgWideAccountPassword_Call) Return(_a0 error) *MockRepository_ResetOrgWideAccountPassword_Call {
+	_c.Call.Return(_a0)
+	return _c
+}
+
+func (_c *MockRepository_ResetOrgWideAccountPassword_Call) RunAndReturn(run func(context.Context, uint, string) error) *MockRepository_ResetOrgWideAccountPassword_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // ResetPosAccountPassword provides a mock function with given fields: ctx, id, credentialHash
 func (_m *MockRepository) ResetPosAccountPassword(ctx context.Context, id uint, credentialHash string) error {
 	ret := _m.Called(ctx, id, credentialHash)
@@ -1522,6 +1629,54 @@ func (_c *MockRepository_UpdateBranch_Call) RunAndReturn(run func(context.Contex
 	return _c
 }
 
+// UpdateBranchStatusInternal provides a mock function with given fields: ctx, id, status
+func (_m *MockRepository) UpdateBranchStatusInternal(ctx context.Context, id uint, status BranchStatus) error {
+	ret := _m.Called(ctx, id, status)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateBranchStatusInternal")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, uint, BranchStatus) error); ok {
+		r0 = rf(ctx, id, status)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// MockRepository_UpdateBranchStatusInternal_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdateBranchStatusInternal'
+type MockRepository_UpdateBranchStatusInternal_Call struct {
+	*mock.Call
+}
+
+// UpdateBranchStatusInternal is a helper method to define mock.On call
+//   - ctx context.Context
+//   - id uint
+//   - status BranchStatus
+func (_e *MockRepository_Expecter) UpdateBranchStatusInternal(ctx interface{}, id interface{}, status interface{}) *MockRepository_UpdateBranchStatusInternal_Call {
+	return &MockRepository_UpdateBranchStatusInternal_Call{Call: _e.mock.On("UpdateBranchStatusInternal", ctx, id, status)}
+}
+
+func (_c *MockRepository_UpdateBranchStatusInternal_Call) Run(run func(ctx context.Context, id uint, status BranchStatus)) *MockRepository_UpdateBranchStatusInternal_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(uint), args[2].(BranchStatus))
+	})
+	return _c
+}
+
+func (_c *MockRepository_UpdateBranchStatusInternal_Call) Return(_a0 error) *MockRepository_UpdateBranchStatusInternal_Call {
+	_c.Call.Return(_a0)
+	return _c
+}
+
+func (_c *MockRepository_UpdateBranchStatusInternal_Call) RunAndReturn(run func(context.Context, uint, BranchStatus) error) *MockRepository_UpdateBranchStatusInternal_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // UpdateDevice provides a mock function with given fields: ctx, orgID, id, in
 func (_m *MockRepository) UpdateDevice(ctx context.Context, orgID uint, id uint, in UpdateDeviceRequest) (*Device, error) {
 	ret := _m.Called(ctx, orgID, id, in)
@@ -1579,6 +1734,54 @@ func (_c *MockRepository_UpdateDevice_Call) Return(_a0 *Device, _a1 error) *Mock
 }
 
 func (_c *MockRepository_UpdateDevice_Call) RunAndReturn(run func(context.Context, uint, uint, UpdateDeviceRequest) (*Device, error)) *MockRepository_UpdateDevice_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// UpdateDeviceStatusInternal provides a mock function with given fields: ctx, id, status
+func (_m *MockRepository) UpdateDeviceStatusInternal(ctx context.Context, id uint, status DeviceStatus) error {
+	ret := _m.Called(ctx, id, status)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateDeviceStatusInternal")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, uint, DeviceStatus) error); ok {
+		r0 = rf(ctx, id, status)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// MockRepository_UpdateDeviceStatusInternal_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdateDeviceStatusInternal'
+type MockRepository_UpdateDeviceStatusInternal_Call struct {
+	*mock.Call
+}
+
+// UpdateDeviceStatusInternal is a helper method to define mock.On call
+//   - ctx context.Context
+//   - id uint
+//   - status DeviceStatus
+func (_e *MockRepository_Expecter) UpdateDeviceStatusInternal(ctx interface{}, id interface{}, status interface{}) *MockRepository_UpdateDeviceStatusInternal_Call {
+	return &MockRepository_UpdateDeviceStatusInternal_Call{Call: _e.mock.On("UpdateDeviceStatusInternal", ctx, id, status)}
+}
+
+func (_c *MockRepository_UpdateDeviceStatusInternal_Call) Run(run func(ctx context.Context, id uint, status DeviceStatus)) *MockRepository_UpdateDeviceStatusInternal_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(uint), args[2].(DeviceStatus))
+	})
+	return _c
+}
+
+func (_c *MockRepository_UpdateDeviceStatusInternal_Call) Return(_a0 error) *MockRepository_UpdateDeviceStatusInternal_Call {
+	_c.Call.Return(_a0)
+	return _c
+}
+
+func (_c *MockRepository_UpdateDeviceStatusInternal_Call) RunAndReturn(run func(context.Context, uint, DeviceStatus) error) *MockRepository_UpdateDeviceStatusInternal_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -1687,6 +1890,54 @@ func (_c *MockRepository_UpdateOrganizationStatus_Call) Return(_a0 error) *MockR
 }
 
 func (_c *MockRepository_UpdateOrganizationStatus_Call) RunAndReturn(run func(context.Context, uint, OrganizationStatus) error) *MockRepository_UpdateOrganizationStatus_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// UpdateOrganizationTimezone provides a mock function with given fields: ctx, id, timezone
+func (_m *MockRepository) UpdateOrganizationTimezone(ctx context.Context, id uint, timezone string) error {
+	ret := _m.Called(ctx, id, timezone)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateOrganizationTimezone")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, uint, string) error); ok {
+		r0 = rf(ctx, id, timezone)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// MockRepository_UpdateOrganizationTimezone_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdateOrganizationTimezone'
+type MockRepository_UpdateOrganizationTimezone_Call struct {
+	*mock.Call
+}
+
+// UpdateOrganizationTimezone is a helper method to define mock.On call
+//   - ctx context.Context
+//   - id uint
+//   - timezone string
+func (_e *MockRepository_Expecter) UpdateOrganizationTimezone(ctx interface{}, id interface{}, timezone interface{}) *MockRepository_UpdateOrganizationTimezone_Call {
+	return &MockRepository_UpdateOrganizationTimezone_Call{Call: _e.mock.On("UpdateOrganizationTimezone", ctx, id, timezone)}
+}
+
+func (_c *MockRepository_UpdateOrganizationTimezone_Call) Run(run func(ctx context.Context, id uint, timezone string)) *MockRepository_UpdateOrganizationTimezone_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(uint), args[2].(string))
+	})
+	return _c
+}
+
+func (_c *MockRepository_UpdateOrganizationTimezone_Call) Return(_a0 error) *MockRepository_UpdateOrganizationTimezone_Call {
+	_c.Call.Return(_a0)
+	return _c
+}
+
+func (_c *MockRepository_UpdateOrganizationTimezone_Call) RunAndReturn(run func(context.Context, uint, string) error) *MockRepository_UpdateOrganizationTimezone_Call {
 	_c.Call.Return(run)
 	return _c
 }

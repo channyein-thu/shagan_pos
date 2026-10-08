@@ -83,6 +83,7 @@ func TestService_ListCombos_DelegatesToRepository(t *testing.T) {
 
 	combos := []Combo{{ID: 1, OrgID: 7, Name: "Breakfast Combo"}, {ID: 2, OrgID: 7, Name: "Lunch Combo"}}
 	repo.EXPECT().ListCombos(mock.Anything, uint(7)).Return(combos, nil).Once()
+	repo.EXPECT().ListComboItemsByComboIDs(mock.Anything, []uint{1, 2}).Return(nil, nil).Once()
 	repo.EXPECT().ListComboImagesByComboIDs(mock.Anything, []uint{1, 2}).Return(nil, nil).Once()
 
 	got, err := svc.ListCombos(context.Background(), 7)
@@ -94,6 +95,43 @@ func TestService_ListCombos_DelegatesToRepository(t *testing.T) {
 	require.Empty(t, got[1].Images)
 }
 
+// backend-recommendations #3: a till can't expand a combo into per-product
+// sale lines without the component list.
+func TestService_ListCombos_AttachesComponentItemsPerCombo(t *testing.T) {
+	repo := NewMockRepository(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, fakeTransactioner{}, store)
+
+	combos := []Combo{{ID: 1, OrgID: 7, Name: "Breakfast"}, {ID: 2, OrgID: 7, Name: "Lunch"}, {ID: 3, OrgID: 7, Name: "Legacy, no rows"}}
+	// One query for every combo, not one per combo.
+	repo.EXPECT().ListComboItemsByComboIDs(mock.Anything, []uint{1, 2, 3}).Return([]ComboItem{
+		{ID: 10, ComboID: 1, ProductID: 5, Qty: 1},
+		{ID: 11, ComboID: 1, ProductID: 6, Qty: 2},
+		{ID: 12, ComboID: 2, ProductID: 7, Qty: 3},
+	}, nil).Once()
+	repo.EXPECT().ListComboImagesByComboIDs(mock.Anything, []uint{1, 2, 3}).Return(nil, nil).Once()
+	repo.EXPECT().ListCombos(mock.Anything, uint(7)).Return(combos, nil).Once()
+
+	got, err := svc.ListCombos(context.Background(), 7)
+	require.NoError(t, err)
+	require.Equal(t, []ComboItemResult{{ProductID: 5, Qty: 1}, {ProductID: 6, Qty: 2}}, got[0].Items)
+	require.Equal(t, []ComboItemResult{{ProductID: 7, Qty: 3}}, got[1].Items)
+	require.Equal(t, []ComboItemResult{}, got[2].Items, "never null, even for a combo with no item rows")
+}
+
+func TestService_ListCombos_ItemsLookupFails_PropagatesBeforeImages(t *testing.T) {
+	repo := NewMockRepository(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, fakeTransactioner{}, store)
+
+	wantErr := common.SystemError("db read failed")
+	repo.EXPECT().ListCombos(mock.Anything, uint(7)).Return([]Combo{{ID: 1, OrgID: 7}}, nil).Once()
+	repo.EXPECT().ListComboItemsByComboIDs(mock.Anything, []uint{1}).Return(nil, wantErr).Once()
+
+	_, err := svc.ListCombos(context.Background(), 7)
+	requireRestErrorStatus(t, err, http.StatusInternalServerError)
+}
+
 func TestService_ListCombos_AttachesImagesWithPresignedURLs(t *testing.T) {
 	repo := NewMockRepository(t)
 	store := NewMockStorage(t)
@@ -102,6 +140,7 @@ func TestService_ListCombos_AttachesImagesWithPresignedURLs(t *testing.T) {
 	combos := []Combo{{ID: 1, OrgID: 7, Name: "Breakfast Combo"}}
 	images := []ComboImage{{ID: 10, ComboID: 1, StorageKey: "combos/1/photo.png", Width: 2, Height: 3}}
 	repo.EXPECT().ListCombos(mock.Anything, uint(7)).Return(combos, nil).Once()
+	repo.EXPECT().ListComboItemsByComboIDs(mock.Anything, []uint{1}).Return(nil, nil).Once()
 	repo.EXPECT().ListComboImagesByComboIDs(mock.Anything, []uint{1}).Return(images, nil).Once()
 	store.EXPECT().
 		PresignedURL(mock.Anything, "combos/1/photo.png", DefaultImageURLTTL).
@@ -123,6 +162,7 @@ func TestService_ListCombos_PresignedURLFails_ReturnsSystemError(t *testing.T) {
 	combos := []Combo{{ID: 1, OrgID: 7, Name: "Breakfast Combo"}}
 	images := []ComboImage{{ID: 10, ComboID: 1, StorageKey: "combos/1/photo.png"}}
 	repo.EXPECT().ListCombos(mock.Anything, uint(7)).Return(combos, nil).Once()
+	repo.EXPECT().ListComboItemsByComboIDs(mock.Anything, []uint{1}).Return(nil, nil).Once()
 	repo.EXPECT().ListComboImagesByComboIDs(mock.Anything, []uint{1}).Return(images, nil).Once()
 	store.EXPECT().
 		PresignedURL(mock.Anything, "combos/1/photo.png", DefaultImageURLTTL).
@@ -989,6 +1029,7 @@ func TestService_DeleteProduct_HappyPath_DeletesProductAndImages(t *testing.T) {
 
 	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(existing, nil).Once()
 	repo.EXPECT().ComboItemsExistForProduct(mock.Anything, uint(1)).Return(false, nil).Once()
+	repo.EXPECT().ProductHasHistory(mock.Anything, uint(1)).Return(false, nil).Once()
 	repo.EXPECT().ListProductImagesByProductIDs(mock.Anything, []uint{1}).Return(images, nil).Once()
 	repo.EXPECT().DeleteProductImagesByProductID(mock.Anything, uint(1)).Return(nil).Once()
 	repo.EXPECT().DeleteProduct(mock.Anything, uint(1)).Return(nil).Once()
@@ -1017,6 +1058,40 @@ func TestService_DeleteProduct_InUseByCombo_ReturnsConflict(t *testing.T) {
 	requireRestErrorStatus(t, err, http.StatusConflict)
 }
 
+// backend-recommendations #14: sale lines, stock, ledger and PO lines carry
+// no FK to products, so a hard delete would orphan them - block it (409).
+func TestService_DeleteProduct_WithHistory_ReturnsConflictAndDeletesNothing(t *testing.T) {
+	repo := NewMockRepository(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, fakeTransactioner{}, store)
+
+	existing := &Product{ID: 1, OrgID: 7}
+	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(existing, nil).Once()
+	repo.EXPECT().ComboItemsExistForProduct(mock.Anything, uint(1)).Return(false, nil).Once()
+	repo.EXPECT().ProductHasHistory(mock.Anything, uint(1)).Return(true, nil).Once()
+	// No image lookup, DB delete or storage delete: nothing may be touched.
+
+	err := svc.DeleteProduct(context.Background(), 7, 1)
+	require.Error(t, err)
+	requireRestErrorStatus(t, err, http.StatusConflict)
+	require.Contains(t, err.Error(), "is_active", "the error must point at the alternative")
+}
+
+func TestService_DeleteProduct_HistoryCheckFails_PropagatesWithoutDeleting(t *testing.T) {
+	repo := NewMockRepository(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, fakeTransactioner{}, store)
+
+	existing := &Product{ID: 1, OrgID: 7}
+	dbErr := errors.New("db read failed")
+	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(existing, nil).Once()
+	repo.EXPECT().ComboItemsExistForProduct(mock.Anything, uint(1)).Return(false, nil).Once()
+	repo.EXPECT().ProductHasHistory(mock.Anything, uint(1)).Return(false, dbErr).Once()
+
+	err := svc.DeleteProduct(context.Background(), 7, 1)
+	require.ErrorIs(t, err, dbErr)
+}
+
 func TestService_DeleteProduct_PropagatesNotFound(t *testing.T) {
 	repo := NewMockRepository(t)
 	store := NewMockStorage(t)
@@ -1040,6 +1115,7 @@ func TestService_DeleteProduct_RepositoryDeleteFails_PropagatesAsIs(t *testing.T
 	existing := &Product{ID: 1, OrgID: 7}
 	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(existing, nil).Once()
 	repo.EXPECT().ComboItemsExistForProduct(mock.Anything, uint(1)).Return(false, nil).Once()
+	repo.EXPECT().ProductHasHistory(mock.Anything, uint(1)).Return(false, nil).Once()
 	repo.EXPECT().ListProductImagesByProductIDs(mock.Anything, []uint{1}).Return(nil, nil).Once()
 	repo.EXPECT().DeleteProductImagesByProductID(mock.Anything, uint(1)).Return(nil).Once()
 	dbErr := errors.New("db write failed")

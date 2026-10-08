@@ -92,6 +92,58 @@ func TestService_CreateAccount_HashesPasswordBeforePersisting(t *testing.T) {
 	require.Equal(t, uint(11), result.ServiceCenter.ID)
 }
 
+func TestService_CreateAccount_Timezone_DefaultsToYangonAndRejectsUnknownZones(t *testing.T) {
+	baseIn := func(tz string) CreateAccountInput {
+		return CreateAccountInput{
+			OrganizationName: "Acme", OwnerEmail: "o@acme.test", OwnerPassword: "correct horse battery",
+			ServiceCenterEmail: "sc@acme.test", ServiceCenterPassword: "another strong password", Timezone: tz,
+		}
+	}
+	create := func(t *testing.T, tz string) string {
+		repo := NewMockRepository(t)
+		svc := newTestService(repo, NewMockAuditWriter(t))
+		var stored string
+		repo.EXPECT().CreateOrganization(mock.Anything, mock.Anything).
+			Run(func(_ *gorm.DB, org *Organization) { org.ID = 1; stored = org.Timezone }).Return(nil).Once()
+		repo.EXPECT().CreateUser(mock.Anything, mock.Anything).Run(func(_ *gorm.DB, u *User) { u.ID = 10 }).Return(nil).Twice()
+		_, err := svc.CreateAccount(context.Background(), baseIn(tz))
+		require.NoError(t, err)
+		return stored
+	}
+
+	t.Run("omitted -> Asia/Yangon", func(t *testing.T) { require.Equal(t, "Asia/Yangon", create(t, "")) })
+	t.Run("a real zone is stored as given", func(t *testing.T) { require.Equal(t, "Asia/Bangkok", create(t, "Asia/Bangkok")) })
+	t.Run("an unknown zone is a 400 and creates nothing", func(t *testing.T) {
+		repo := NewMockRepository(t) // no expectations: nothing may be written
+		svc := newTestService(repo, NewMockAuditWriter(t))
+		_, err := svc.CreateAccount(context.Background(), baseIn("Mars/Olympus"))
+		requireRestErrorStatus(t, err, http.StatusBadRequest)
+	})
+}
+
+func TestService_UpdateOrganizationTimezone(t *testing.T) {
+	t.Run("valid zone is written after confirming the org exists", func(t *testing.T) {
+		repo := NewMockRepository(t)
+		svc := newTestService(repo, NewMockAuditWriter(t))
+		repo.EXPECT().GetOrganization(mock.Anything, uint(3)).Return(&Organization{ID: 3}, nil).Once()
+		repo.EXPECT().UpdateOrganizationTimezone(mock.Anything, uint(3), "Asia/Bangkok").Return(nil).Once()
+		require.NoError(t, svc.UpdateOrganizationTimezone(context.Background(), 3, "Asia/Bangkok"))
+	})
+	t.Run("unknown zone -> 400, no lookup or write", func(t *testing.T) {
+		repo := NewMockRepository(t)
+		svc := newTestService(repo, NewMockAuditWriter(t))
+		err := svc.UpdateOrganizationTimezone(context.Background(), 3, "Not/AZone")
+		requireRestErrorStatus(t, err, http.StatusBadRequest)
+	})
+	t.Run("unknown org -> 404, nothing written", func(t *testing.T) {
+		repo := NewMockRepository(t)
+		svc := newTestService(repo, NewMockAuditWriter(t))
+		repo.EXPECT().GetOrganization(mock.Anything, uint(99)).Return(nil, common.NotFoundError("organization not found")).Once()
+		err := svc.UpdateOrganizationTimezone(context.Background(), 99, "Asia/Bangkok")
+		requireRestErrorStatus(t, err, http.StatusNotFound)
+	})
+}
+
 func TestService_CreateAccount_OwnerCreationFails_RollsBackAndNeverCreatesServiceCenter(t *testing.T) {
 	repo := NewMockRepository(t)
 	audW := NewMockAuditWriter(t)
@@ -298,6 +350,73 @@ func TestService_ResetPosAccountPassword_PropagatesNotFound(t *testing.T) {
 	err := svc.ResetPosAccountPassword(context.Background(), 999, "whatever-password")
 	require.Error(t, err)
 	requireRestErrorStatus(t, err, http.StatusNotFound)
+}
+
+func TestService_ResetOrgWideAccountPassword_HashesPasswordBeforePersisting(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo, NewMockAuditWriter(t))
+
+	const plaintext = "a-brand-new-owner-password"
+	repo.EXPECT().
+		ResetOrgWideAccountPassword(mock.Anything, uint(5), mock.MatchedBy(func(hash string) bool {
+			return hash != plaintext && bcrypt.CompareHashAndPassword([]byte(hash), []byte(plaintext)) == nil
+		})).
+		Return(nil).Once()
+
+	require.NoError(t, svc.ResetOrgWideAccountPassword(context.Background(), 5, plaintext))
+}
+
+func TestService_ResetOrgWideAccountPassword_PropagatesNotFound(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo, NewMockAuditWriter(t))
+
+	repo.EXPECT().ResetOrgWideAccountPassword(mock.Anything, uint(999), mock.Anything).
+		Return(common.NotFoundError("account not found")).Once()
+
+	err := svc.ResetOrgWideAccountPassword(context.Background(), 999, "whatever-password")
+	requireRestErrorStatus(t, err, http.StatusNotFound)
+}
+
+func TestService_GetOrganization_Delegates(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo, NewMockAuditWriter(t))
+
+	want := &Organization{ID: 3, Name: "Acme", Timezone: "Asia/Yangon"}
+	repo.EXPECT().GetOrganization(mock.Anything, uint(3)).Return(want, nil).Once()
+	got, err := svc.GetOrganization(context.Background(), 3)
+	require.NoError(t, err)
+	require.Same(t, want, got)
+
+	repo.EXPECT().GetOrganization(mock.Anything, uint(99)).Return(nil, common.NotFoundError("organization not found")).Once()
+	_, err = svc.GetOrganization(context.Background(), 99)
+	requireRestErrorStatus(t, err, http.StatusNotFound)
+}
+
+func TestService_ListOrgWideAccounts_Delegates(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo, NewMockAuditWriter(t))
+
+	want := []User{{ID: 1, OrgID: 7, AccountType: AccountTypeOwner}, {ID: 2, OrgID: 7, AccountType: AccountTypeServiceCenter}}
+	repo.EXPECT().ListOrgWideAccounts(mock.Anything, uint(7)).Return(want, nil).Once()
+
+	got, err := svc.ListOrgWideAccounts(context.Background(), 7)
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+}
+
+func TestService_UpdateBranchAndDeviceStatus_DelegateAndPropagateNotFound(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo, NewMockAuditWriter(t))
+
+	repo.EXPECT().UpdateBranchStatusInternal(mock.Anything, uint(1), BranchStatusInactive).Return(nil).Once()
+	require.NoError(t, svc.UpdateBranchStatus(context.Background(), 1, BranchStatusInactive))
+	repo.EXPECT().UpdateBranchStatusInternal(mock.Anything, uint(9), BranchStatusActive).Return(common.NotFoundError("branch not found")).Once()
+	requireRestErrorStatus(t, svc.UpdateBranchStatus(context.Background(), 9, BranchStatusActive), http.StatusNotFound)
+
+	repo.EXPECT().UpdateDeviceStatusInternal(mock.Anything, uint(2), DeviceStatusRevoked).Return(nil).Once()
+	require.NoError(t, svc.UpdateDeviceStatus(context.Background(), 2, DeviceStatusRevoked))
+	repo.EXPECT().UpdateDeviceStatusInternal(mock.Anything, uint(9), DeviceStatusActive).Return(common.NotFoundError("device not found")).Once()
+	requireRestErrorStatus(t, svc.UpdateDeviceStatus(context.Background(), 9, DeviceStatusActive), http.StatusNotFound)
 }
 
 func hashPassword(t *testing.T, plaintext string) string {

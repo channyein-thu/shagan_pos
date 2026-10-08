@@ -9,6 +9,7 @@ import (
 
 	"shagan_pos/internal/audit"
 	"shagan_pos/internal/catalog"
+	"shagan_pos/internal/identity"
 	"shagan_pos/internal/inventory"
 )
 
@@ -38,6 +39,14 @@ type InventoryWriter interface {
 // needed.
 type AuditWriter interface {
 	CreateAuditLog(db *gorm.DB, entry *audit.AuditLog) error
+}
+
+// OrganizationLookup is what sales needs from identity: the org's timezone,
+// which defines the calendar day behind ListSales' from/to dates. Only read
+// when a date bound is actually supplied. identity.Repository already
+// satisfies this signature - no adapter needed.
+type OrganizationLookup interface {
+	GetOrganization(ctx context.Context, id uint) (*identity.Organization, error)
 }
 
 // SaleActor identifies the authenticated staff member ringing up a sale
@@ -89,7 +98,8 @@ type Interface interface {
 	// ListSales is `GET /sales`: a page of sales, newest first, each with
 	// the payment methods used. branchID narrows to one branch (the handler
 	// forces a branch-bound token's own branch); from/to are inclusive
-	// calendar dates (UTC, like reports) and either may be nil for no bound -
+	// calendar dates in the org's own timezone (like the reports) and either
+	// may be nil for no bound -
 	// unlike the reports, no default window, so an unfiltered call is the
 	// whole history, paged. page/pageSize follow reports' convention
 	// (default 20, max 100).

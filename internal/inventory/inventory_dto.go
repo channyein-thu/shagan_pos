@@ -37,10 +37,28 @@ type CreateStockTransferItemRequest struct {
 // UpdateStockTransfer. ActorID isn't here either - it's the authenticated
 // caller's own user ID, never client input. Items must contain at least one
 // entry - a transfer moving nothing isn't meaningful.
+// Note is optional free text (why the stock is moving), at most 500
+// characters after trimming.
 type CreateStockTransferRequest struct {
 	FromBranch uint                             `json:"from_branch" binding:"required"`
 	ToBranch   uint                             `json:"to_branch" binding:"required"`
+	Note       string                           `json:"note" binding:"max=500"`
 	Items      []CreateStockTransferItemRequest `json:"items" binding:"required,min=1,dive"`
+}
+
+// StockTransferItemResult is one product line of a transfer as returned to
+// clients - just what a list screen needs to show what's being moved, not
+// the StockTransferItem row's own id/transfer_id.
+type StockTransferItemResult struct {
+	ProductID uint `json:"product_id"`
+	Qty       int  `json:"qty"`
+}
+
+// StockTransferResult is what the transfer endpoints return: the transfer
+// plus its lines. Items is never null.
+type StockTransferResult struct {
+	StockTransfer
+	Items []StockTransferItemResult `json:"items"`
 }
 
 // UpdateStockTransferRequest is the request body for `PATCH

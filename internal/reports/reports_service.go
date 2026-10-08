@@ -17,6 +17,9 @@ import (
 type BranchLookup interface {
 	GetBranch(ctx context.Context, orgID uint, id uint) (*identity.Branch, error)
 	ListBranches(ctx context.Context, orgID uint) ([]identity.Branch, error)
+	// GetOrganization supplies the org's Timezone, which defines its
+	// calendar day for every date-based figure here.
+	GetOrganization(ctx context.Context, id uint) (*identity.Organization, error)
 }
 
 // Interface defines the reports domain's use cases. Every method (other

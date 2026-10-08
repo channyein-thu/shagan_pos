@@ -33,9 +33,24 @@ func d(s string) decimal.Decimal {
 
 // --- pure helper functions ---
 
-func TestResolveDateRange_NoBounds_DefaultsToLast30Days(t *testing.T) {
-	start, end := resolveDateRange(nil, nil)
-	wantEnd := startOfDayUTC(time.Now().UTC()).Add(24 * time.Hour)
+func yangon(t *testing.T) *time.Location {
+	t.Helper()
+	loc, err := time.LoadLocation("Asia/Yangon")
+	require.NoError(t, err)
+	return loc
+}
+
+// allowOrg makes every org lookup return a Yangon org - the default for tests
+// that don't care about the zone. Tests about the zone itself build their own.
+func allowOrg(b *MockBranchLookup) {
+	b.EXPECT().GetOrganization(mock.Anything, mock.Anything).
+		Return(&identity.Organization{Timezone: "Asia/Yangon"}, nil).Maybe()
+}
+
+func TestResolveDateRange_NoBounds_DefaultsToLast30DaysEndingTodayInOrgZone(t *testing.T) {
+	loc := yangon(t)
+	start, end := resolveDateRange(loc, nil, nil)
+	wantEnd := common.NextDay(common.StartOfDay(time.Now().In(loc), loc))
 	require.Equal(t, wantEnd, end)
 	require.Equal(t, wantEnd.AddDate(0, 0, -30), start)
 }
@@ -43,15 +58,33 @@ func TestResolveDateRange_NoBounds_DefaultsToLast30Days(t *testing.T) {
 func TestResolveDateRange_ExplicitFromAndTo_ToIsExclusiveUpperBound(t *testing.T) {
 	from := time.Date(2026, 1, 1, 15, 30, 0, 0, time.UTC)
 	to := time.Date(2026, 1, 10, 8, 0, 0, 0, time.UTC)
-	start, end := resolveDateRange(&from, &to)
+	start, end := resolveDateRange(time.UTC, &from, &to)
 	require.Equal(t, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), start)
 	require.Equal(t, time.Date(2026, 1, 11, 0, 0, 0, 0, time.UTC), end)
 }
 
-func TestTodayRangeUTC_YieldsOneDayWindow(t *testing.T) {
-	start, end := todayRangeUTC()
+// backend-recommendations #9: Myanmar is UTC+6:30, so the org's Oct 8 starts at
+// 17:30 UTC on Oct 7 - the UTC-day window used to cut it 6.5 hours late.
+func TestResolveDateRange_InYangon_UsesLocalMidnights(t *testing.T) {
+	from := time.Date(2026, 10, 8, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2026, 10, 8, 0, 0, 0, 0, time.UTC)
+	start, end := resolveDateRange(yangon(t), &from, &to)
+	require.Equal(t, time.Date(2026, 10, 7, 17, 30, 0, 0, time.UTC), start.UTC())
+	require.Equal(t, time.Date(2026, 10, 8, 17, 30, 0, 0, time.UTC), end.UTC())
+}
+
+func TestTodayRange_YieldsOneLocalDayWindow(t *testing.T) {
+	loc := yangon(t)
+	start, end := todayRange(loc)
 	require.Equal(t, 24*time.Hour, end.Sub(start))
-	require.Equal(t, startOfDayUTC(time.Now().UTC()), start)
+	require.Equal(t, common.StartOfDay(time.Now().In(loc), loc), start)
+	require.False(t, time.Now().Before(start) || !time.Now().Before(end), "now must fall inside today's window")
+}
+
+func TestCalendarDate_KeepsTheLocalYMDAsUTCMidnight(t *testing.T) {
+	// Oct 8 00:00 in Yangon is Oct 7 17:30 UTC; as a DATE it must still be Oct 8.
+	local := time.Date(2026, 10, 8, 0, 0, 0, 0, yangon(t))
+	require.Equal(t, time.Date(2026, 10, 8, 0, 0, 0, 0, time.UTC), calendarDate(local))
 }
 
 func TestResolveGranularity_EmptyDefaultsToDaily(t *testing.T) {
@@ -120,6 +153,7 @@ func TestService_GetHomeSummary_ComposesTotalsAndLowStockCount(t *testing.T) {
 	repo := NewMockRepository(t)
 	branches := NewMockBranchLookup(t)
 	svc := NewService(repo, branches)
+	allowOrg(branches)
 
 	repo.EXPECT().SalesAggregate(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).
 		Return(SalesAggregate{Gross: d("100.00"), Discounts: d("10.00"), Count: 5}, nil).Once()
@@ -142,6 +176,7 @@ func TestService_GetHomeSummary_PropagatesRepositoryError(t *testing.T) {
 	repo := NewMockRepository(t)
 	branches := NewMockBranchLookup(t)
 	svc := NewService(repo, branches)
+	allowOrg(branches)
 
 	wantErr := common.SystemError("db read failed")
 	repo.EXPECT().SalesAggregate(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).
@@ -156,6 +191,7 @@ func TestService_GetStockOverview_DelegatesToRepository(t *testing.T) {
 	repo := NewMockRepository(t)
 	branches := NewMockBranchLookup(t)
 	svc := NewService(repo, branches)
+	allowOrg(branches)
 
 	branchID := uint(5)
 	want := StockOverview{TotalProducts: 10, LowStockCount: 2, OutOfStockCount: 0}
@@ -170,12 +206,13 @@ func TestService_GetTodayReport_ComposesAllFourQueries(t *testing.T) {
 	repo := NewMockRepository(t)
 	branches := NewMockBranchLookup(t)
 	svc := NewService(repo, branches)
+	allowOrg(branches)
 
 	repo.EXPECT().SalesAggregate(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).
 		Return(SalesAggregate{Gross: d("50.00"), Discounts: d("0"), Count: 2}, nil).Once()
 	repo.EXPECT().ReturnsTotal(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).
 		Return(decimal.Zero, nil).Once()
-	repo.EXPECT().HourlyTrend(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).
+	repo.EXPECT().HourlyTrend(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything, "Asia/Yangon").
 		Return([]TrendBucket{{Period: "09:00", Revenue: d("50.00"), Count: 2}}, nil).Once()
 	repo.EXPECT().PaymentMethodBreakdown(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).
 		Return([]PaymentMethodBreakdown{{Method: "cash", Amount: d("50.00"), Count: 2}}, nil).Once()
@@ -198,8 +235,9 @@ func TestService_GetRevenueTrend_MapsBucketsToPoints(t *testing.T) {
 	repo := NewMockRepository(t)
 	branches := NewMockBranchLookup(t)
 	svc := NewService(repo, branches)
+	allowOrg(branches)
 
-	repo.EXPECT().Trend(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything, GranularityDaily).
+	repo.EXPECT().Trend(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything, GranularityDaily, "Asia/Yangon").
 		Return([]TrendBucket{{Period: "2026-01-01", Revenue: d("20.00"), Count: 1}}, nil).Once()
 
 	got, err := svc.GetRevenueTrend(context.Background(), 7, nil, nil, nil, "")
@@ -214,6 +252,7 @@ func TestService_GetRevenueTrend_InvalidGranularity_ReturnsBadRequestWithoutQuer
 	repo := NewMockRepository(t)
 	branches := NewMockBranchLookup(t)
 	svc := NewService(repo, branches)
+	allowOrg(branches)
 	// Trend must never be called - rejected before any query.
 
 	_, err := svc.GetRevenueTrend(context.Background(), 7, nil, nil, nil, "hourly")
@@ -225,6 +264,7 @@ func TestService_GetSalesSummary_ComposesTotalsAndAllThreeBreakdowns(t *testing.
 	repo := NewMockRepository(t)
 	branches := NewMockBranchLookup(t)
 	svc := NewService(repo, branches)
+	allowOrg(branches)
 
 	repo.EXPECT().SalesAggregate(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).
 		Return(SalesAggregate{Gross: d("200.00"), Discounts: d("20.00"), Count: 10}, nil).Once()
@@ -250,8 +290,9 @@ func TestService_GetSalesTrend_MapsBucketsToPointsWithCount(t *testing.T) {
 	repo := NewMockRepository(t)
 	branches := NewMockBranchLookup(t)
 	svc := NewService(repo, branches)
+	allowOrg(branches)
 
-	repo.EXPECT().Trend(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything, GranularityWeekly).
+	repo.EXPECT().Trend(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything, GranularityWeekly, "Asia/Yangon").
 		Return([]TrendBucket{{Period: "2026-01-01", Revenue: d("300.00"), Count: 15}}, nil).Once()
 
 	got, err := svc.GetSalesTrend(context.Background(), 7, nil, nil, nil, GranularityWeekly)
@@ -265,6 +306,7 @@ func TestService_GetPaymentMethodsReport_ComputesTotalAndPercentages(t *testing.
 	repo := NewMockRepository(t)
 	branches := NewMockBranchLookup(t)
 	svc := NewService(repo, branches)
+	allowOrg(branches)
 
 	repo.EXPECT().PaymentMethodBreakdown(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).
 		Return([]PaymentMethodBreakdown{
@@ -283,6 +325,7 @@ func TestService_GetTransactionsReport_DefaultsPagination(t *testing.T) {
 	repo := NewMockRepository(t)
 	branches := NewMockBranchLookup(t)
 	svc := NewService(repo, branches)
+	allowOrg(branches)
 
 	repo.EXPECT().
 		ListTransactions(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything, 1, 20).
@@ -299,6 +342,7 @@ func TestService_GetTransactionsReport_PassesThroughExplicitPagination(t *testin
 	repo := NewMockRepository(t)
 	branches := NewMockBranchLookup(t)
 	svc := NewService(repo, branches)
+	allowOrg(branches)
 
 	repo.EXPECT().
 		ListTransactions(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything, 2, 50).
@@ -316,6 +360,7 @@ func TestService_GetTransactionsReport_AttachesPaymentMethodsPerRow(t *testing.T
 	repo := NewMockRepository(t)
 	branches := NewMockBranchLookup(t)
 	svc := NewService(repo, branches)
+	allowOrg(branches)
 
 	cashOnly, split, none := uuid.New(), uuid.New(), uuid.New()
 	repo.EXPECT().
@@ -336,6 +381,7 @@ func TestService_GetTransactionsReport_PaymentMethodsErrorPropagates(t *testing.
 	repo := NewMockRepository(t)
 	branches := NewMockBranchLookup(t)
 	svc := NewService(repo, branches)
+	allowOrg(branches)
 
 	boom := errors.New("db down")
 	repo.EXPECT().ListTransactions(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything, 1, 20).
@@ -350,6 +396,7 @@ func TestService_GetProductSalesReport_PassesCategoryIDThrough(t *testing.T) {
 	repo := NewMockRepository(t)
 	branches := NewMockBranchLookup(t)
 	svc := NewService(repo, branches)
+	allowOrg(branches)
 
 	categoryID := uint(3)
 	repo.EXPECT().
@@ -365,6 +412,7 @@ func TestService_GetTopProducts_DefaultsLimitToTen(t *testing.T) {
 	repo := NewMockRepository(t)
 	branches := NewMockBranchLookup(t)
 	svc := NewService(repo, branches)
+	allowOrg(branches)
 
 	repo.EXPECT().
 		ProductSales(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything, (*uint)(nil), mock.MatchedBy(func(l *int) bool { return l != nil && *l == 10 })).
@@ -378,6 +426,7 @@ func TestService_GetTopProducts_PassesThroughExplicitLimit(t *testing.T) {
 	repo := NewMockRepository(t)
 	branches := NewMockBranchLookup(t)
 	svc := NewService(repo, branches)
+	allowOrg(branches)
 
 	limit := 3
 	repo.EXPECT().
@@ -392,6 +441,7 @@ func TestService_GetProfitAndLoss_OrgWide_ComposesAllFourFigures(t *testing.T) {
 	repo := NewMockRepository(t)
 	branches := NewMockBranchLookup(t)
 	svc := NewService(repo, branches)
+	allowOrg(branches)
 
 	orgBranches := []identity.Branch{{ID: 5, OrgID: 7}, {ID: 6, OrgID: 7}}
 	repo.EXPECT().SalesAggregate(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).
@@ -420,6 +470,7 @@ func TestService_GetProfitAndLoss_ScopedToOneBranch(t *testing.T) {
 	repo := NewMockRepository(t)
 	branches := NewMockBranchLookup(t)
 	svc := NewService(repo, branches)
+	allowOrg(branches)
 
 	branchID := uint(5)
 	repo.EXPECT().SalesAggregate(mock.Anything, uint(7), &branchID, mock.Anything, mock.Anything).
@@ -443,6 +494,7 @@ func TestService_GetProfitAndLoss_PropagatesCOGSError(t *testing.T) {
 	repo := NewMockRepository(t)
 	branches := NewMockBranchLookup(t)
 	svc := NewService(repo, branches)
+	allowOrg(branches)
 
 	repo.EXPECT().SalesAggregate(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).
 		Return(SalesAggregate{Gross: d("100.00")}, nil).Once()
@@ -462,8 +514,108 @@ func TestService_ExportReport_StaysNotImplemented(t *testing.T) {
 	repo := NewMockRepository(t)
 	branches := NewMockBranchLookup(t)
 	svc := NewService(repo, branches)
+	allowOrg(branches)
 
 	_, err := svc.ExportReport(context.Background())
 	require.Error(t, err)
 	requireRestErrorStatus(t, err, http.StatusNotImplemented)
+}
+
+// --- org timezone (backend-recommendations #9) ---
+
+func newZonedService(t *testing.T, tz string) (*Service, *MockRepository, *MockBranchLookup) {
+	t.Helper()
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	branches.EXPECT().GetOrganization(mock.Anything, uint(7)).Return(&identity.Organization{ID: 7, Timezone: tz}, nil).Maybe()
+	return NewService(repo, branches), repo, branches
+}
+
+// The date range a client sends is the org's own calendar: Oct 8 in Yangon runs
+// from 17:30 UTC on Oct 7 to 17:30 UTC on Oct 8, and that is what hits the queries.
+func TestService_GetSalesSummary_DatesAreOrgLocalDays(t *testing.T) {
+	svc, repo, _ := newZonedService(t, "Asia/Yangon")
+	from := time.Date(2026, 10, 8, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2026, 10, 8, 0, 0, 0, 0, time.UTC)
+	wantStart := time.Date(2026, 10, 7, 17, 30, 0, 0, time.UTC)
+	wantEnd := time.Date(2026, 10, 8, 17, 30, 0, 0, time.UTC)
+
+	sameInstant := func(want time.Time) any {
+		return mock.MatchedBy(func(got time.Time) bool { return got.Equal(want) })
+	}
+	repo.EXPECT().SalesAggregate(mock.Anything, uint(7), (*uint)(nil), sameInstant(wantStart), sameInstant(wantEnd)).
+		Return(SalesAggregate{Gross: d("10.00"), Discounts: d("0"), Count: 1}, nil).Once()
+	repo.EXPECT().ReturnsTotal(mock.Anything, uint(7), (*uint)(nil), sameInstant(wantStart), sameInstant(wantEnd)).Return(decimal.Zero, nil).Once()
+	repo.EXPECT().BranchBreakdown(mock.Anything, uint(7), (*uint)(nil), sameInstant(wantStart), sameInstant(wantEnd)).Return(nil, nil).Once()
+	repo.EXPECT().PaymentMethodBreakdown(mock.Anything, uint(7), (*uint)(nil), sameInstant(wantStart), sameInstant(wantEnd)).Return(nil, nil).Once()
+	repo.EXPECT().CategoryBreakdown(mock.Anything, uint(7), (*uint)(nil), sameInstant(wantStart), sameInstant(wantEnd)).Return(nil, nil).Once()
+
+	_, err := svc.GetSalesSummary(context.Background(), 7, nil, &from, &to)
+	require.NoError(t, err)
+}
+
+func TestService_GetTodayReport_BucketsHoursInTheOrgZone(t *testing.T) {
+	svc, repo, _ := newZonedService(t, "Asia/Bangkok")
+	repo.EXPECT().SalesAggregate(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).Return(SalesAggregate{}, nil).Once()
+	repo.EXPECT().ReturnsTotal(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).Return(decimal.Zero, nil).Once()
+	repo.EXPECT().HourlyTrend(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything, "Asia/Bangkok").Return(nil, nil).Once()
+	repo.EXPECT().PaymentMethodBreakdown(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).Return(nil, nil).Once()
+	repo.EXPECT().ProductSales(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything, (*uint)(nil), mock.Anything).Return(nil, nil).Once()
+
+	_, err := svc.GetTodayReport(context.Background(), 7, nil)
+	require.NoError(t, err)
+}
+
+func TestService_GetSalesTrend_DailyBucketsCutInTheOrgZone(t *testing.T) {
+	svc, repo, _ := newZonedService(t, "Asia/Yangon")
+	repo.EXPECT().Trend(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything, GranularityDaily, "Asia/Yangon").
+		Return([]TrendBucket{{Period: "2026-10-08", Revenue: d("1.00"), Count: 1}}, nil).Once()
+
+	_, err := svc.GetSalesTrend(context.Background(), 7, nil, nil, nil, "")
+	require.NoError(t, err)
+}
+
+// Expense.Date is a plain DATE. Oct 8 in Yangon must reach it as the dates
+// Oct 8 .. Oct 9 - not as the instants (Oct 7 17:30Z), which a DATE compare
+// would read as Oct 7.
+func TestService_GetProfitAndLoss_ExpensesAreComparedAsCalendarDates(t *testing.T) {
+	svc, repo, branches := newZonedService(t, "Asia/Yangon")
+	from := time.Date(2026, 10, 8, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2026, 10, 8, 0, 0, 0, 0, time.UTC)
+
+	repo.EXPECT().SalesAggregate(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).Return(SalesAggregate{}, nil).Once()
+	repo.EXPECT().ReturnsTotal(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).Return(decimal.Zero, nil).Once()
+	repo.EXPECT().COGS(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).Return(decimal.Zero, nil).Once()
+	branches.EXPECT().ListBranches(mock.Anything, uint(7)).Return([]identity.Branch{{ID: 5, OrgID: 7}}, nil).Once()
+	repo.EXPECT().Expenses(mock.Anything, []uint{5},
+		time.Date(2026, 10, 8, 0, 0, 0, 0, time.UTC), time.Date(2026, 10, 9, 0, 0, 0, 0, time.UTC)).
+		Return(decimal.Zero, nil).Once()
+
+	_, err := svc.GetProfitAndLoss(context.Background(), 7, nil, &from, &to)
+	require.NoError(t, err)
+}
+
+func TestService_Reports_OrgLookupFails_PropagatesBeforeQuerying(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	svc := NewService(repo, branches)
+	boom := errors.New("db down")
+	branches.EXPECT().GetOrganization(mock.Anything, uint(7)).Return(nil, boom).Times(3)
+
+	_, err := svc.GetHomeSummary(context.Background(), 7, nil)
+	require.ErrorIs(t, err, boom)
+	_, err = svc.GetTodayReport(context.Background(), 7, nil)
+	require.ErrorIs(t, err, boom)
+	_, err = svc.GetSalesSummary(context.Background(), 7, nil, nil, nil)
+	require.ErrorIs(t, err, boom)
+}
+
+// A stored zone the runtime can't load must not take every report down.
+func TestService_Reports_UnloadableStoredZone_FallsBackToDefault(t *testing.T) {
+	svc, repo, _ := newZonedService(t, "Mars/Olympus")
+	repo.EXPECT().Trend(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything, GranularityDaily, "Asia/Yangon").
+		Return(nil, nil).Once()
+
+	_, err := svc.GetRevenueTrend(context.Background(), 7, nil, nil, nil, "")
+	require.NoError(t, err)
 }

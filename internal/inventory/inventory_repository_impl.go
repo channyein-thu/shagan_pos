@@ -137,10 +137,19 @@ func (r *RepositoryImpl) GetStockTransfer(db *gorm.DB, branchIDs []uint, id uint
 	return &transfer, nil
 }
 
+// ListStockTransferItemsByTransferIDs backs ListStockTransfers' line items.
+func (r *RepositoryImpl) ListStockTransferItemsByTransferIDs(ctx context.Context, transferIDs []uint) ([]StockTransferItem, error) {
+	var items []StockTransferItem
+	if err := r.db.WithContext(ctx).Where("transfer_id IN ?", transferIDs).Order("id").Find(&items).Error; err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 // ListStockTransferItems backs the completing-a-transfer path.
 func (r *RepositoryImpl) ListStockTransferItems(db *gorm.DB, transferID uint) ([]StockTransferItem, error) {
 	var items []StockTransferItem
-	if err := db.Where("transfer_id = ?", transferID).Find(&items).Error; err != nil {
+	if err := db.Where("transfer_id = ?", transferID).Order("id").Find(&items).Error; err != nil {
 		return nil, err
 	}
 	return items, nil

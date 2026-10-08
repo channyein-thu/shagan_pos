@@ -59,8 +59,29 @@ type Interface interface {
 	CreateAccount(ctx context.Context, in CreateAccountInput) (*CreateAccountResult, error)
 	CreatePosAccount(ctx context.Context, in CreatePosAccountInput) (*User, error)
 	ListOrganizations(ctx context.Context) ([]Organization, error)
+	// GetOrganization is `GET /internal/organizations/:id` (404 if unknown).
+	GetOrganization(ctx context.Context, id uint) (*Organization, error)
+	// ListOrgWideAccounts lists orgID's owner and service_center logins -
+	// the accounts ListPosAccounts doesn't cover.
+	ListOrgWideAccounts(ctx context.Context, orgID uint) ([]User, error)
+	// ResetOrgWideAccountPassword hashes plaintext before it reaches the
+	// repository (same pattern as ResetPosAccountPassword) and revokes the
+	// account's refresh tokens. 404 for anything but an owner/service_center.
+	ResetOrgWideAccountPassword(ctx context.Context, id uint, plaintext string) error
+	// UpdateBranchStatus / UpdateDeviceStatus are the Shagan-team status
+	// levers - a branch is active|inactive, a device active|inactive|revoked.
+	// New shifts can only be opened on an active branch and device; a shift
+	// already open is not interrupted. 404 for an unknown id.
+	UpdateBranchStatus(ctx context.Context, id uint, status BranchStatus) error
+	UpdateDeviceStatus(ctx context.Context, id uint, status DeviceStatus) error
 	ListPosAccounts(ctx context.Context, orgID uint) ([]User, error)
 	UpdateOrganizationStatus(ctx context.Context, id uint, status OrganizationStatus) error
+	// UpdateOrganizationTimezone changes the IANA zone that defines the org's
+	// calendar day (dashboard "today", report date ranges and daily buckets).
+	// 400 for an unknown zone name, 404 for an unknown org. Applies to every
+	// report from the next request - nothing stored is rewritten, since
+	// timestamps are kept as instants.
+	UpdateOrganizationTimezone(ctx context.Context, id uint, timezone string) error
 	UpdatePosAccountStatus(ctx context.Context, id uint, status UserStatus) error
 	// ResetPosAccountPassword hashes plaintext before it ever reaches the
 	// repository - see Service.CreateAccount for the same pattern.

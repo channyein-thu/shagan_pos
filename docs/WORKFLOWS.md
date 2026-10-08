@@ -7,7 +7,10 @@ undecided, it's listed in **Section 12 — Open Questions** instead of guessed
 at. If you resolve one of those, move it into the confirmed sections and
 delete it from Section 12.
 
-Last confirmed: 2026-09-27.
+Last confirmed: 2026-10-08. Every domain is built; sections 2, 4, 5, 6, 7, 9,
+10, 12 and 13 were reconciled with the code on that date (nothing below should
+still say a domain "doesn't exist yet"). Decisions are dated where they were
+made, so a stale line is easy to spot.
 
 ---
 
@@ -99,11 +102,12 @@ Three distinct tokens exist, often needed together on one request:
   - `CreateSale` → `apply_manual_discount` (any item discount)
   - `CreateDrawerEvent` → `open_drawer_no_sale` (only when `sale_id` is
     omitted - a drawer event tied to a real sale needs no such check)
-  - **Not yet wired** (the domains don't exist yet): void/return/exchange
-    approval, once Returns is built - use the exact same
-    `StaffHasPermission || ManagerApproved` pattern against
-    `approve_void`/`approve_return`/`approve_exchange`, don't invent a
-    different shape.
+  - `VoidSale` → `approve_void`, `CreateReturn` → `approve_return`,
+    `CreateExchange` → `approve_exchange` (all in `cmd/api/returns.go`) -
+    the exact same `StaffHasPermission || ManagerApproved` shape. Any new
+    approval-gated action must reuse it, not invent a different one. (`VoidSale`
+    alone also accepts an Owner / Service Center acting directly - see
+    "Owner acts as owner" below; Return/Exchange do not.)
 
 ### Route authorization by account type (confirmed 2026-10-08)
 
@@ -120,18 +124,6 @@ existed gets **401** on any gated route (re-login / refresh), never 403.
 | (none beyond `Auth`) | any authenticated caller | all reads the till needs to sell (products, stock levels, receipt settings, QR codes, ...), plus the staff-token routes in the list above |
 
 - **Service Center = same as Owner** on every admin route (decision, 2026-10-08).
-
-#### Sales history list (built 2026-10-08)
-`GET /sales` is `{sales, page, page_size, total_count}` (the same envelope and
-`page`/`page_size` rules as `/reports/transactions`: default 20, max 100), newest
-first, filterable by `branch_id`, `from` and `to` (`YYYY-MM-DD`, inclusive, UTC
-days). Unlike the reports there is **no default date window** — no filters
-means the whole history, paged. A branch-bound POS-device token is locked to its
-own branch (a `branch_id` it sends is ignored), exactly like the reports. Every
-row, here and in `/reports/transactions`, carries `payment_methods`: the
-distinct methods used on the sale, sorted (`["cash"]`, `["qr"]`,
-`["cash","qr"]` for a split), never null. Voided sales appear in `/sales`
-(status shows it) but not in the reports.
 
 #### Owner acts as owner — expenses and void (confirmed 2026-10-06, built 2026-10-08)
 The Owner has no `Staff` record (and can't — `Staff.branch_id` is required),
@@ -175,6 +167,39 @@ re-introduce a `binding:"required"` tag on one (a real bug already caused by
 this twice: Shift and Sales both originally rejected a client correctly
 omitting the field, before the override ever ran).
 
+### Browser access (CORS) — built 2026-10-08
+`CORS_ALLOWED_ORIGINS` (comma-separated, exact `scheme://host[:port]`) lists the
+browser origins that may call the API cross-origin; any other origin gets no
+`Access-Control-*` headers, so the browser blocks it. **Empty (the default)
+means no browser origin is allowed** — correct today, because the Next.js
+frontends proxy the API server-side and Postman/curl send no `Origin`. The
+allowed request headers include `X-Staff-Token`, `X-Manager-Approval-Token` and
+`If-None-Match`, and `ETag` is exposed, so a browser client of the offline
+catalog works once its origin is listed. No credentials/cookies are ever
+allowed (bearer tokens only). A lone `*` re-opens it to any origin — local
+development only, never production.
+
+### Shagan-team portal endpoints — `/internal/*` (`X-Internal-Key`)
+Used by the shagan_team portal; a tenant token can never reach them. Beyond
+provisioning (`POST /internal/accounts`, `/branches`, `/devices`,
+`/accounts/pos`) and the org status/timezone levers:
+- `GET /internal/organizations` and `GET /internal/organizations/:id` (one org);
+- `GET /internal/accounts/org-wide?org_id=` lists an org's **owner and
+  service_center** logins; `POST /internal/accounts/org-wide/:id/reset-password`
+  resets one (404 for any other account type, so a pos login can't be reached
+  this way). Pos logins keep their own `/internal/accounts/pos...` routes;
+- `PATCH /internal/branches/:id/status` (`active|inactive`) and
+  `PATCH /internal/devices/:id/status` (`active|inactive|revoked`). A branch or
+  device that isn't active can't have a **new** shift opened (409); a shift
+  already open is not interrupted, and a revoked device's pos account can still
+  log in unless it is also suspended (`PATCH /internal/accounts/pos/:id/status`).
+- **Any password reset revokes the account's refresh tokens** (pos and
+  org-wide alike) in the same step, so whoever knew the old password can't keep
+  a session alive; an access token already issued lives out its TTL (60 min).
+- Not built (not requested): suspending an individual owner/service_center
+  account — suspending the whole org (`PATCH /internal/organizations/:id/status`)
+  already blocks every login.
+
 ---
 
 ## 3. Owner Journey
@@ -208,6 +233,12 @@ shared terminal requires a Manager PIN verify to unlock it (this is
 equivalent flow built on the same mechanism) — distinct from Owner's own
 dedicated web login, which has no such gate (Section 3).
 
+**Decision (2026-10-06):** the manager's Back Office is the *owner's* Back
+Office screens, scoped to the till's own branch — not a separate, smaller UI.
+What the manager can actually *do* there is decided server-side: see "Route
+authorization by account type" in Section 2 (catalog/supplier/settings/stock/PO
+writes allowed; staff, branch and device management owner-only).
+
 Confirmed capabilities:
 - **Staff**: view-only (cannot edit roles/PINs, hire/fire).
 - **Sales / Inventory (stock) / Reports**: view, scoped to their own branch.
@@ -218,14 +249,13 @@ Confirmed capabilities:
   see `shift.ExpenseActor.CanManageAny`).
 - **Suppliers / Purchase Orders**: suppliers are shared org-wide (not
   branch-owned); Manager creates/manages Purchase Orders and receiving *for
-  their own branch* against that shared supplier list. **Not yet
-  implemented** (Procurement, Kit's domain) — `PurchaseOrder.OrgID` has
-  been added as schema prep (also fixed a real bug: its PO-number unique
-  index was silently global instead of per-org), but `BranchID` still
-  needs adding before the branch-scoping itself is real.
+  their own branch* against that shared supplier list. **Built:** a
+  `PurchaseOrder` carries `org_id` and `branch_id`; a manager at the till can
+  only raise/read/update/receive orders of the till's own branch (another
+  branch's order reads as 404). PO numbers are server-generated (Section 7).
 - **Approvals**: approves another staff's action they lack permission for —
-  manual discount, drawer-without-sale, and (once built) void/return/
-  exchange — via `VerifyManagerPIN`, which issues the
+  manual discount, drawer-without-sale, void, return and exchange — via
+  `VerifyManagerPIN`, which issues the
   `X-Manager-Approval-Token` the other staff's own request then carries
   (see Section 2). Not restricted to role=`manager` specifically - whoever's
   role grants the target permission can approve it.
@@ -279,10 +309,9 @@ what each grants).
 8. Opens the drawer without a sale — only if their role grants
    `open_drawer_no_sale` (`super_staff` by default, not `manager`), **or**
    a valid manager approval for it; otherwise 403.
-9. Void/return/exchange (once Returns exists) will need the equivalent
+9. Void/return/exchange need the equivalent
    `approve_void`/`approve_return`/`approve_exchange` permission or a
-   manager approval, same pattern - see Section 9 for the researched
-   standard business rules these three should follow.
+   manager approval, same pattern - see Section 9 for how each is built.
 10. **Closes their own shift** (`POST /shifts/:id/close`) when their stretch
     ends — **only the same staff who opened it may close it**, no
     exception in the normal path. Counts the physical cash drawer; a
@@ -306,25 +335,23 @@ what each grants).
    to each device.
 2. **Setup** (Owner) → add Staff (PIN + role + branch), build the Product
    Catalog, add Suppliers, place/receive Purchase Orders (receiving is
-   meant to feed the Inventory Ledger as `purchase_receipt` entries —
-   Inventory itself isn't built yet).
+   feeds the Inventory Ledger as `purchase_receipt` entries and raises stock
+   at the PO's branch).
 3. **Daily floor operation** (Staff/Manager) → PIN sign-in → open shift →
    ring sales (cart, payments, optional customer, combos, per-item tax) →
    occasional drawer events / manager-approved exceptions → close shift
    with a real cash count.
 4. **Money & stock bookkeeping** → every event lands in one place: the
-   Inventory Ledger for stock movement (sale/return/adjustment/
-   transfer/receipt — Inventory not built yet, so only manual
-   adjustments/transfers are real right now; once built, a completed sale
-   decrements stock in the same transaction as the sale itself and is
-   blocked outright on insufficient stock - no backorder/negative stock,
-   see Section 9), `ShiftReconciliation` for cash, `Expense` for operating
+   Inventory Ledger for stock movement (sale/void/return/exchange/
+   adjustment/transfer/receipt — a completed sale decrements stock in the
+   same transaction as the sale itself and is blocked outright on
+   insufficient stock, no backorder, except an offline-queued sale at sync
+   time, Section 10), `ShiftReconciliation` for cash, `Expense` for operating
    costs (rent, staff meals, etc., logged per branch).
 5. **Back-office oversight** (Owner) → Sales History (with return/
-   exchange/void), Reports (confirmed spec, see Section 11), Audit Log
-   (who-did-what system-wide), and eventually real profit/loss once
-   Sales + a Product cost basis (`CostPrice`, added but unused so far) +
-   Expenses (already real) all connect through Reports.
+   exchange/void), Reports (confirmed spec, Section 11, including profit/loss
+   from Sales + the product cost basis `CostPrice` + Expenses), Audit Log
+   (who-did-what system-wide).
 
 ---
 
@@ -346,10 +373,12 @@ what each grants).
   sale-level tax input.
 - **Combos**: expanded client-side into normal per-product line items
   tagged with a shared `combo_id` - not a special server-side pricing path.
-- **Stock decrement** (once Inventory exists): same transaction as
-  `CreateSale`; blocked outright on insufficient stock, no backorder.
-- **Procurement** (agreed, not yet built): suppliers are shared/org-wide;
-  Purchase Orders and receiving are branch-scoped.
+- **Stock decrement**: same transaction as `CreateSale`; blocked outright on
+  insufficient stock (409), no backorder - the one exception is a sale
+  ingested from an offline queue, which is let through and flagged
+  (Section 10).
+- **Procurement**: suppliers are shared/org-wide; Purchase Orders and
+  receiving are branch-scoped.
 - **Stock visibility**: per-branch, visible to both Staff and Manager
   (same login, gated by PIN only).
 - **`PurchaseOrder` numbers**: server-generated (confirmed 2026-10-05), not
@@ -357,6 +386,20 @@ what each grants).
   stays unique, not globally unique). Never editable afterward, including
   via `UpdatePurchaseOrder` - letting it change later would reopen the
   collision risk auto-generation exists to close.
+- **A product with history can't be hard-deleted** (built 2026-10-08):
+  `DELETE /products/:id` is 409 if any combo bundles it, or if anything still
+  references it — a sale or exchange line, stock (even at zero), a stock
+  adjustment or transfer line, an inventory-ledger entry, or a purchase-order
+  line. Those tables have no DB-level FK, so a delete would orphan them and
+  history screens would lose the product's name. Retire it with
+  `PATCH is_active=false` instead; only a never-used product (e.g. created by
+  mistake) can be deleted.
+- **Stock transfers carry their lines and a note** (built 2026-10-08):
+  `GET /stock-transfers`, `POST /stock-transfers` and `PATCH
+  /stock-transfers/:id` all return the transfer plus `items: [{product_id,
+  qty}]` (creation order, never empty). `POST` accepts an optional `note`
+  (why the stock is moving) - trimmed, max 500 characters, stored as `""`
+  when omitted, never edited afterwards.
 - **Products are org-wide, not branch-scoped** (confirmed 2026-10-05,
   overriding an earlier unconfirmed guess baked into the code - a product
   belongs to the whole organization, sellable at any of its branches; the
@@ -389,10 +432,16 @@ already works), plus a proportional share of the combo's bundle discount
 combined total lands exactly on the combo's advertised price), and a shared
 `ComboID` tag purely for grouping on receipts/reports.
 
+**What the device is given to do that (built 2026-10-08):** each combo in
+`GET /combos` and in `GET /sync/catalog` carries `items: [{product_id, qty}]`
+(creation order, never empty) alongside its price and images. Editing a
+combo's items changes the snapshot ETag, so a cached till re-downloads rather
+than expanding the old product list.
+
 Why this shape, not a dedicated combo-aware code path:
 - **No schema change to pricing/stock mechanics.** Every line item is
   structurally identical to a standalone sale of that product — stock
-  decrement (once Inventory exists) and reporting both work per real
+  decrement and reporting both work per real
   product with zero special-casing.
 - **Matches the existing offline-first pattern.** The POS device already
   computes `NameSnapshot`/`UnitPrice` client-side from its local cache
@@ -413,6 +462,25 @@ industry-standard definitions, not invented for this project. Specific
 policy numbers (time windows, cash-vs-credit default, whether partial is
 allowed at all) are still Shagan's own call — flagged below where that's
 true.
+
+**Built (confirmed wiring, 2026-10-08):**
+- **Void** reverses the whole sale: 409 if already voided, if its shift is no
+  longer open, or if any Return/Exchange already references it; credits every
+  item's stock back and marks the sale voided, atomically. Needs `approve_void`
+  (own or manager approval); an Owner / Service Center may also void directly
+  with no PIN (Section 2, "Owner acts as owner").
+- **Return** is a new record referencing the sale (the sale stays in history),
+  full or partial per item, with `RefundTotal` computed server-side from each
+  returned line's own net price. Each item carries a condition; only
+  `sellable` ones are restocked, at the sale's own branch. Needs
+  `approve_return`. **`refund_method` is an explicit single choice per request,
+  `cash` or `qr` — there is no default.**
+- **Exchange** is one combined `Exchange` record with in/out lines and a
+  server-computed `NetDifference` (not a chained Return-then-Sale); stock is
+  credited for "in" items and decremented for "out" items at the sale's branch.
+  Needs `approve_exchange`. *Built this way without an explicit sign-off — see
+  Section 12.*
+- Return time window: **none is enforced** (open, Section 12).
 
 ### Void
 Cancels a sale **before** it's considered final/settled — in practice,
@@ -437,8 +505,8 @@ directly into Section 7's stock-decrement rule, in reverse). Requires
 `approve_return`.
 
 *Still Shagan's call, not a "standard": is there a return time window
-(e.g. 7/14/30 days), and is the default refund method cash, original
-payment method, or store credit?*
+(e.g. 7/14/30 days)? (The refund method is settled: explicit `cash` or `qr`
+per return, no default, no store credit — Section 7's payment-method rule.)*
 
 ### Exchange
 Customer returns item(s) **and** takes different item(s) in the same
@@ -450,20 +518,20 @@ as one combined "Exchange" transaction referencing both the original sale
 and the new items; others just chain a Return immediately followed by a
 new Sale. Requires `approve_exchange`.
 
-*Still Shagan's call: combined transaction type, or chained
-Return-then-Sale? Either is standard practice — pick whichever is simpler
-to build against the existing Sale/SaleItem/Payment shape when Returns
-gets designed.*
+*Built as a single combined `Exchange` record (see above). Confirm that is
+the shape Shagan wants, or it can be re-modelled as a chained Return-then-Sale.*
 
 ---
 
-## 10. Datasync / Offline Support (Architecture Recommendation)
+## 10. Datasync / Offline Support (Built)
 
 Confirmed as a real requirement, not just leftover ERD scaffolding — a POS
 till needs to keep working (and selling) through a spotty or dropped
-connection, and catch up once it's back online. Below is a standard,
-proven shape for this, reusing what's already in place rather than
-inventing something new.
+connection, and catch up once it's back online. The `datasync` domain is
+built: `GET /sync/catalog` (ETag; products, categories and combos with their
+items), `POST /sync/sales` (idempotent batch upload), `GET /sync/status`,
+`GET /sync/conflicts` and `PATCH /sync/conflicts/:id/resolve`. The shape below
+is the design it follows, reusing what was already in place.
 
 ### What's already compatible
 - `Sale.ID` is a **client-generated UUID** — the device can create a sale's
@@ -497,25 +565,26 @@ inventing something new.
   `price_override` on a sale item has no permission gate on either path
   (unconfirmed whether it should).
 
-### Recommended shape
+### Design it follows
 1. **Local write-ahead queue on the device.** Every mutation created while
    offline (a completed sale, a drawer event, etc.) is appended to a local
    queue with its already-final client-generated ID, not held in memory
    only.
-2. **One-way, idempotent batch upload, device → server.** A dedicated
-   `POST /sync` (the `datasync` domain, still 0% built) accepts an array of
-   queued operations. Each is processed by its own existing idempotent
-   create path (e.g. the same `CreateSale` logic) keyed by its client
+2. **One-way, idempotent batch upload, device → server.** `POST /sync/sales`
+   accepts an array of queued sales. Each is processed by the same
+   `CreateSale` logic as a live sale, keyed by its client
    UUID — a duplicate submission (retry after a flaky response) is a safe
    no-op, not a duplicate row. The response reports per-item success/
    failure so the device can drop synced items from its local queue and
    retry only the failures.
 3. **Periodic reference-data download, server → device.** For a device to
    ring up sales offline at all, it needs a reasonably fresh local cache
-   of: Catalog (products/prices/tax), current stock levels (informational
-   - see below), customer lookups, and its own staff PIN/permission list.
-   This is a **read-sync**, refreshed opportunistically whenever the
-   device has connectivity — not a live/real-time subscription.
+   of: Catalog (products/prices/tax, plus each combo's component items).
+   This is a **read-sync** (`GET /sync/catalog`), refreshed opportunistically
+   whenever the device has connectivity — not a live/real-time subscription.
+   The snapshot does **not** include stock levels, customers or a staff PIN
+   list: an offline till gets no new PIN sign-ins (see "Implemented rules"
+   above), so staff must already be signed in when the connection drops.
 4. **Conflicts are rarer than they look, for Sales specifically.** Each
    sale has exactly one origin device/staff and is never concurrently
    edited by two parties — so this isn't a classic multi-writer conflict
@@ -555,27 +624,66 @@ or distributed conflict resolution beyond "let it go negative, flag it."
 - **Time granularity**: daily, weekly, and monthly views all supported —
   matches the prototype UI's Hourly/Daily/Weekly trend toggle.
 
+### Organization timezone — what "today" means (built 2026-10-08)
+Every org has an IANA `timezone` (default `Asia/Yangon`, UTC+6:30), set at
+provisioning (`POST /internal/accounts` `timezone`, optional) or changed later
+with `PATCH /internal/organizations/:id/timezone` (Shagan team only; unknown
+zone → 400, unknown org → 404). It defines the org's **calendar day**:
+- the dashboard's "today" (`/reports/home-summary`, `/reports/today`) is the
+  org's local day, not the UTC day — before this, "today" rolled over at 06:30
+  Myanmar time;
+- `from`/`to` (`YYYY-MM-DD`, inclusive) on every report **and** on
+  `GET /sales` are days of the org's zone, and the default "last 30 days" ends
+  today in that zone;
+- daily/weekly/monthly buckets and the hourly trend are cut on the org's
+  local clock (a sale at 00:15 Yangon time belongs to that local date even
+  though it is the previous date in UTC);
+- `expenses.date` is a plain DATE, so P&L compares it as calendar dates, never
+  as instants.
+Timestamps stay stored as instants (UTC), so changing a zone rewrites nothing —
+it only moves where the day boundaries fall. One zone per org (not per branch);
+a per-branch override is not built. The runtime embeds the tz database
+(`time/tzdata`), so zones resolve in the alpine image too.
+
+### Sales history list (built 2026-10-08)
+`GET /sales` is `{sales, page, page_size, total_count}` (the same envelope and
+`page`/`page_size` rules as `/reports/transactions`: default 20, max 100), newest
+first, filterable by `branch_id`, `from` and `to` (`YYYY-MM-DD`, inclusive, days of
+the org's timezone). Unlike the reports there is **no default date window** — no filters
+means the whole history, paged. A branch-bound POS-device token is locked to its
+own branch (a `branch_id` it sends is ignored), exactly like the reports. Every
+row, here and in `/reports/transactions`, carries `payment_methods`: the
+distinct methods used on the sale, sorted (`["cash"]`, `["qr"]`,
+`["cash","qr"]` for a split), never null. Voided sales appear in `/sales`
+(status shows it) but not in the reports.
+
 ---
 
 ## 12. Open Questions — Do Not Assume, Confirm First
 
-1. **Return/Exchange policy specifics** — time window, default refund
-   method, combined-transaction vs. chained-Return-then-Sale for Exchange
-   (see Section 9's "still Shagan's call" notes).
-2. **`datasync` implementation timing** — Section 10 gives the
-   architecture; building it hasn't been scheduled yet.
+1. **Return time window** — is there one (7/14/30 days)? None is enforced
+   today. (Refund method is settled: explicit `cash`/`qr`, Section 9.)
+2. **Exchange shape** — built as one combined `Exchange` record; confirm it, or
+   re-model as a chained Return-then-Sale (Section 9).
 3. **Customer `Tags`/`Consent`** are fully built in the backend but not
    surfaced anywhere in the Back Office UI — deferred, to be discussed
    later.
-4. **Manager's exact frontend route shape** — confirmed there's a
-   Back-Office/POS split gated by Manager PIN (Section 4), but the
-   specific screens/scope of that branch-level Back Office beyond what's
-   already listed under Manager capabilities hasn't been walked through
-   screen-by-screen the way Owner's was.
+4. **`price_override` on a sale item** has no permission gate on either the
+   live or the offline path — should changing a price need
+   `apply_manual_discount` (or its own permission)?
+5. **Return/Exchange by the Owner** — Void is open to an Owner acting directly
+   (no PIN); Return and Exchange still need a staff token. Should the owner be
+   able to do those too?
+6. **Reads still open to a POS-device token** — reports, audit log, the
+   org-wide `GET /staff`, `PATCH /sync/conflicts/:id/resolve` and
+   `POST /printers/test` are not gated beyond a valid bearer token (Section 2's
+   "Not yet gated" list). Decide who should see/do each.
+7. **Per-branch timezone** — an org has one timezone (Section 11); a branch in
+   another zone isn't supported.
 
 ---
 
-## 13. Team Ownership (as of 2026-09-24 — re-verify before trusting)
+## 13. Team Ownership (as of 2026-10-08 — re-verify before trusting)
 
 - **Chan**: `internal/identity`, `internal/customer`, `internal/shift`,
   `internal/sales`, `internal/audit`, `internal/datasync`,
@@ -584,7 +692,8 @@ or distributed conflict resolution beyond "let it go negative, flag it."
   `internal/procurement`, `internal/platform`
 - **`internal/common`**: shared, all three
 
-Domain completion moves fast in this repo — re-run
-`grep -c ErrNotImplemented internal/<domain>/*repository_impl.go` per
-domain rather than trusting a stale percentage from memory or from this
-file.
+Every domain is built (as of 2026-10-08 no `ErrNotImplemented` stub remains in
+any `internal/<domain>/*repository_impl.go`) — re-run
+`grep -c ErrNotImplemented internal/<domain>/*repository_impl.go` rather than
+trusting a status written here. The module split is a convention, not a lock:
+cross-module changes happen, but tell the owner.

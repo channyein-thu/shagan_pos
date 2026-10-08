@@ -94,7 +94,10 @@ type UpdateStaffRequest struct {
 // POST /branches and POST /devices endpoints, using the org_id
 // returned here - this endpoint no longer creates a Branch itself.
 type CreateAccountInput struct {
-	OrganizationName      string `json:"organization_name" binding:"required"`
+	OrganizationName string `json:"organization_name" binding:"required"`
+	// Timezone is optional (IANA name, e.g. "Asia/Bangkok"); omitted means
+	// Asia/Yangon. Rejected with 400 if it isn't a known zone.
+	Timezone              string `json:"timezone"`
 	OwnerEmail            string `json:"owner_email" binding:"required,email"`
 	OwnerPassword         string `json:"owner_password" binding:"required,min=8"`
 	ServiceCenterEmail    string `json:"service_center_email" binding:"required,email"`
@@ -146,6 +149,12 @@ type CreatePosAccountInput struct {
 	Password string `json:"password" binding:"required,min=8"`
 }
 
+// UpdateOrganizationTimezoneRequest is the request body for
+// `PATCH /internal/organizations/:id/timezone`.
+type UpdateOrganizationTimezoneRequest struct {
+	Timezone string `json:"timezone" binding:"required"`
+}
+
 // UpdateOrganizationStatusRequest is the request body for
 // `PATCH /internal/organizations/:id/status`. Shagan-team-only lever for
 // suspending/reactivating a whole tenant.
@@ -166,6 +175,25 @@ type UpdatePosAccountStatusRequest struct {
 // repository, same as every other password field in this package.
 type ResetPosAccountPasswordRequest struct {
 	Password string `json:"password" binding:"required,min=8"`
+}
+
+// ResetOrgWideAccountPasswordRequest is the request body for
+// `POST /internal/accounts/org-wide/:id/reset-password` - same shape and
+// plaintext-then-hash rule as ResetPosAccountPasswordRequest.
+type ResetOrgWideAccountPasswordRequest struct {
+	Password string `json:"password" binding:"required,min=8"`
+}
+
+// UpdateBranchStatusRequest is the request body for
+// `PATCH /internal/branches/:id/status`.
+type UpdateBranchStatusRequest struct {
+	Status BranchStatus `json:"status" binding:"required,oneof=active inactive"`
+}
+
+// UpdateDeviceStatusRequest is the request body for
+// `PATCH /internal/devices/:id/status`.
+type UpdateDeviceStatusRequest struct {
+	Status DeviceStatus `json:"status" binding:"required,oneof=active inactive revoked"`
 }
 
 // LoginRequest is the request body for `POST /auth/login`.

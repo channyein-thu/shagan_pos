@@ -69,9 +69,15 @@ type Organization struct {
 	// Status defaults to active for every existing and new row (the
 	// `default` tag applies at the DB level via AutoMigrate, so this never
 	// needs setting explicitly in CreateAccount - see OrganizationStatus).
-	Status    OrganizationStatus `gorm:"type:varchar(30);not null;default:'active'" json:"status"`
-	CreatedAt time.Time          `gorm:"autoCreateTime;not null" json:"created_at"`
-	UpdatedAt time.Time          `gorm:"autoUpdateTime;not null" json:"updated_at"`
+	Status OrganizationStatus `gorm:"type:varchar(30);not null;default:'active'" json:"status"`
+	// Timezone is the IANA zone ("Asia/Yangon") that defines this org's
+	// calendar day - what "today" means on the dashboard and where a report's
+	// from/to dates and daily buckets fall. Defaults to Asia/Yangon for every
+	// existing and new row (applied at the DB level by AutoMigrate, same as
+	// Status). Validated on write - see common.LoadTimezone.
+	Timezone  string    `gorm:"size:64;not null;default:'Asia/Yangon'" json:"timezone"`
+	CreatedAt time.Time `gorm:"autoCreateTime;not null" json:"created_at"`
+	UpdatedAt time.Time `gorm:"autoUpdateTime;not null" json:"updated_at"`
 }
 
 // Branch maps to the "Branches" table in the ERD.

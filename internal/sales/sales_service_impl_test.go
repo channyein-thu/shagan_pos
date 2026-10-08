@@ -19,6 +19,7 @@ import (
 	"shagan_pos/internal/audit"
 	"shagan_pos/internal/catalog"
 	"shagan_pos/internal/common"
+	"shagan_pos/internal/identity"
 	"shagan_pos/internal/inventory"
 )
 
@@ -41,7 +42,7 @@ func d(s string) decimal.Decimal {
 }
 
 func newTestService(repo Repository, inv InventoryWriter, products ProductLookup, auditWriter AuditWriter) *Service {
-	return NewService(repo, inv, products, auditWriter, fakeTransactioner{})
+	return NewService(repo, inv, products, auditWriter, nil, fakeTransactioner{})
 }
 
 // noStoredSale makes CreateSale's idempotency lookup find nothing, i.e. a
@@ -409,8 +410,15 @@ func TestService_CreateSale_ShiftNotOpen_PropagatesErrorWithoutPersisting(t *tes
 }
 
 func newListSalesService(t *testing.T) (*Service, *MockRepository) {
+	svc, repo, _ := newListSalesServiceWithOrgs(t)
+	return svc, repo
+}
+
+func newListSalesServiceWithOrgs(t *testing.T) (*Service, *MockRepository, *MockOrganizationLookup) {
 	repo := NewMockRepository(t)
-	return newTestService(repo, NewMockInventoryWriter(t), NewMockProductLookup(t), NewMockAuditWriter(t)), repo
+	orgs := NewMockOrganizationLookup(t)
+	svc := NewService(repo, NewMockInventoryWriter(t), NewMockProductLookup(t), NewMockAuditWriter(t), orgs, fakeTransactioner{})
+	return svc, repo, orgs
 }
 
 func TestService_ListSales_DefaultsPaginationAndLeavesFiltersOpen(t *testing.T) {
@@ -439,35 +447,62 @@ func TestService_ListSales_ClampsPageSizeToMax(t *testing.T) {
 	require.Equal(t, int64(250), got.TotalCount)
 }
 
-// from/to are inclusive calendar dates: to's whole day is included, and a
-// time-of-day on the input is ignored.
-func TestService_ListSales_TurnsDatesIntoHalfOpenUTCWindowAndPassesBranch(t *testing.T) {
-	svc, repo := newListSalesService(t)
+// from/to are inclusive calendar dates in the ORG's zone: Oct 1..Oct 7 in Yangon
+// (UTC+6:30) is [Sep 30 17:30Z, Oct 7 17:30Z) - to's whole day is included and
+// a time-of-day on the input is ignored (backend-recommendations #9).
+func TestService_ListSales_DatesAreOrgLocalDaysAndBranchPassesThrough(t *testing.T) {
+	svc, repo, orgs := newListSalesServiceWithOrgs(t)
 
 	branch := uint(5)
 	from := time.Date(2026, 10, 1, 17, 30, 0, 0, time.UTC)
 	to := time.Date(2026, 10, 7, 3, 0, 0, 0, time.UTC)
-	wantStart := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
-	wantEnd := time.Date(2026, 10, 8, 0, 0, 0, 0, time.UTC)
+	wantStart := time.Date(2026, 9, 30, 17, 30, 0, 0, time.UTC)
+	wantEnd := time.Date(2026, 10, 7, 17, 30, 0, 0, time.UTC)
 
-	repo.EXPECT().ListSales(mock.Anything, uint(7), SaleFilter{BranchID: &branch, Start: &wantStart, End: &wantEnd, Page: 1, PageSize: 20}).
-		Return([]Sale{}, int64(0), nil).Once()
+	orgs.EXPECT().GetOrganization(mock.Anything, uint(7)).Return(&identity.Organization{ID: 7, Timezone: "Asia/Yangon"}, nil).Once()
+	repo.EXPECT().ListSales(mock.Anything, uint(7), mock.MatchedBy(func(f SaleFilter) bool {
+		return f.BranchID != nil && *f.BranchID == 5 && f.Start != nil && f.Start.Equal(wantStart) &&
+			f.End != nil && f.End.Equal(wantEnd) && f.Page == 1 && f.PageSize == 20
+	})).Return([]Sale{}, int64(0), nil).Once()
 	repo.EXPECT().ListPaymentMethods(mock.Anything, mock.Anything).Return(map[uuid.UUID][]PaymentMethod{}, nil).Once()
 
 	_, err := svc.ListSales(context.Background(), 7, &branch, &from, &to, 1, 20)
 	require.NoError(t, err)
 }
 
-func TestService_ListSales_OnlyFromSet_LeavesEndOpen(t *testing.T) {
-	svc, repo := newListSalesService(t)
+func TestService_ListSales_DifferentOrgZoneMovesTheWindow(t *testing.T) {
+	svc, repo, orgs := newListSalesServiceWithOrgs(t)
 
 	from := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
-	repo.EXPECT().ListSales(mock.Anything, uint(7), SaleFilter{Start: &from, Page: 1, PageSize: 20}).
-		Return([]Sale{}, int64(0), nil).Once()
+	wantStart := time.Date(2026, 9, 30, 17, 0, 0, 0, time.UTC) // Bangkok is UTC+7
+	orgs.EXPECT().GetOrganization(mock.Anything, uint(7)).Return(&identity.Organization{ID: 7, Timezone: "Asia/Bangkok"}, nil).Once()
+	repo.EXPECT().ListSales(mock.Anything, uint(7), mock.MatchedBy(func(f SaleFilter) bool {
+		return f.Start != nil && f.Start.Equal(wantStart) && f.End == nil
+	})).Return([]Sale{}, int64(0), nil).Once()
 	repo.EXPECT().ListPaymentMethods(mock.Anything, mock.Anything).Return(map[uuid.UUID][]PaymentMethod{}, nil).Once()
 
 	_, err := svc.ListSales(context.Background(), 7, nil, &from, nil, 1, 20)
 	require.NoError(t, err)
+}
+
+// Only a date bound needs the zone; an unfiltered list must not pay for the lookup.
+func TestService_ListSales_NoDateBounds_DoesNotLookUpTheOrg(t *testing.T) {
+	svc, repo, _ := newListSalesServiceWithOrgs(t) // no GetOrganization expectation: a call would fail the test
+	repo.EXPECT().ListSales(mock.Anything, uint(7), SaleFilter{Page: 1, PageSize: 20}).Return([]Sale{}, int64(0), nil).Once()
+	repo.EXPECT().ListPaymentMethods(mock.Anything, mock.Anything).Return(map[uuid.UUID][]PaymentMethod{}, nil).Once()
+
+	_, err := svc.ListSales(context.Background(), 7, nil, nil, nil, 1, 20)
+	require.NoError(t, err)
+}
+
+func TestService_ListSales_OrgLookupFails_PropagatesBeforeQuerying(t *testing.T) {
+	svc, _, orgs := newListSalesServiceWithOrgs(t)
+	boom := errors.New("db down")
+	from := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	orgs.EXPECT().GetOrganization(mock.Anything, uint(7)).Return(nil, boom).Once()
+
+	_, err := svc.ListSales(context.Background(), 7, nil, &from, nil, 1, 20)
+	require.ErrorIs(t, err, boom)
 }
 
 func TestService_ListSales_AttachesPaymentMethodsPerRow(t *testing.T) {

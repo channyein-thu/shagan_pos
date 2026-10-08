@@ -20,11 +20,12 @@ type Service struct {
 	inventory InventoryWriter
 	products  ProductLookup
 	audit     AuditWriter
+	orgs      OrganizationLookup
 	db        common.Transactioner
 }
 
-func NewService(repo Repository, inv InventoryWriter, products ProductLookup, auditWriter AuditWriter, db common.Transactioner) *Service {
-	return &Service{repo: repo, inventory: inv, products: products, audit: auditWriter, db: db}
+func NewService(repo Repository, inv InventoryWriter, products ProductLookup, auditWriter AuditWriter, orgs OrganizationLookup, db common.Transactioner) *Service {
+	return &Service{repo: repo, inventory: inv, products: products, audit: auditWriter, orgs: orgs, db: db}
 }
 
 var _ Interface = (*Service)(nil)
@@ -277,14 +278,22 @@ func (s *Service) ListSales(ctx context.Context, orgID uint, branchID *uint, fro
 		pageSize = 100
 	}
 	f := SaleFilter{BranchID: branchID, Page: page, PageSize: pageSize}
-	if from != nil {
-		start := utcDay(*from)
-		f.Start = &start
-	}
-	if to != nil {
-		// to is an inclusive calendar date: its whole day counts.
-		end := utcDay(*to).Add(24 * time.Hour)
-		f.End = &end
+	if from != nil || to != nil {
+		// The dates are days of the org's own calendar, not UTC's.
+		org, err := s.orgs.GetOrganization(ctx, orgID)
+		if err != nil {
+			return nil, err
+		}
+		loc := common.OrgLocation(org.Timezone)
+		if from != nil {
+			start := common.StartOfDay(*from, loc)
+			f.Start = &start
+		}
+		if to != nil {
+			// to is an inclusive calendar date: its whole day counts.
+			end := common.NextDay(common.StartOfDay(*to, loc))
+			f.End = &end
+		}
 	}
 
 	sales, total, err := s.repo.ListSales(ctx, orgID, f)
@@ -310,11 +319,6 @@ func (s *Service) ListSales(ctx context.Context, orgID uint, branchID *uint, fro
 		items[i] = SaleListItem{Sale: sale, PaymentMethods: m}
 	}
 	return &SalesPage{Sales: items, Page: page, PageSize: pageSize, TotalCount: total}, nil
-}
-
-func utcDay(t time.Time) time.Time {
-	y, m, d := t.Date()
-	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
 }
 
 func (s *Service) GetSale(ctx context.Context, orgID uint, id uuid.UUID) (*Sale, error) {

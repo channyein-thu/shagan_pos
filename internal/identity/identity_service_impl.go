@@ -523,6 +523,10 @@ func (s *Service) ListRolePermissions(ctx context.Context, id uint) ([]Permissio
 // duplicate email), s.db.Transaction rolls back the Organization insert too,
 // so a failure partway through never leaves an orphaned org with no owner.
 func (s *Service) CreateAccount(ctx context.Context, in CreateAccountInput) (*CreateAccountResult, error) {
+	timezone, err := validateTimezone(in.Timezone)
+	if err != nil {
+		return nil, err
+	}
 	ownerHash, err := bcrypt.GenerateFromPassword([]byte(in.OwnerPassword), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, common.SystemError("failed to hash password")
@@ -537,7 +541,7 @@ func (s *Service) CreateAccount(ctx context.Context, in CreateAccountInput) (*Cr
 
 	var result CreateAccountResult
 	err = s.db.Transaction(func(tx *gorm.DB) error {
-		org := Organization{Name: in.OrganizationName}
+		org := Organization{Name: in.OrganizationName, Timezone: timezone}
 		if err := s.repo.CreateOrganization(tx, &org); err != nil {
 			return err
 		}
@@ -596,6 +600,55 @@ func (s *Service) ListPosAccounts(ctx context.Context, orgID uint) ([]User, erro
 
 func (s *Service) UpdateOrganizationStatus(ctx context.Context, id uint, status OrganizationStatus) error {
 	return s.repo.UpdateOrganizationStatus(ctx, id, status)
+}
+
+// validateTimezone returns the zone name to store: DefaultTimezone for "",
+// otherwise name itself if it's a real IANA zone, 400 if not.
+func validateTimezone(name string) (string, error) {
+	if name == "" {
+		return common.DefaultTimezone, nil
+	}
+	if _, err := common.LoadTimezone(name); err != nil {
+		return "", common.BadRequestError("timezone must be an IANA zone name such as Asia/Yangon")
+	}
+	return name, nil
+}
+
+func (s *Service) UpdateOrganizationTimezone(ctx context.Context, id uint, timezone string) error {
+	name, err := validateTimezone(timezone)
+	if err != nil {
+		return err
+	}
+	if _, err := s.repo.GetOrganization(ctx, id); err != nil {
+		return err
+	}
+	return s.repo.UpdateOrganizationTimezone(ctx, id, name)
+}
+
+func (s *Service) GetOrganization(ctx context.Context, id uint) (*Organization, error) {
+	return s.repo.GetOrganization(ctx, id)
+}
+
+func (s *Service) ListOrgWideAccounts(ctx context.Context, orgID uint) ([]User, error) {
+	return s.repo.ListOrgWideAccounts(ctx, orgID)
+}
+
+// ResetOrgWideAccountPassword hashes the plaintext password before it ever
+// reaches the repository - same pattern as ResetPosAccountPassword.
+func (s *Service) ResetOrgWideAccountPassword(ctx context.Context, id uint, plaintext string) error {
+	hash, err := bcrypt.GenerateFromPassword([]byte(plaintext), bcrypt.DefaultCost)
+	if err != nil {
+		return common.SystemError("failed to hash password")
+	}
+	return s.repo.ResetOrgWideAccountPassword(ctx, id, string(hash))
+}
+
+func (s *Service) UpdateBranchStatus(ctx context.Context, id uint, status BranchStatus) error {
+	return s.repo.UpdateBranchStatusInternal(ctx, id, status)
+}
+
+func (s *Service) UpdateDeviceStatus(ctx context.Context, id uint, status DeviceStatus) error {
+	return s.repo.UpdateDeviceStatusInternal(ctx, id, status)
 }
 
 func (s *Service) UpdatePosAccountStatus(ctx context.Context, id uint, status UserStatus) error {

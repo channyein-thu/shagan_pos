@@ -2,6 +2,7 @@ package reports
 
 import (
 	"context"
+	"regexp"
 	"time"
 
 	"github.com/google/uuid"
@@ -54,14 +55,34 @@ func (r *RepositoryImpl) ReturnsTotal(ctx context.Context, orgID uint, branchID 
 	return row.Total, nil
 }
 
-func (r *RepositoryImpl) HourlyTrend(ctx context.Context, orgID uint, branchID *uint, dayStart, dayEnd time.Time) ([]TrendBucket, error) {
+// safeTimezone returns timezone only if it is a plain IANA identifier
+// (letters, digits, '_', '+', '-', '/'), else "UTC". The name is interpolated
+// into SQL (GORM's Group/Order can't bind parameters), so this is the guard
+// even though stored names were already validated against the tz database.
+func safeTimezone(timezone string) string {
+	if timezone == "" || !ianaName.MatchString(timezone) {
+		return "UTC"
+	}
+	return timezone
+}
+
+var ianaName = regexp.MustCompile(`^[A-Za-z0-9_+\-/]+$`)
+
+// localTime is the SQL expression for completed_at as the org's local wall
+// clock (a timestamp without zone), the thing day/hour boundaries are cut on.
+func localTime(timezone string) string {
+	return "(completed_at AT TIME ZONE '" + safeTimezone(timezone) + "')"
+}
+
+func (r *RepositoryImpl) HourlyTrend(ctx context.Context, orgID uint, branchID *uint, dayStart, dayEnd time.Time, timezone string) ([]TrendBucket, error) {
+	hour := "date_trunc('hour', " + localTime(timezone) + ")"
 	var rows []TrendBucket
 	q := r.db.WithContext(ctx).Table("sales").
-		Select("to_char(date_trunc('hour', completed_at), 'HH24:00') AS period, "+
+		Select("to_char("+hour+", 'HH24:00') AS period, "+
 			"COALESCE(SUM(subtotal - discount), 0) AS revenue, COUNT(*) AS count").
 		Where("org_id = ? AND "+completedSalesWhere, orgID, dayStart, dayEnd).
-		Group("date_trunc('hour', completed_at)").
-		Order("date_trunc('hour', completed_at)")
+		Group(hour).
+		Order(hour)
 	if branchID != nil {
 		q = q.Where("branch_id = ?", *branchID)
 	}
@@ -86,8 +107,8 @@ func dateTruncUnit(g Granularity) string {
 	}
 }
 
-func (r *RepositoryImpl) Trend(ctx context.Context, orgID uint, branchID *uint, from, to time.Time, granularity Granularity) ([]TrendBucket, error) {
-	trunc := "date_trunc('" + dateTruncUnit(granularity) + "', completed_at)"
+func (r *RepositoryImpl) Trend(ctx context.Context, orgID uint, branchID *uint, from, to time.Time, granularity Granularity, timezone string) ([]TrendBucket, error) {
+	trunc := "date_trunc('" + dateTruncUnit(granularity) + "', " + localTime(timezone) + ")"
 	var rows []TrendBucket
 	q := r.db.WithContext(ctx).Table("sales").
 		Select("to_char("+trunc+", 'YYYY-MM-DD') AS period, "+
@@ -317,7 +338,7 @@ func (r *RepositoryImpl) Expenses(ctx context.Context, branchIDs []uint, from, t
 	var row struct{ Total decimal.Decimal }
 	err := r.db.WithContext(ctx).Table("expenses").
 		Select("COALESCE(SUM(amount), 0) AS total").
-		Where("branch_id IN (?) AND date >= ? AND date < ?", branchIDs, from, to).
+		Where("branch_id IN (?) AND date >= ?::date AND date < ?::date", branchIDs, from.Format("2006-01-02"), to.Format("2006-01-02")).
 		Scan(&row).Error
 	if err != nil {
 		return decimal.Zero, err

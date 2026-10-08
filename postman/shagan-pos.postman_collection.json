@@ -1536,7 +1536,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"organization_name\": \"Sample Org\",\n  \"owner_email\": \"owner@example.com\",\n  \"owner_password\": \"changeme\",\n  \"service_center_email\": \"service-center@example.com\",\n  \"service_center_password\": \"changeme\"\n}",
+              "raw": "{\n  \"organization_name\": \"Sample Org\",\n  \"timezone\": \"Asia/Yangon\",\n  \"owner_email\": \"owner@example.com\",\n  \"owner_password\": \"changeme\",\n  \"service_center_email\": \"service-center@example.com\",\n  \"service_center_password\": \"changeme\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1548,7 +1548,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["internal", "accounts"]
             },
-            "description": "Shagan-team-only. Protected by X-Internal-Key (INTERNAL_API_KEY), not the regular bearer token - creates Organization + owner User + service_center User in one call. No Branch is created here; use POST /branches (as the owner) afterward, then POST /devices, then POST /internal/accounts/pos to attach a pos-type login to a device."
+            "description": "Shagan-team-only. Protected by X-Internal-Key (INTERNAL_API_KEY), not the regular bearer token - creates Organization + owner User + service_center User in one call. timezone is optional (an IANA zone name; omitted means Asia/Yangon, an unknown name is 400): it defines the org's calendar day for every report's \"today\", date ranges and daily buckets, and for GET /sales' from/to. No Branch is created here; use POST /branches (as the owner) afterward, then POST /devices, then POST /internal/accounts/pos to attach a pos-type login to a device."
           },
           "response": []
         },
@@ -1737,6 +1737,225 @@
               }
             },
             "description": "Shagan-team-only. Suspends or reactivates a whole tenant - status is \"active\" or \"suspended\". A suspended org blocks Login/RefreshSession for every one of its users (owner, service_center, and pos alike), not just individually-suspended pos accounts."
+          }
+        },
+        {
+          "name": "UpdateOrganizationTimezone - PATCH /internal/organizations/:id/timezone",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-Internal-Key",
+                "value": "{{internalKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/internal/organizations/:id/timezone",
+              "host": ["{{baseUrl}}"],
+              "path": ["internal", "organizations", ":id", "timezone"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"timezone\": \"Asia/Yangon\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Shagan-team-only. Sets the IANA timezone that defines the org's calendar day - the dashboard's \"today\", every report's from/to dates and daily/hourly buckets, and GET /sales' from/to. 204 on success; 400 for an unknown zone name (e.g. Mars/Olympus), 404 for an unknown org. Takes effect on the next request; nothing stored is rewritten (timestamps are instants), so switching zones just moves where the day boundaries fall. Every org starts as Asia/Yangon (UTC+6:30)."
+          }
+        },
+        {
+          "name": "GetOrganizationInternal - GET /internal/organizations/:id",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Internal-Key",
+                "value": "{{internalKey}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/internal/organizations/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["internal", "organizations", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Shagan-team-only. One tenant (id, name, status, timezone, timestamps), so the portal doesn't have to list every org and filter. 404 if the id doesn't exist, 400 if it isn't a number."
+          }
+        },
+        {
+          "name": "ListOrgWideAccounts - GET /internal/accounts/org-wide",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Internal-Key",
+                "value": "{{internalKey}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/internal/accounts/org-wide?org_id=1",
+              "host": ["{{baseUrl}}"],
+              "path": ["internal", "accounts", "org-wide"],
+              "query": [{"key": "org_id", "value": "1", "description": "Required."}]
+            },
+            "description": "Shagan-team-only. The org's owner and service_center logins (the two org-wide accounts), oldest first - the counterpart of ListPosAccounts, which only covers pos-terminal logins. Never includes a password hash. org_id is required (400 without it); an org with no accounts returns []."
+          }
+        },
+        {
+          "name": "ResetOrgWideAccountPassword - POST /internal/accounts/org-wide/:id/reset-password",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Internal-Key",
+                "value": "{{internalKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/internal/accounts/org-wide/:id/reset-password",
+              "host": ["{{baseUrl}}"],
+              "path": ["internal", "accounts", "org-wide", ":id", "reset-password"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"password\": \"a-new-password-123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Shagan-team-only. Resets an owner's or service_center's password - plaintext (min 8 chars), hashed server-side. 204 on success. Returns 404 if :id isn't an owner/service_center account (a pos login can't be reached through this route - use ResetPosAccountPassword). Every refresh token the account already holds is revoked in the same step, so whoever knew the old password can no longer refresh a session; an access token already issued still lives out its short TTL (60 minutes)."
+          }
+        },
+        {
+          "name": "UpdateBranchStatusInternal - PATCH /internal/branches/:id/status",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-Internal-Key",
+                "value": "{{internalKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/internal/branches/:id/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["internal", "branches", ":id", "status"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"inactive\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Shagan-team-only. status is \"active\" or \"inactive\" (400 otherwise); 204 on success, 404 for an unknown branch. Not org-scoped - the portal has no tenant token. An inactive branch can't have a new shift opened (409); a shift already open is not interrupted."
+          }
+        },
+        {
+          "name": "UpdateDeviceStatusInternal - PATCH /internal/devices/:id/status",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-Internal-Key",
+                "value": "{{internalKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/internal/devices/:id/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["internal", "devices", ":id", "status"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"revoked\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Shagan-team-only. status is \"active\", \"inactive\" or \"revoked\" (400 otherwise); 204 on success, 404 for an unknown device. A device that isn't active can't have a new shift opened (409); a shift already open is not interrupted, and the device's pos account can still log in (suspend it with UpdatePosAccountStatus to block that)."
           }
         },
         {
@@ -1936,7 +2155,7 @@
                 }
               }
             },
-            "description": "Shagan-team-only. Resets a pos-terminal login's password - password is plaintext, hashed server-side before it's persisted. Returns 404 if :id isn't a pos-type account."
+            "description": "Shagan-team-only. Resets a pos-terminal login's password - password is plaintext, hashed server-side before it's persisted. Returns 404 if :id isn't a pos-type account. Every refresh token the account already holds is revoked in the same step (an access token already issued still lives out its short TTL)."
           }
         }
       ]
@@ -3352,7 +3571,7 @@
                     }
                   ]
                 },
-                "description": "Hard delete, scoped to the caller's org. Blocked with 409 if any combo still bundles this product (create a combo referencing it via CreateCombo to test that path). On success, also removes the product's own image and its storage object - 204 No Content, no body."
+                "description": "Hard delete, scoped to the caller's org. Blocked with 409 if any combo still bundles this product (create a combo referencing it via CreateCombo to test that path), and with 409 if the product has ANY history - a sale line, an exchange line, stock (even if now zero), a stock adjustment/transfer, an inventory-ledger entry or a purchase-order line - because those records would be orphaned and history screens would lose the product's name. To retire such a product use UpdateProduct with is_active=false instead. Only a product that was never used (e.g. created by mistake) can be deleted: it also removes the product's own image and its storage object - 204 No Content, no body."
               },
               "response": []
             }
@@ -3494,7 +3713,7 @@
                   "host": ["{{baseUrl}}"],
                   "path": ["api", "v1", "combos"]
                 },
-                "description": "Lists combos in the caller's org. No query params - org_id comes from the token. Each combo now includes an \"images\" array (id, url, width, height) - url is a temporary presigned link valid for 15 minutes, so re-fetch the list if it expires."
+                "description": "Lists combos in the caller's org. No query params - org_id comes from the token. Each combo includes an \"items\" array - the component products as [{product_id, qty}], in creation order, never empty - which is what a till needs to expand the combo into one sale line per product (docs/WORKFLOWS.md section 8); and an \"images\" array (id, url, width, height) - url is a temporary presigned link valid for 15 minutes, so re-fetch the list if it expires. The same items appear on each combo in GET /sync/catalog."
               },
               "response": []
             }
@@ -3774,7 +3993,7 @@
                 }
               ]
             },
-            "description": "Lists stock transfers in the caller's org. Same scoping as ListStockLevels. branch_id is optional and matches a transfer where the branch is either from_branch or to_branch."
+            "description": "Lists stock transfers in the caller's org, each with its note and its lines: items is [{product_id, qty}] in creation order, never empty. Same scoping as ListStockLevels. branch_id is optional and matches a transfer where the branch is either from_branch or to_branch."
           },
           "response": []
         },
@@ -3796,7 +4015,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"from_branch\": 1,\n  \"to_branch\": 2,\n  \"items\": [\n    {\"product_id\": 1, \"qty\": 5}\n  ]\n}",
+              "raw": "{\n  \"from_branch\": 1,\n  \"to_branch\": 2,\n  \"note\": \"Weekend restock\",\n  \"items\": [\n    {\"product_id\": 1, \"qty\": 5}\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3808,7 +4027,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "stock-transfers"]
             },
-            "description": "Creates a new stock transfer at status pending - no stock moves yet. from_branch/to_branch must both belong to your org and differ. Every item's product must belong to your org, and from_branch's current stock must cover each item's qty (products are org-wide, so this is a stock-sufficiency check, not a product-ownership one) - 409 Conflict otherwise. actor_id is never client input - it's the authenticated caller's own user ID. Advance it with UpdateStockTransfer - moving it to completed is what actually decrements from_branch's stock and credits to_branch's."
+            "description": "Creates a new stock transfer at status pending - no stock moves yet. from_branch/to_branch must both belong to your org and differ. Every item's product must belong to your org, and from_branch's current stock must cover each item's qty (products are org-wide, so this is a stock-sufficiency check, not a product-ownership one) - 409 Conflict otherwise. note is optional free text (why the stock is moving; trimmed, at most 500 characters - 400 beyond that), returned as \"\" when omitted. The response carries the transfer plus items [{product_id, qty}]. actor_id is never client input - it's the authenticated caller's own user ID. Advance it with UpdateStockTransfer - moving it to completed is what actually decrements from_branch's stock and credits to_branch's."
           },
           "response": []
         },
@@ -3848,7 +4067,7 @@
                 }
               ]
             },
-            "description": "Advances a stock transfer's status: pending -> in_transit -> completed, or -> cancelled from either pending or in_transit. Rejects with 409 Conflict if the transfer is already completed or cancelled. Moving to completed is the one transition with a real stock effect - decrements every item's qty from from_branch and credits it to to_branch, atomically, writing one transfer_out and one transfer_in inventory_ledger row per item. Rejects with 409 Conflict if from_branch doesn't have enough stock for any item - nothing moves for any item in that case. status must be one of: in_transit, completed, cancelled."
+            "description": "Advances a stock transfer's status: pending -> in_transit -> completed, or -> cancelled from either pending or in_transit. Rejects with 409 Conflict if the transfer is already completed or cancelled. Moving to completed is the one transition with a real stock effect - decrements every item's qty from from_branch and credits it to to_branch, atomically, writing one transfer_out and one transfer_in inventory_ledger row per item. Rejects with 409 Conflict if from_branch doesn't have enough stock for any item - nothing moves for any item in that case. status must be one of: in_transit, completed, cancelled. The response is the transfer with its note and items, whichever transition it was."
           },
           "response": []
         }
@@ -3919,8 +4138,8 @@
               "path": ["api", "v1", "sales"],
               "query": [
                 {"key": "branch_id", "value": "1", "description": "Optional - owner/service_center only (a pos-device token's own branch always wins instead)."},
-                {"key": "from", "value": "2026-10-01", "description": "Optional, YYYY-MM-DD, inclusive. Unlike the reports there is NO default window - omit both for the whole history, paged."},
-                {"key": "to", "value": "2026-10-08", "description": "Optional, YYYY-MM-DD, inclusive (that whole UTC day counts)."},
+                {"key": "from", "value": "2026-10-01", "description": "Optional, YYYY-MM-DD, inclusive - a day of the ORG's timezone (default Asia/Yangon), not UTC. Unlike the reports there is NO default window - omit both for the whole history, paged."},
+                {"key": "to", "value": "2026-10-08", "description": "Optional, YYYY-MM-DD, inclusive (that whole day of the org's timezone counts)."},
                 {"key": "page", "value": "1", "description": "Optional, defaults to 1."},
                 {"key": "page_size", "value": "20", "description": "Optional, defaults to 20, capped at 100."}
               ]

@@ -71,7 +71,10 @@ type StockTransfer struct {
 	ToBranch   uint           `gorm:"index;not null" json:"to_branch"`
 	Status     TransferStatus `gorm:"type:varchar(30);not null" json:"status"` // one of TransferStatus* constants below (TODO: confirm real values)
 	ActorID    uint           `gorm:"index;not null" json:"actor_id"`
-	CreatedAt  time.Time      `gorm:"autoCreateTime;not null" json:"created_at"`
+	// Note is the optional free-text reason the transfer was raised ("" when
+	// none was given) - set at creation, never edited.
+	Note      string    `gorm:"type:text;not null;default:''" json:"note"`
+	CreatedAt time.Time `gorm:"autoCreateTime;not null" json:"created_at"`
 }
 
 // StockTransferItem maps to the "Stock_transfers_items" table in the ERD.

@@ -89,6 +89,31 @@ func TestService_GetCatalogSnapshot_SameContentYieldsSameETag(t *testing.T) {
 	require.Equal(t, etag1, etag2)
 }
 
+// A combo's component items are part of what a till caches, so changing them
+// must change the ETag - otherwise a device would keep expanding a combo into
+// its old products after a 304.
+func TestService_GetCatalogSnapshot_ComboItemsChange_YieldsDifferentETag(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	cat := NewMockCatalogReader(t)
+	sw := NewMockSalesWriter(t)
+	svc := newTestService(repo, branches, cat, sw)
+
+	before := []catalog.ComboResult{{Combo: catalog.Combo{ID: 1, Name: "Breakfast"}, Items: []catalog.ComboItemResult{{ProductID: 5, Qty: 1}}}}
+	after := []catalog.ComboResult{{Combo: catalog.Combo{ID: 1, Name: "Breakfast"}, Items: []catalog.ComboItemResult{{ProductID: 5, Qty: 2}}}}
+	cat.EXPECT().ListProducts(mock.Anything, uint(7)).Return(nil, nil).Twice()
+	cat.EXPECT().ListCategories(mock.Anything, uint(7)).Return(nil, nil).Twice()
+	cat.EXPECT().ListCombos(mock.Anything, uint(7)).Return(before, nil).Once()
+	cat.EXPECT().ListCombos(mock.Anything, uint(7)).Return(after, nil).Once()
+
+	snap, etag1, err := svc.GetCatalogSnapshot(context.Background(), 7)
+	require.NoError(t, err)
+	require.Equal(t, before[0].Items, snap.Combos[0].Items, "the snapshot must carry the items through")
+	_, etag2, err := svc.GetCatalogSnapshot(context.Background(), 7)
+	require.NoError(t, err)
+	require.NotEqual(t, etag1, etag2)
+}
+
 // TestService_GetCatalogSnapshot_DifferingOnlyByPresignedImageURL_YieldsSameETag
 // guards against a real bug caught in live testing: a presigned image URL
 // is freshly re-signed (different timestamp/signature) on every single

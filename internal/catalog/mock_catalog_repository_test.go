@@ -1002,6 +1002,65 @@ func (_c *MockRepository_ListComboImagesByComboIDs_Call) RunAndReturn(run func(c
 	return _c
 }
 
+// ListComboItemsByComboIDs provides a mock function with given fields: ctx, comboIDs
+func (_m *MockRepository) ListComboItemsByComboIDs(ctx context.Context, comboIDs []uint) ([]ComboItem, error) {
+	ret := _m.Called(ctx, comboIDs)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListComboItemsByComboIDs")
+	}
+
+	var r0 []ComboItem
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, []uint) ([]ComboItem, error)); ok {
+		return rf(ctx, comboIDs)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, []uint) []ComboItem); ok {
+		r0 = rf(ctx, comboIDs)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]ComboItem)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, []uint) error); ok {
+		r1 = rf(ctx, comboIDs)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// MockRepository_ListComboItemsByComboIDs_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListComboItemsByComboIDs'
+type MockRepository_ListComboItemsByComboIDs_Call struct {
+	*mock.Call
+}
+
+// ListComboItemsByComboIDs is a helper method to define mock.On call
+//   - ctx context.Context
+//   - comboIDs []uint
+func (_e *MockRepository_Expecter) ListComboItemsByComboIDs(ctx interface{}, comboIDs interface{}) *MockRepository_ListComboItemsByComboIDs_Call {
+	return &MockRepository_ListComboItemsByComboIDs_Call{Call: _e.mock.On("ListComboItemsByComboIDs", ctx, comboIDs)}
+}
+
+func (_c *MockRepository_ListComboItemsByComboIDs_Call) Run(run func(ctx context.Context, comboIDs []uint)) *MockRepository_ListComboItemsByComboIDs_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].([]uint))
+	})
+	return _c
+}
+
+func (_c *MockRepository_ListComboItemsByComboIDs_Call) Return(_a0 []ComboItem, _a1 error) *MockRepository_ListComboItemsByComboIDs_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *MockRepository_ListComboItemsByComboIDs_Call) RunAndReturn(run func(context.Context, []uint) ([]ComboItem, error)) *MockRepository_ListComboItemsByComboIDs_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // ListCombos provides a mock function with given fields: ctx, orgID
 func (_m *MockRepository) ListCombos(ctx context.Context, orgID uint) ([]Combo, error) {
 	ret := _m.Called(ctx, orgID)
@@ -1175,6 +1234,63 @@ func (_c *MockRepository_ListProducts_Call) Return(_a0 []Product, _a1 error) *Mo
 }
 
 func (_c *MockRepository_ListProducts_Call) RunAndReturn(run func(context.Context, uint) ([]Product, error)) *MockRepository_ListProducts_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ProductHasHistory provides a mock function with given fields: ctx, productID
+func (_m *MockRepository) ProductHasHistory(ctx context.Context, productID uint) (bool, error) {
+	ret := _m.Called(ctx, productID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ProductHasHistory")
+	}
+
+	var r0 bool
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, uint) (bool, error)); ok {
+		return rf(ctx, productID)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, uint) bool); ok {
+		r0 = rf(ctx, productID)
+	} else {
+		r0 = ret.Get(0).(bool)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, uint) error); ok {
+		r1 = rf(ctx, productID)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// MockRepository_ProductHasHistory_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ProductHasHistory'
+type MockRepository_ProductHasHistory_Call struct {
+	*mock.Call
+}
+
+// ProductHasHistory is a helper method to define mock.On call
+//   - ctx context.Context
+//   - productID uint
+func (_e *MockRepository_Expecter) ProductHasHistory(ctx interface{}, productID interface{}) *MockRepository_ProductHasHistory_Call {
+	return &MockRepository_ProductHasHistory_Call{Call: _e.mock.On("ProductHasHistory", ctx, productID)}
+}
+
+func (_c *MockRepository_ProductHasHistory_Call) Run(run func(ctx context.Context, productID uint)) *MockRepository_ProductHasHistory_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(uint))
+	})
+	return _c
+}
+
+func (_c *MockRepository_ProductHasHistory_Call) Return(_a0 bool, _a1 error) *MockRepository_ProductHasHistory_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *MockRepository_ProductHasHistory_Call) RunAndReturn(run func(context.Context, uint) (bool, error)) *MockRepository_ProductHasHistory_Call {
 	_c.Call.Return(run)
 	return _c
 }

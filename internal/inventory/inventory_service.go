@@ -73,8 +73,10 @@ type Interface interface {
 	CreateStockAdjustment(ctx context.Context, orgID uint, actorID uint, in CreateStockAdjustmentRequest) (*StockAdjustment, error)
 	// ListStockTransfers is scoped to the authenticated caller's own
 	// organization - branchID optionally narrows it to transfers where
-	// that branch is either the sender or the receiver.
-	ListStockTransfers(ctx context.Context, orgID uint, branchID *uint) ([]StockTransfer, error)
+	// that branch is either the sender or the receiver. Every transfer
+	// carries its line items ({product_id, qty}), fetched in one query for
+	// the whole list.
+	ListStockTransfers(ctx context.Context, orgID uint, branchID *uint) ([]StockTransferResult, error)
 	// CreateStockTransfer confirms FromBranch and ToBranch both belong to
 	// orgID and are different branches, and every item's ProductID belongs
 	// to orgID AND to FromBranch specifically (a product only ever lives
@@ -84,8 +86,9 @@ type Interface interface {
 	// happens yet, same reasoning as
 	// procurement.Service.CreatePurchaseOrder not touching stock until a
 	// GoodsReceipt is actually created. actorID is the authenticated
-	// caller's own user ID, never a client-supplied one.
-	CreateStockTransfer(ctx context.Context, orgID uint, actorID uint, in CreateStockTransferRequest) (*StockTransfer, error)
+	// caller's own user ID, never a client-supplied one. in.Note is stored
+	// trimmed (optional). Returns the transfer with its items.
+	CreateStockTransfer(ctx context.Context, orgID uint, actorID uint, in CreateStockTransferRequest) (*StockTransferResult, error)
 	// UpdateStockTransfer confirms the transfer exists AND belongs to
 	// orgID, and blocks any update once it's already Completed or
 	// Cancelled (terminal states). Moving Status to TransferStatusCompleted
@@ -97,5 +100,6 @@ type Interface interface {
 	// entries per item (transfer_out at FromBranch, transfer_in at
 	// ToBranch) - all in one transaction. Any other status transition
 	// (in_transit, cancelled) is a plain field write with no stock effect.
-	UpdateStockTransfer(ctx context.Context, orgID uint, id uint, in UpdateStockTransferRequest) (*StockTransfer, error)
+	// Returns the transfer with its items.
+	UpdateStockTransfer(ctx context.Context, orgID uint, id uint, in UpdateStockTransferRequest) (*StockTransferResult, error)
 }

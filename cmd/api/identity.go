@@ -70,9 +70,15 @@ func (a *IdentityAPI) RegisterInternalRoutes(rg *gin.RouterGroup) {
 	rg.POST("/branches", a.CreateBranchInternal)
 	rg.POST("/devices", a.CreateDeviceInternal)
 	rg.GET("/organizations", a.ListOrganizations)
+	rg.GET("/organizations/:id", a.GetOrganizationInternal)
 	rg.PATCH("/organizations/:id/status", a.UpdateOrganizationStatus)
+	rg.PATCH("/organizations/:id/timezone", a.UpdateOrganizationTimezone)
 	rg.GET("/branches", a.ListBranchesInternal)
 	rg.GET("/devices", a.ListDevicesInternal)
+	rg.GET("/accounts/org-wide", a.ListOrgWideAccounts)
+	rg.POST("/accounts/org-wide/:id/reset-password", a.ResetOrgWideAccountPassword)
+	rg.PATCH("/branches/:id/status", a.UpdateBranchStatusInternal)
+	rg.PATCH("/devices/:id/status", a.UpdateDeviceStatusInternal)
 	rg.GET("/accounts/pos", a.ListPosAccounts)
 	rg.PATCH("/accounts/pos/:id/status", a.UpdatePosAccountStatus)
 	rg.POST("/accounts/pos/:id/reset-password", a.ResetPosAccountPassword)
@@ -608,6 +614,117 @@ func (a *IdentityAPI) UpdateOrganizationStatus(c *gin.Context) {
 		return
 	}
 	if err := a.service.UpdateOrganizationStatus(c.Request.Context(), uint(idVal), in.Status); err != nil {
+		common.HandleError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+// UpdateOrganizationTimezone handles
+// `PATCH /internal/organizations/:id/timezone`. Shagan-team-only: sets the
+// IANA zone that defines the tenant's calendar day (reports' "today").
+func (a *IdentityAPI) UpdateOrganizationTimezone(c *gin.Context) {
+	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		common.HandleError(c, common.BadRequestError("invalid id"))
+		return
+	}
+	var in identity.UpdateOrganizationTimezoneRequest
+	if err := c.ShouldBindJSON(&in); err != nil {
+		common.HandleError(c, common.BadRequestError(err.Error()))
+		return
+	}
+	if err := a.service.UpdateOrganizationTimezone(c.Request.Context(), uint(idVal), in.Timezone); err != nil {
+		common.HandleError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+// GetOrganizationInternal handles `GET /internal/organizations/:id`.
+// Shagan-team-only: one tenant, so the portal needn't list them all and filter.
+func (a *IdentityAPI) GetOrganizationInternal(c *gin.Context) {
+	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		common.HandleError(c, common.BadRequestError("invalid id"))
+		return
+	}
+	result, err := a.service.GetOrganization(c.Request.Context(), uint(idVal))
+	if err != nil {
+		common.HandleError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// ListOrgWideAccounts handles `GET /internal/accounts/org-wide`.
+// Shagan-team-only: the org's owner and service_center logins (org_id is a
+// query param, same as ListPosAccounts).
+func (a *IdentityAPI) ListOrgWideAccounts(c *gin.Context) {
+	orgID, ok := requireOrgIDQuery(c)
+	if !ok {
+		return
+	}
+	result, err := a.service.ListOrgWideAccounts(c.Request.Context(), orgID)
+	if err != nil {
+		common.HandleError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// ResetOrgWideAccountPassword handles
+// `POST /internal/accounts/org-wide/:id/reset-password`. Shagan-team-only.
+func (a *IdentityAPI) ResetOrgWideAccountPassword(c *gin.Context) {
+	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		common.HandleError(c, common.BadRequestError("invalid id"))
+		return
+	}
+	var in identity.ResetOrgWideAccountPasswordRequest
+	if err := c.ShouldBindJSON(&in); err != nil {
+		common.HandleError(c, common.BadRequestError(err.Error()))
+		return
+	}
+	if err := a.service.ResetOrgWideAccountPassword(c.Request.Context(), uint(idVal), in.Password); err != nil {
+		common.HandleError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+// UpdateBranchStatusInternal handles `PATCH /internal/branches/:id/status`.
+func (a *IdentityAPI) UpdateBranchStatusInternal(c *gin.Context) {
+	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		common.HandleError(c, common.BadRequestError("invalid id"))
+		return
+	}
+	var in identity.UpdateBranchStatusRequest
+	if err := c.ShouldBindJSON(&in); err != nil {
+		common.HandleError(c, common.BadRequestError(err.Error()))
+		return
+	}
+	if err := a.service.UpdateBranchStatus(c.Request.Context(), uint(idVal), in.Status); err != nil {
+		common.HandleError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+// UpdateDeviceStatusInternal handles `PATCH /internal/devices/:id/status`.
+func (a *IdentityAPI) UpdateDeviceStatusInternal(c *gin.Context) {
+	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		common.HandleError(c, common.BadRequestError("invalid id"))
+		return
+	}
+	var in identity.UpdateDeviceStatusRequest
+	if err := c.ShouldBindJSON(&in); err != nil {
+		common.HandleError(c, common.BadRequestError(err.Error()))
+		return
+	}
+	if err := a.service.UpdateDeviceStatus(c.Request.Context(), uint(idVal), in.Status); err != nil {
 		common.HandleError(c, err)
 		return
 	}

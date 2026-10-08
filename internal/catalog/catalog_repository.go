@@ -61,6 +61,13 @@ type Repository interface {
 	// should block the delete is the service's call, not this one's, same
 	// reasoning as ProductsExistForCategory.
 	ComboItemsExistForProduct(ctx context.Context, productID uint) (bool, error)
+	// ProductHasHistory backs Service.DeleteProduct's second
+	// referential-integrity check: true if any record outside catalog still
+	// points at productID - a sale line, an exchange line, a stock level, a
+	// stock adjustment, a stock-transfer line, an inventory-ledger entry or
+	// a purchase-order line. Those tables carry no DB-level FK to products
+	// (see internal/migrate), so deleting the row would silently orphan them.
+	ProductHasHistory(ctx context.Context, productID uint) (bool, error)
 	// DeleteProduct is a hard delete - Product has no status field to
 	// deactivate instead (unlike Staff/Branch/Device). Existence/ownership
 	// was already confirmed by a prior GetProduct call, and referential
@@ -125,6 +132,10 @@ type Repository interface {
 	// insert, same db-is-either-plain-or-in-flight-transaction reasoning as
 	// CreateCombo above.
 	CreateComboImage(db *gorm.DB, image *ComboImage) error
+	// ListComboItemsByComboIDs backs Service.ListCombos' component lookup - a
+	// single query across every combo being returned, ordered by id so a
+	// combo's items come back in the order they were created.
+	ListComboItemsByComboIDs(ctx context.Context, comboIDs []uint) ([]ComboItem, error)
 	// ListComboImagesByComboIDs backs Service.ListCombos' image lookup and
 	// Service.UpdateCombo's image-replace step (a single-element slice) - a
 	// plain query, no business decision about which combos the caller is

@@ -4,6 +4,9 @@ import (
 	"log"
 	"log/slog"
 	"os"
+	// Embeds the IANA tz database so time.LoadLocation works in the alpine
+	// runtime image (which ships none) - org timezones depend on it.
+	_ "time/tzdata"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -46,7 +49,11 @@ func main() {
 	if err := r.SetTrustedProxies(nil); err != nil {
 		log.Fatalf("failed to configure trusted proxies: %v", err)
 	}
-	r.Use(middleware.CORS())
+	corsOrigins := middleware.ParseCORSOrigins(os.Getenv("CORS_ALLOWED_ORIGINS"))
+	if len(corsOrigins) == 0 {
+		slog.Info("CORS_ALLOWED_ORIGINS is empty: no browser origin may call the API cross-origin (server-side callers are unaffected)")
+	}
+	r.Use(middleware.CORS(corsOrigins))
 
 	r.GET("/healthz", healthcheck.Handler(db))
 	r.GET("/health", healthcheck.Handler(db))

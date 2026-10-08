@@ -376,6 +376,18 @@ func (s *Service) DeleteProduct(ctx context.Context, orgID uint, id uint) error 
 		return common.ConflictError("product is still in use by one or more combos")
 	}
 
+	// A hard delete would leave sale lines, stock, ledger entries and
+	// purchase-order lines pointing at a row that no longer exists (none of
+	// those tables has a DB-level FK), so history screens would lose the
+	// product's name. Retire it instead.
+	hasHistory, err := s.repo.ProductHasHistory(ctx, id)
+	if err != nil {
+		return err
+	}
+	if hasHistory {
+		return common.ConflictError("product has sales, stock or purchase history and can't be deleted - set is_active to false to retire it instead")
+	}
+
 	// fetched before the transaction - only needed to clean up the storage
 	// objects after a successful commit (see below), not part of the
 	// atomic write itself.
@@ -475,12 +487,12 @@ func (s *Service) ListCombos(ctx context.Context, orgID uint) ([]ComboResult, er
 	if err != nil {
 		return nil, err
 	}
-	return s.attachComboImages(ctx, combos)
+	return s.attachComboDetails(ctx, combos)
 }
 
-// attachComboImages assembles each combo's ComboImageResult list, same
-// reasoning as attachImages.
-func (s *Service) attachComboImages(ctx context.Context, combos []Combo) ([]ComboResult, error) {
+// attachComboDetails assembles each combo's component items and
+// ComboImageResult list, same reasoning as attachImages.
+func (s *Service) attachComboDetails(ctx context.Context, combos []Combo) ([]ComboResult, error) {
 	results := make([]ComboResult, len(combos))
 	if len(combos) == 0 {
 		return results, nil
@@ -489,6 +501,15 @@ func (s *Service) attachComboImages(ctx context.Context, combos []Combo) ([]Comb
 	ids := make([]uint, len(combos))
 	for i, c := range combos {
 		ids[i] = c.ID
+	}
+
+	comboItems, err := s.repo.ListComboItemsByComboIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	itemsByCombo := make(map[uint][]ComboItemResult, len(combos))
+	for _, it := range comboItems {
+		itemsByCombo[it.ComboID] = append(itemsByCombo[it.ComboID], ComboItemResult{ProductID: it.ProductID, Qty: it.Qty})
 	}
 
 	images, err := s.repo.ListComboImagesByComboIDs(ctx, ids)
@@ -515,7 +536,11 @@ func (s *Service) attachComboImages(ctx context.Context, combos []Combo) ([]Comb
 				Height: img.Height,
 			})
 		}
-		results[i] = ComboResult{Combo: c, Images: imgResults}
+		items := itemsByCombo[c.ID]
+		if items == nil {
+			items = []ComboItemResult{}
+		}
+		results[i] = ComboResult{Combo: c, Items: items, Images: imgResults}
 	}
 
 	return results, nil

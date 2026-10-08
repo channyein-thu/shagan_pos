@@ -98,6 +98,24 @@ type Repository interface {
 	// a tenant should be suspended is the internal portal operator's, not a
 	// business rule this layer enforces.
 	UpdateOrganizationStatus(ctx context.Context, id uint, status OrganizationStatus) error
+	// UpdateOrganizationTimezone is a plain field write; the service has
+	// already validated the zone name and that the org exists.
+	UpdateOrganizationTimezone(ctx context.Context, id uint, timezone string) error
+	// ListOrgWideAccounts backs `GET /internal/accounts/org-wide`: orgID's
+	// owner and service_center Users (the two org-wide logins), oldest first.
+	ListOrgWideAccounts(ctx context.Context, orgID uint) ([]User, error)
+	// ResetOrgWideAccountPassword is ResetPosAccountPassword for an owner or
+	// service_center User: NotFound for any other account type, so it can't
+	// be used to take over a pos login by id. credentialHash is already
+	// hashed; the user's live refresh tokens are revoked in the same
+	// transaction.
+	ResetOrgWideAccountPassword(ctx context.Context, id uint, credentialHash string) error
+	// UpdateBranchStatusInternal and UpdateDeviceStatusInternal back the
+	// Shagan-team status levers. Unlike the tenant-facing UpdateBranch/
+	// UpdateDevice they are not org-scoped (the portal has no tenant token) -
+	// NotFound only if the id doesn't exist at all.
+	UpdateBranchStatusInternal(ctx context.Context, id uint, status BranchStatus) error
+	UpdateDeviceStatusInternal(ctx context.Context, id uint, status DeviceStatus) error
 	// UpdatePosAccountStatus and ResetPosAccountPassword return
 	// common.NotFoundError if id isn't a pos-type User - same
 	// not-found-not-forbidden reasoning as everywhere else, and it keeps
@@ -105,6 +123,8 @@ type Repository interface {
 	// "disable/reset any account" tool for owner/service_center logins.
 	UpdatePosAccountStatus(ctx context.Context, id uint, status UserStatus) error
 	// ResetPosAccountPassword takes credentialHash already hashed - see
-	// Service.ResetPosAccountPassword.
+	// Service.ResetPosAccountPassword. Like ResetOrgWideAccountPassword it
+	// revokes the account's live refresh tokens in the same transaction: a
+	// reset exists to cut off whoever held the old password.
 	ResetPosAccountPassword(ctx context.Context, id uint, credentialHash string) error
 }

@@ -3,6 +3,8 @@ package inventory
 import (
 	"context"
 	"strconv"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
@@ -178,12 +180,46 @@ func weightedAverageCost(currentQty int, currentCost decimal.Decimal, receivedQt
 	return existingValue.Add(receivedValue).Div(totalQty).Round(2)
 }
 
-func (s *Service) ListStockTransfers(ctx context.Context, orgID uint, branchID *uint) ([]StockTransfer, error) {
+func (s *Service) ListStockTransfers(ctx context.Context, orgID uint, branchID *uint) ([]StockTransferResult, error) {
 	branchIDs, err := s.resolveBranchIDs(ctx, orgID, branchID)
 	if err != nil {
 		return nil, err
 	}
-	return s.repo.ListStockTransfers(ctx, branchIDs)
+	transfers, err := s.repo.ListStockTransfers(ctx, branchIDs)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]StockTransferResult, len(transfers))
+	if len(transfers) == 0 {
+		return results, nil
+	}
+
+	ids := make([]uint, len(transfers))
+	for i, t := range transfers {
+		ids[i] = t.ID
+	}
+	lines, err := s.repo.ListStockTransferItemsByTransferIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	byTransfer := make(map[uint][]StockTransferItem, len(transfers))
+	for _, line := range lines {
+		byTransfer[line.TransferID] = append(byTransfer[line.TransferID], line)
+	}
+	for i, t := range transfers {
+		results[i] = newStockTransferResult(t, byTransfer[t.ID])
+	}
+	return results, nil
+}
+
+// newStockTransferResult pairs a transfer with its lines; Items is an empty
+// list, never nil, when there are none.
+func newStockTransferResult(t StockTransfer, lines []StockTransferItem) StockTransferResult {
+	items := make([]StockTransferItemResult, len(lines))
+	for i, l := range lines {
+		items[i] = StockTransferItemResult{ProductID: l.ProductID, Qty: l.Qty}
+	}
+	return StockTransferResult{StockTransfer: t, Items: items}
 }
 
 // CreateStockTransfer confirms FromBranch/ToBranch both belong to orgID and
@@ -198,9 +234,13 @@ func (s *Service) ListStockTransfers(ctx context.Context, orgID uint, branchID *
 // sanity check, not the real enforcement (applyStockDelta's own
 // negative-qty guard is what protects completion time, since stock can
 // still change while a transfer sits pending).
-func (s *Service) CreateStockTransfer(ctx context.Context, orgID uint, actorID uint, in CreateStockTransferRequest) (*StockTransfer, error) {
+func (s *Service) CreateStockTransfer(ctx context.Context, orgID uint, actorID uint, in CreateStockTransferRequest) (*StockTransferResult, error) {
 	if in.FromBranch == in.ToBranch {
 		return nil, common.BadRequestError("from_branch and to_branch must be different")
+	}
+	note := strings.TrimSpace(in.Note)
+	if utf8.RuneCountInString(note) > 500 {
+		return nil, common.BadRequestError("note must be at most 500 characters")
 	}
 	if _, err := s.branches.GetBranch(ctx, orgID, in.FromBranch); err != nil {
 		return nil, err
@@ -215,6 +255,7 @@ func (s *Service) CreateStockTransfer(ctx context.Context, orgID uint, actorID u
 	}
 
 	var transfer StockTransfer
+	var items []StockTransferItem
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		for _, item := range in.Items {
 			level, err := s.repo.GetStockLevel(tx, item.ProductID, in.FromBranch)
@@ -235,11 +276,12 @@ func (s *Service) CreateStockTransfer(ctx context.Context, orgID uint, actorID u
 			ToBranch:   in.ToBranch,
 			Status:     TransferStatusPending,
 			ActorID:    actorID,
+			Note:       note,
 		}
 		if err := s.repo.CreateStockTransfer(tx, &transfer); err != nil {
 			return err
 		}
-		items := make([]StockTransferItem, len(in.Items))
+		items = make([]StockTransferItem, len(in.Items))
 		for i, item := range in.Items {
 			items[i] = StockTransferItem{TransferID: transfer.ID, ProductID: item.ProductID, Qty: item.Qty}
 		}
@@ -248,19 +290,21 @@ func (s *Service) CreateStockTransfer(ctx context.Context, orgID uint, actorID u
 	if err != nil {
 		return nil, err
 	}
-	return &transfer, nil
+	result := newStockTransferResult(transfer, items)
+	return &result, nil
 }
 
 // UpdateStockTransfer confirms the transfer exists AND belongs to orgID and
 // isn't already terminal (Completed/Cancelled), then applies the status
 // change - see the interface doc for what completing one actually does.
-func (s *Service) UpdateStockTransfer(ctx context.Context, orgID uint, id uint, in UpdateStockTransferRequest) (*StockTransfer, error) {
+func (s *Service) UpdateStockTransfer(ctx context.Context, orgID uint, id uint, in UpdateStockTransferRequest) (*StockTransferResult, error) {
 	branchIDs, err := s.resolveBranchIDs(ctx, orgID, nil)
 	if err != nil {
 		return nil, err
 	}
 
 	var transfer StockTransfer
+	var items []StockTransferItem
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		found, err := s.repo.GetStockTransfer(tx, branchIDs, id, true)
 		if err != nil {
@@ -271,11 +315,14 @@ func (s *Service) UpdateStockTransfer(ctx context.Context, orgID uint, id uint, 
 			return common.ConflictError("this transfer is already completed or cancelled")
 		}
 
+		// Read the lines for every transition: completing moves them, and
+		// every response carries them.
+		items, err = s.repo.ListStockTransferItems(tx, transfer.ID)
+		if err != nil {
+			return err
+		}
+
 		if in.Status == TransferStatusCompleted {
-			items, err := s.repo.ListStockTransferItems(tx, transfer.ID)
-			if err != nil {
-				return err
-			}
 			for _, item := range items {
 				newFromQty, err := s.applyStockDelta(tx, item.ProductID, transfer.FromBranch, -item.Qty)
 				if err != nil {
@@ -312,5 +359,6 @@ func (s *Service) UpdateStockTransfer(ctx context.Context, orgID uint, id uint, 
 	if err != nil {
 		return nil, err
 	}
-	return &transfer, nil
+	result := newStockTransferResult(transfer, items)
+	return &result, nil
 }

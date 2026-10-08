@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/shopspring/decimal"
@@ -396,13 +397,56 @@ func TestService_ListStockTransfers_OrgWide_ListsAllOrgBranches(t *testing.T) {
 	svc := NewService(repo, branches, products, fakeTransactioner{})
 
 	orgBranches := []identity.Branch{{ID: 5, OrgID: 7}, {ID: 6, OrgID: 7}}
-	want := []StockTransfer{{ID: 1, FromBranch: 5, ToBranch: 6, Status: TransferStatusPending}}
+	transfers := []StockTransfer{
+		{ID: 1, FromBranch: 5, ToBranch: 6, Status: TransferStatusPending, Note: "restock"},
+		{ID: 2, FromBranch: 6, ToBranch: 5, Status: TransferStatusCompleted},
+		{ID: 3, FromBranch: 5, ToBranch: 6, Status: TransferStatusPending},
+	}
 	branches.EXPECT().ListBranches(mock.Anything, uint(7)).Return(orgBranches, nil).Once()
-	repo.EXPECT().ListStockTransfers(mock.Anything, []uint{5, 6}).Return(want, nil).Once()
+	repo.EXPECT().ListStockTransfers(mock.Anything, []uint{5, 6}).Return(transfers, nil).Once()
+	// One query for every transfer on the list, not one per transfer.
+	repo.EXPECT().ListStockTransferItemsByTransferIDs(mock.Anything, []uint{1, 2, 3}).Return([]StockTransferItem{
+		{ID: 10, TransferID: 1, ProductID: 8, Qty: 4},
+		{ID: 11, TransferID: 1, ProductID: 9, Qty: 1},
+		{ID: 12, TransferID: 2, ProductID: 8, Qty: 2},
+	}, nil).Once()
 
 	got, err := svc.ListStockTransfers(context.Background(), 7, nil)
 	require.NoError(t, err)
-	require.Equal(t, want, got)
+	require.Len(t, got, 3)
+	require.Equal(t, uint(1), got[0].ID)
+	require.Equal(t, "restock", got[0].Note)
+	require.Equal(t, []StockTransferItemResult{{ProductID: 8, Qty: 4}, {ProductID: 9, Qty: 1}}, got[0].Items)
+	require.Equal(t, []StockTransferItemResult{{ProductID: 8, Qty: 2}}, got[1].Items)
+	require.Equal(t, []StockTransferItemResult{}, got[2].Items, "never null")
+}
+
+func TestService_ListStockTransfers_NoTransfers_SkipsItemQueryAndReturnsEmpty(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	svc := NewService(repo, branches, NewMockProductLookup(t), fakeTransactioner{})
+
+	branches.EXPECT().ListBranches(mock.Anything, uint(7)).Return([]identity.Branch{{ID: 5, OrgID: 7}}, nil).Once()
+	repo.EXPECT().ListStockTransfers(mock.Anything, []uint{5}).Return(nil, nil).Once()
+
+	got, err := svc.ListStockTransfers(context.Background(), 7, nil)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.Empty(t, got)
+}
+
+func TestService_ListStockTransfers_ItemLookupFails_Propagates(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	svc := NewService(repo, branches, NewMockProductLookup(t), fakeTransactioner{})
+
+	boom := errors.New("db down")
+	branches.EXPECT().ListBranches(mock.Anything, uint(7)).Return([]identity.Branch{{ID: 5, OrgID: 7}}, nil).Once()
+	repo.EXPECT().ListStockTransfers(mock.Anything, []uint{5}).Return([]StockTransfer{{ID: 1}}, nil).Once()
+	repo.EXPECT().ListStockTransferItemsByTransferIDs(mock.Anything, []uint{1}).Return(nil, boom).Once()
+
+	_, err := svc.ListStockTransfers(context.Background(), 7, nil)
+	require.ErrorIs(t, err, boom)
 }
 
 func TestService_CreateStockTransfer_HappyPath_CreatesPendingTransferWithItems(t *testing.T) {
@@ -418,7 +462,7 @@ func TestService_CreateStockTransfer_HappyPath_CreatesPendingTransferWithItems(t
 
 	repo.EXPECT().
 		CreateStockTransfer(mock.Anything, mock.MatchedBy(func(tr *StockTransfer) bool {
-			return tr.FromBranch == 5 && tr.ToBranch == 6 && tr.Status == TransferStatusPending && tr.ActorID == 42
+			return tr.FromBranch == 5 && tr.ToBranch == 6 && tr.Status == TransferStatusPending && tr.ActorID == 42 && tr.Note == "restock for weekend"
 		})).
 		Run(func(_ *gorm.DB, tr *StockTransfer) { tr.ID = 100 }).
 		Return(nil).
@@ -431,13 +475,48 @@ func TestService_CreateStockTransfer_HappyPath_CreatesPendingTransferWithItems(t
 		Once()
 
 	in := CreateStockTransferRequest{
-		FromBranch: 5, ToBranch: 6,
+		FromBranch: 5, ToBranch: 6, Note: "  restock for weekend  ",
 		Items: []CreateStockTransferItemRequest{{ProductID: 1, Qty: 4}},
 	}
 	got, err := svc.CreateStockTransfer(context.Background(), 7, 42, in)
 	require.NoError(t, err)
 	require.Equal(t, uint(100), got.ID)
 	require.Equal(t, TransferStatusPending, got.Status)
+	require.Equal(t, "restock for weekend", got.Note, "stored and returned trimmed")
+	require.Equal(t, []StockTransferItemResult{{ProductID: 1, Qty: 4}}, got.Items)
+}
+
+func TestService_CreateStockTransfer_NoNote_StoresEmptyString(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	products := NewMockProductLookup(t)
+	svc := NewService(repo, branches, products, fakeTransactioner{})
+
+	branches.EXPECT().GetBranch(mock.Anything, uint(7), uint(5)).Return(&identity.Branch{ID: 5, OrgID: 7}, nil).Once()
+	branches.EXPECT().GetBranch(mock.Anything, uint(7), uint(6)).Return(&identity.Branch{ID: 6, OrgID: 7}, nil).Once()
+	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7}, nil).Once()
+	repo.EXPECT().GetStockLevel(mock.Anything, uint(1), uint(5)).Return(&StockLevel{ID: 50, ProductID: 1, BranchID: 5, Qty: 10}, nil).Once()
+	repo.EXPECT().CreateStockTransfer(mock.Anything, mock.MatchedBy(func(tr *StockTransfer) bool { return tr.Note == "" })).
+		Run(func(_ *gorm.DB, tr *StockTransfer) { tr.ID = 1 }).Return(nil).Once()
+	repo.EXPECT().CreateStockTransferItems(mock.Anything, mock.Anything).Return(nil).Once()
+
+	got, err := svc.CreateStockTransfer(context.Background(), 7, 42, CreateStockTransferRequest{
+		FromBranch: 5, ToBranch: 6, Note: "   ",
+		Items: []CreateStockTransferItemRequest{{ProductID: 1, Qty: 4}},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "", got.Note)
+}
+
+func TestService_CreateStockTransfer_NoteTooLong_RejectedBeforeAnyLookup(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := NewService(repo, NewMockBranchLookup(t), NewMockProductLookup(t), fakeTransactioner{})
+
+	_, err := svc.CreateStockTransfer(context.Background(), 7, 42, CreateStockTransferRequest{
+		FromBranch: 5, ToBranch: 6, Note: strings.Repeat("x", 501),
+		Items: []CreateStockTransferItemRequest{{ProductID: 1, Qty: 4}},
+	})
+	requireRestErrorStatus(t, err, http.StatusBadRequest)
 }
 
 func TestService_CreateStockTransfer_SameFromAndToBranch_ReturnsBadRequest(t *testing.T) {
@@ -549,6 +628,7 @@ func TestService_UpdateStockTransfer_CompletingTransfer_MovesStockAtBothBranches
 	got, err := svc.UpdateStockTransfer(context.Background(), 7, 1, UpdateStockTransferRequest{Status: TransferStatusCompleted})
 	require.NoError(t, err)
 	require.Equal(t, TransferStatusCompleted, got.Status)
+	require.Equal(t, []StockTransferItemResult{{ProductID: 1, Qty: 4}}, got.Items, "the completed transfer's response still shows what moved")
 }
 
 func TestService_UpdateStockTransfer_CompletingWithInsufficientFromStock_ReturnsConflict(t *testing.T) {
@@ -602,13 +682,16 @@ func TestService_UpdateStockTransfer_Cancelling_NoStockMovement(t *testing.T) {
 
 	transfer := &StockTransfer{ID: 1, FromBranch: 5, ToBranch: 6, Status: TransferStatusPending, ActorID: 42}
 	repo.EXPECT().GetStockTransfer(mock.Anything, []uint{5, 6}, uint(1), true).Return(transfer, nil).Once()
-	// ListStockTransferItems/GetStockLevel/CreateInventoryLedgerEntry must
-	// never be called - cancelling moves no stock.
+	// The lines are read so the response can carry them, but
+	// GetStockLevel/CreateInventoryLedgerEntry must never be called -
+	// cancelling moves no stock.
+	repo.EXPECT().ListStockTransferItems(mock.Anything, uint(1)).Return([]StockTransferItem{{ID: 10, TransferID: 1, ProductID: 8, Qty: 3}}, nil).Once()
 	repo.EXPECT().UpdateStockTransferStatus(mock.Anything, uint(1), TransferStatusCancelled).Return(nil).Once()
 
 	got, err := svc.UpdateStockTransfer(context.Background(), 7, 1, UpdateStockTransferRequest{Status: TransferStatusCancelled})
 	require.NoError(t, err)
 	require.Equal(t, TransferStatusCancelled, got.Status)
+	require.Equal(t, []StockTransferItemResult{{ProductID: 8, Qty: 3}}, got.Items)
 }
 
 func TestService_UpdateStockTransfer_UnknownID_PropagatesNotFound(t *testing.T) {

@@ -154,9 +154,20 @@ type ComboImageResult struct {
 	Height int    `json:"height"`
 }
 
+// ComboItemResult is one bundled product of a combo as returned by
+// ListCombos / the offline catalog snapshot - just what a till needs to
+// expand the combo into one sale line per component (WORKFLOWS section 8),
+// not the ComboItem row's own id/combo_id.
+type ComboItemResult struct {
+	ProductID uint `json:"product_id"`
+	Qty       int  `json:"qty"`
+}
+
 // ComboResult is what ListCombos actually returns - the Combo row plus its
-// images, same reasoning as ProductResult.
+// component items and images, same reasoning as ProductResult. Items is
+// never null; every combo has at least one (see CreateComboRequest).
 type ComboResult struct {
 	Combo
+	Items  []ComboItemResult  `json:"items"`
 	Images []ComboImageResult `json:"images"`
 }

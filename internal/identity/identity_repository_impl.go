@@ -524,6 +524,11 @@ func (r *RepositoryImpl) UpdateOrganizationStatus(ctx context.Context, id uint, 
 	return r.db.WithContext(ctx).Model(&Organization{}).Where("id = ?", id).Update("status", status).Error
 }
 
+// UpdateOrganizationTimezone backs `PATCH /internal/organizations/:id/timezone`.
+func (r *RepositoryImpl) UpdateOrganizationTimezone(ctx context.Context, id uint, timezone string) error {
+	return r.db.WithContext(ctx).Model(&Organization{}).Where("id = ?", id).Update("timezone", timezone).Error
+}
+
 // getPosAccount fetches a User, scoped to AccountTypePos - shared by
 // UpdatePosAccountStatus/ResetPosAccountPassword so neither can be used to
 // silently disable/reset an owner or service_center login instead.
@@ -553,5 +558,73 @@ func (r *RepositoryImpl) ResetPosAccountPassword(ctx context.Context, id uint, c
 	if _, err := r.getPosAccount(ctx, id); err != nil {
 		return err
 	}
-	return r.db.WithContext(ctx).Model(&User{}).Where("id = ?", id).Update("credential_hash", credentialHash).Error
+	return r.setPasswordAndRevokeSessions(ctx, id, credentialHash)
+}
+
+// setPasswordAndRevokeSessions writes the new hash and revokes every live
+// refresh token of the user, atomically - a password reset that leaves old
+// sessions refreshable would not actually lock out whoever knew the old
+// password. (An already-issued access token still lives out its short TTL.)
+func (r *RepositoryImpl) setPasswordAndRevokeSessions(ctx context.Context, userID uint, credentialHash string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&User{}).Where("id = ?", userID).Update("credential_hash", credentialHash).Error; err != nil {
+			return err
+		}
+		return tx.Model(&Session{}).
+			Where("user_id = ? AND revoked_at IS NULL", userID).
+			Update("revoked_at", time.Now()).Error
+	})
+}
+
+// ListOrgWideAccounts backs `GET /internal/accounts/org-wide`.
+func (r *RepositoryImpl) ListOrgWideAccounts(ctx context.Context, orgID uint) ([]User, error) {
+	var users []User
+	err := r.db.WithContext(ctx).
+		Where("org_id = ? AND account_type IN ?", orgID, []AccountType{AccountTypeOwner, AccountTypeServiceCenter}).
+		Order("id").
+		Find(&users).Error
+	if err != nil {
+		return nil, err
+	}
+	return users, nil
+}
+
+// ResetOrgWideAccountPassword backs
+// `POST /internal/accounts/org-wide/:id/reset-password`.
+func (r *RepositoryImpl) ResetOrgWideAccountPassword(ctx context.Context, id uint, credentialHash string) error {
+	var user User
+	err := r.db.WithContext(ctx).
+		Where("id = ? AND account_type IN ?", id, []AccountType{AccountTypeOwner, AccountTypeServiceCenter}).
+		First(&user).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return common.NotFoundError("account not found")
+		}
+		return err
+	}
+	return r.setPasswordAndRevokeSessions(ctx, id, credentialHash)
+}
+
+// UpdateBranchStatusInternal backs `PATCH /internal/branches/:id/status`.
+func (r *RepositoryImpl) UpdateBranchStatusInternal(ctx context.Context, id uint, status BranchStatus) error {
+	res := r.db.WithContext(ctx).Model(&Branch{}).Where("id = ?", id).Update("status", status)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return common.NotFoundError("branch not found")
+	}
+	return nil
+}
+
+// UpdateDeviceStatusInternal backs `PATCH /internal/devices/:id/status`.
+func (r *RepositoryImpl) UpdateDeviceStatusInternal(ctx context.Context, id uint, status DeviceStatus) error {
+	res := r.db.WithContext(ctx).Model(&Device{}).Where("id = ?", id).Update("status", status)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return common.NotFoundError("device not found")
+	}
+	return nil
 }

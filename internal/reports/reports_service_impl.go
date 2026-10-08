@@ -46,35 +46,71 @@ var _ Interface = (*Service)(nil)
 
 const defaultLookbackDays = 30
 
-func startOfDayUTC(t time.Time) time.Time {
-	y, m, d := t.Date()
-	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
+// zone is an organization's calendar: the IANA name (for SQL bucketing) and
+// its resolved location (for date math).
+type zone struct {
+	name string
+	loc  *time.Location
 }
 
-// todayRangeUTC is the [start, end) window for "today" - used by
+// orgZone reads orgID's timezone - the zone that defines its calendar day, so
+// "today", a report's from/to dates and its daily buckets all fall on the
+// org's own midnight instead of UTC's (for Myanmar, UTC+6:30, "today" would
+// otherwise roll over at 06:30 local).
+func (s *Service) orgZone(ctx context.Context, orgID uint) (zone, error) {
+	org, err := s.branches.GetOrganization(ctx, orgID)
+	if err != nil {
+		return zone{}, err
+	}
+	loc := common.OrgLocation(org.Timezone)
+	return zone{name: loc.String(), loc: loc}, nil
+}
+
+// todayRange is the [start, end) window for "today" in loc - used by
 // GetHomeSummary/GetTodayReport, which always mean today, never a
 // client-supplied range.
-func todayRangeUTC() (time.Time, time.Time) {
-	start := startOfDayUTC(time.Now().UTC())
-	return start, start.Add(24 * time.Hour)
+func todayRange(loc *time.Location) (time.Time, time.Time) {
+	start := common.StartOfDay(time.Now().In(loc), loc)
+	return start, common.NextDay(start)
 }
 
 // resolveDateRange turns an inclusive, optional [from, to] calendar-date
 // pair into the exclusive [start, end) window every repository query
-// expects - to's whole day is included by advancing it 24h. Defaults to the
-// last defaultLookbackDays days when either bound is omitted.
-func resolveDateRange(from, to *time.Time) (time.Time, time.Time) {
-	end := startOfDayUTC(time.Now().UTC())
+// expects, with each date read as a day in loc (its own local midnight) -
+// to's whole day is included by advancing it one day. Defaults to the last
+// defaultLookbackDays days, ending today in loc, when either bound is
+// omitted.
+func resolveDateRange(loc *time.Location, from, to *time.Time) (time.Time, time.Time) {
+	end := common.StartOfDay(time.Now().In(loc), loc)
 	if to != nil {
-		end = startOfDayUTC(*to)
+		end = common.StartOfDay(*to, loc)
 	}
-	end = end.Add(24 * time.Hour)
+	end = common.NextDay(end)
 
 	start := end.AddDate(0, 0, -defaultLookbackDays)
 	if from != nil {
-		start = startOfDayUTC(*from)
+		start = common.StartOfDay(*from, loc)
 	}
 	return start, end
+}
+
+// window is resolveDateRange for the common case that needs nothing but the
+// bounds.
+func (s *Service) window(ctx context.Context, orgID uint, from, to *time.Time) (time.Time, time.Time, error) {
+	z, err := s.orgZone(ctx, orgID)
+	if err != nil {
+		return time.Time{}, time.Time{}, err
+	}
+	start, end := resolveDateRange(z.loc, from, to)
+	return start, end, nil
+}
+
+// calendarDate is t's local calendar date as a UTC-midnight value - for
+// columns that hold a plain DATE (Expense.Date), which must be compared as
+// dates, never as the instants a local midnight denotes.
+func calendarDate(t time.Time) time.Time {
+	y, m, d := t.Date()
+	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
 }
 
 func resolveGranularity(g Granularity) (Granularity, error) {
@@ -151,7 +187,11 @@ func applyPercentages(methods []PaymentMethodBreakdown) {
 }
 
 func (s *Service) GetHomeSummary(ctx context.Context, orgID uint, branchID *uint) (*HomeSummary, error) {
-	start, end := todayRangeUTC()
+	z, err := s.orgZone(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	start, end := todayRange(z.loc)
 	totals, err := s.salesTotals(ctx, orgID, branchID, start, end)
 	if err != nil {
 		return nil, err
@@ -172,14 +212,18 @@ func (s *Service) GetStockOverview(ctx context.Context, orgID uint, branchID *ui
 }
 
 func (s *Service) GetTodayReport(ctx context.Context, orgID uint, branchID *uint) (*TodayReport, error) {
-	start, end := todayRangeUTC()
+	z, err := s.orgZone(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	start, end := todayRange(z.loc)
 
 	totals, err := s.salesTotals(ctx, orgID, branchID, start, end)
 	if err != nil {
 		return nil, err
 	}
 
-	hourlyBuckets, err := s.repo.HourlyTrend(ctx, orgID, branchID, start, end)
+	hourlyBuckets, err := s.repo.HourlyTrend(ctx, orgID, branchID, start, end, z.name)
 	if err != nil {
 		return nil, err
 	}
@@ -213,8 +257,12 @@ func (s *Service) GetRevenueTrend(ctx context.Context, orgID uint, branchID *uin
 	if err != nil {
 		return nil, err
 	}
-	start, end := resolveDateRange(from, to)
-	buckets, err := s.repo.Trend(ctx, orgID, branchID, start, end, g)
+	z, err := s.orgZone(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	start, end := resolveDateRange(z.loc, from, to)
+	buckets, err := s.repo.Trend(ctx, orgID, branchID, start, end, g, z.name)
 	if err != nil {
 		return nil, err
 	}
@@ -226,7 +274,10 @@ func (s *Service) GetRevenueTrend(ctx context.Context, orgID uint, branchID *uin
 }
 
 func (s *Service) GetSalesSummary(ctx context.Context, orgID uint, branchID *uint, from, to *time.Time) (*SalesSummary, error) {
-	start, end := resolveDateRange(from, to)
+	start, end, err := s.window(ctx, orgID, from, to)
+	if err != nil {
+		return nil, err
+	}
 
 	totals, err := s.salesTotals(ctx, orgID, branchID, start, end)
 	if err != nil {
@@ -259,8 +310,12 @@ func (s *Service) GetSalesTrend(ctx context.Context, orgID uint, branchID *uint,
 	if err != nil {
 		return nil, err
 	}
-	start, end := resolveDateRange(from, to)
-	buckets, err := s.repo.Trend(ctx, orgID, branchID, start, end, g)
+	z, err := s.orgZone(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	start, end := resolveDateRange(z.loc, from, to)
+	buckets, err := s.repo.Trend(ctx, orgID, branchID, start, end, g, z.name)
 	if err != nil {
 		return nil, err
 	}
@@ -272,7 +327,10 @@ func (s *Service) GetSalesTrend(ctx context.Context, orgID uint, branchID *uint,
 }
 
 func (s *Service) GetPaymentMethodsReport(ctx context.Context, orgID uint, branchID *uint, from, to *time.Time) (*PaymentMethodsReport, error) {
-	start, end := resolveDateRange(from, to)
+	start, end, err := s.window(ctx, orgID, from, to)
+	if err != nil {
+		return nil, err
+	}
 	methods, err := s.repo.PaymentMethodBreakdown(ctx, orgID, branchID, start, end)
 	if err != nil {
 		return nil, err
@@ -286,7 +344,10 @@ func (s *Service) GetPaymentMethodsReport(ctx context.Context, orgID uint, branc
 }
 
 func (s *Service) GetTransactionsReport(ctx context.Context, orgID uint, branchID *uint, from, to *time.Time, page, pageSize int) (*TransactionsReport, error) {
-	start, end := resolveDateRange(from, to)
+	start, end, err := s.window(ctx, orgID, from, to)
+	if err != nil {
+		return nil, err
+	}
 	page, pageSize = resolvePagination(page, pageSize)
 	transactions, total, err := s.repo.ListTransactions(ctx, orgID, branchID, start, end, page, pageSize)
 	if err != nil {
@@ -316,7 +377,10 @@ func (s *Service) GetTransactionsReport(ctx context.Context, orgID uint, branchI
 }
 
 func (s *Service) GetProductSalesReport(ctx context.Context, orgID uint, branchID *uint, from, to *time.Time, categoryID *uint) (*ProductSalesReport, error) {
-	start, end := resolveDateRange(from, to)
+	start, end, err := s.window(ctx, orgID, from, to)
+	if err != nil {
+		return nil, err
+	}
 	products, err := s.repo.ProductSales(ctx, orgID, branchID, start, end, categoryID, nil)
 	if err != nil {
 		return nil, err
@@ -325,7 +389,10 @@ func (s *Service) GetProductSalesReport(ctx context.Context, orgID uint, branchI
 }
 
 func (s *Service) GetTopProducts(ctx context.Context, orgID uint, branchID *uint, from, to *time.Time, limit *int) (*TopProductsReport, error) {
-	start, end := resolveDateRange(from, to)
+	start, end, err := s.window(ctx, orgID, from, to)
+	if err != nil {
+		return nil, err
+	}
 	n := resolveLimit(limit)
 	products, err := s.repo.ProductSales(ctx, orgID, branchID, start, end, nil, &n)
 	if err != nil {
@@ -335,7 +402,10 @@ func (s *Service) GetTopProducts(ctx context.Context, orgID uint, branchID *uint
 }
 
 func (s *Service) GetProfitAndLoss(ctx context.Context, orgID uint, branchID *uint, from, to *time.Time) (*ProfitAndLoss, error) {
-	start, end := resolveDateRange(from, to)
+	start, end, err := s.window(ctx, orgID, from, to)
+	if err != nil {
+		return nil, err
+	}
 
 	totals, err := s.salesTotals(ctx, orgID, branchID, start, end)
 	if err != nil {
@@ -349,7 +419,7 @@ func (s *Service) GetProfitAndLoss(ctx context.Context, orgID uint, branchID *ui
 	if err != nil {
 		return nil, err
 	}
-	expenses, err := s.repo.Expenses(ctx, branchIDs, start, end)
+	expenses, err := s.repo.Expenses(ctx, branchIDs, calendarDate(start), calendarDate(end))
 	if err != nil {
 		return nil, err
 	}
