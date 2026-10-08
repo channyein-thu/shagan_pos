@@ -40,9 +40,12 @@ func (a *ShiftAPI) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.POST("/drawer-events", requireStaff, a.CreateDrawerEvent)
 	rg.GET("/drawer-events", a.ListDrawerEvents)
 	rg.GET("/expenses", a.ListExpenses)
-	rg.POST("/expenses", requireStaff, a.CreateExpense)
-	rg.PATCH("/expenses/:id", requireStaff, a.UpdateExpense)
-	rg.DELETE("/expenses/:id", requireStaff, a.DeleteExpense)
+	// Expenses also accept an Owner / Service Center bearer token acting
+	// directly, with no staff token (the Owner has no Staff record).
+	staffOrOrgAdmin := middleware.RequireStaffTokenOrOrgAdmin(a.jwtSecret)
+	rg.POST("/expenses", staffOrOrgAdmin, a.CreateExpense)
+	rg.PATCH("/expenses/:id", staffOrOrgAdmin, a.UpdateExpense)
+	rg.DELETE("/expenses/:id", staffOrOrgAdmin, a.DeleteExpense)
 }
 
 func shiftAccessScope(c *gin.Context) (shift.AccessScope, bool) {
@@ -70,10 +73,23 @@ func requireStaffID(c *gin.Context) (uint, bool) {
 }
 
 // expenseActor builds the authorization the repository checks before
-// letting UpdateExpense/DeleteExpense touch another staff member's expense -
-// access_backoffice is the Manager-only permission (see internal/seed/seed.go).
-func expenseActor(c *gin.Context, staffID uint) shift.ExpenseActor {
-	return shift.ExpenseActor{StaffID: staffID, CanManageAny: middleware.StaffHasPermission(c, "access_backoffice")}
+// letting UpdateExpense/DeleteExpense touch another staff member's expense.
+// A staff caller (X-Staff-Token) may manage any expense only with
+// access_backoffice, the Manager permission (see internal/seed/seed.go); an
+// org-wide Owner / Service Center caller (no staff token - see
+// middleware.RequireStaffTokenOrOrgAdmin) acts as themself and may manage
+// any expense in their org. Writes a 401 itself and returns ok=false if
+// neither identity is present.
+func expenseActor(c *gin.Context) (shift.ExpenseActor, bool) {
+	if staffID, ok := middleware.StaffIDFromContext(c); ok {
+		return shift.ExpenseActor{StaffID: staffID, CanManageAny: middleware.StaffHasPermission(c, "access_backoffice")}, true
+	}
+	userID, ok := middleware.UserIDFromContext(c)
+	if !ok {
+		common.HandleError(c, common.UnauthorizedError("missing staff token"))
+		return shift.ExpenseActor{}, false
+	}
+	return shift.ExpenseActor{UserID: userID, CanManageAny: true}, true
 }
 
 // OpenShift handles `POST /shifts`. Open shift with opening float - always
@@ -306,14 +322,17 @@ func (a *ShiftAPI) ListExpenses(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// CreateExpense handles `POST /expenses`. Always attributed to whichever
-// staff member's X-Staff-Token is calling, never a client-supplied staff id.
+// CreateExpense handles `POST /expenses`. Always attributed to whoever is
+// calling, never a client-supplied id: the staff member whose X-Staff-Token
+// is presented, or - for an Owner / Service Center bearer token acting
+// directly - that account (created_by_user_id, no staff id). An org-wide
+// caller has no branch of its own, so branch_id comes from the body.
 func (a *ShiftAPI) CreateExpense(c *gin.Context) {
 	scope, ok := shiftAccessScope(c)
 	if !ok {
 		return
 	}
-	staffID, ok := requireStaffID(c)
+	actor, ok := expenseActor(c)
 	if !ok {
 		return
 	}
@@ -325,7 +344,8 @@ func (a *ShiftAPI) CreateExpense(c *gin.Context) {
 	if scope.BranchID != nil {
 		in.BranchID = *scope.BranchID
 	}
-	in.CreatedBy = staffID
+	// Overwrite, never trust: whichever isn't the caller is forced to zero.
+	in.CreatedBy, in.CreatedByUserID = actor.StaffID, actor.UserID
 	result, err := a.service.CreateExpense(c.Request.Context(), scope, in)
 	if err != nil {
 		common.HandleError(c, err)
@@ -335,14 +355,14 @@ func (a *ShiftAPI) CreateExpense(c *gin.Context) {
 }
 
 // UpdateExpense handles `PATCH /expenses/:id`. Only the staff member who
-// logged the expense, or a Manager (access_backoffice), may modify it - see
-// shift.ExpenseActor.
+// logged the expense, a Manager (access_backoffice), or an Owner / Service
+// Center acting directly may modify it - see shift.ExpenseActor.
 func (a *ShiftAPI) UpdateExpense(c *gin.Context) {
 	scope, ok := shiftAccessScope(c)
 	if !ok {
 		return
 	}
-	staffID, ok := requireStaffID(c)
+	actor, ok := expenseActor(c)
 	if !ok {
 		return
 	}
@@ -360,7 +380,7 @@ func (a *ShiftAPI) UpdateExpense(c *gin.Context) {
 		branchID := *scope.BranchID
 		in.BranchID = &branchID
 	}
-	result, err := a.service.UpdateExpense(c.Request.Context(), scope, uint(idVal), expenseActor(c, staffID), in)
+	result, err := a.service.UpdateExpense(c.Request.Context(), scope, uint(idVal), actor, in)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -375,7 +395,7 @@ func (a *ShiftAPI) DeleteExpense(c *gin.Context) {
 	if !ok {
 		return
 	}
-	staffID, ok := requireStaffID(c)
+	actor, ok := expenseActor(c)
 	if !ok {
 		return
 	}
@@ -384,7 +404,7 @@ func (a *ShiftAPI) DeleteExpense(c *gin.Context) {
 		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
-	if err := a.service.DeleteExpense(c.Request.Context(), scope, uint(idVal), expenseActor(c, staffID)); err != nil {
+	if err := a.service.DeleteExpense(c.Request.Context(), scope, uint(idVal), actor); err != nil {
 		common.HandleError(c, err)
 		return
 	}

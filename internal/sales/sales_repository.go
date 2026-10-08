@@ -22,7 +22,13 @@ type Repository interface {
 	CreateSale(db *gorm.DB, sale *Sale) error
 	CreateSaleItems(db *gorm.DB, items []SaleItem) error
 	CreatePayments(db *gorm.DB, payments []Payment) error
-	ListSales(ctx context.Context, orgID uint) ([]Sale, error)
+	// ListSales backs `GET /sales`: one page of orgID's sales matching f,
+	// newest first, plus the total count across every page.
+	ListSales(ctx context.Context, orgID uint, f SaleFilter) ([]Sale, int64, error)
+	// ListPaymentMethods returns, for each of saleIDs that has payments, the
+	// distinct payment methods used, sorted - one query for the whole page,
+	// not one per sale. A sale with no payment rows is simply absent.
+	ListPaymentMethods(ctx context.Context, saleIDs []uuid.UUID) (map[uuid.UUID][]PaymentMethod, error)
 	// GetSale returns common.NotFoundError for a sale that exists but
 	// belongs to a different org, same as one that doesn't exist at all -
 	// same not-found-not-forbidden reasoning as everywhere else.

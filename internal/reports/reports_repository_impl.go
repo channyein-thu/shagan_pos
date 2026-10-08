@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
@@ -181,6 +182,29 @@ func (r *RepositoryImpl) ListTransactions(ctx context.Context, orgID uint, branc
 		return nil, 0, err
 	}
 	return rows, total, nil
+}
+
+func (r *RepositoryImpl) PaymentMethodsBySale(ctx context.Context, saleIDs []uuid.UUID) (map[uuid.UUID][]string, error) {
+	out := make(map[uuid.UUID][]string, len(saleIDs))
+	if len(saleIDs) == 0 {
+		return out, nil
+	}
+	var rows []struct {
+		SaleID uuid.UUID
+		Method string
+	}
+	err := r.db.WithContext(ctx).Table("payments").
+		Select("DISTINCT sale_id, method").
+		Where("sale_id IN ?", saleIDs).
+		Order("sale_id, method").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		out[row.SaleID] = append(out[row.SaleID], row.Method)
+	}
+	return out, nil
 }
 
 func (r *RepositoryImpl) ProductSales(ctx context.Context, orgID uint, branchID *uint, from, to time.Time, categoryID *uint, limit *int) ([]ProductRevenue, error) {

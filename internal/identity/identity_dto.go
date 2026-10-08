@@ -187,10 +187,17 @@ type LogoutRequest struct {
 // SessionResult is returned on a successful login or refresh. RefreshToken is
 // the plaintext token - it is shown to the client this one time only; the
 // server stores just its hash (see Session.RefreshHash).
+//
+// ExpiresAt is the *refresh* token's expiry (kept as-is for existing
+// clients); AccessExpiresAt is the access token's, so a client knows when
+// to call `POST /auth/refresh`. AccountType tells a client which surface to
+// route to ("owner", "pos", "service_center") without a follow-up `GET /me`.
 type SessionResult struct {
-	AccessToken  string    `json:"access_token"`
-	RefreshToken string    `json:"refresh_token"`
-	ExpiresAt    time.Time `json:"expires_at"`
+	AccessToken     string      `json:"access_token"`
+	RefreshToken    string      `json:"refresh_token"`
+	ExpiresAt       time.Time   `json:"expires_at"`
+	AccessExpiresAt time.Time   `json:"access_expires_at"`
+	AccountType     AccountType `json:"account_type"`
 }
 
 // VerifyStaffPINRequest is the request body for `POST /staff/:id/pin/verify`.

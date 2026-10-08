@@ -320,7 +320,7 @@ func TestService_Login_HappyPath(t *testing.T) {
 	svc := newTestService(repo, audW)
 
 	const plaintext = "correct horse battery staple"
-	user := &User{ID: 42, OrgID: 7, CredentialHash: hashPassword(t, plaintext)}
+	user := &User{ID: 42, OrgID: 7, AccountType: AccountTypeOwner, CredentialHash: hashPassword(t, plaintext)}
 
 	repo.EXPECT().GetUserByEmail(mock.Anything, "owner@acme.test").Return(user, nil).Once()
 	repo.EXPECT().GetOrganization(mock.Anything, uint(7)).Return(&Organization{ID: 7, Status: OrganizationStatusActive}, nil).Once()
@@ -339,6 +339,8 @@ func TestService_Login_HappyPath(t *testing.T) {
 	require.NotEmpty(t, result.AccessToken)
 	require.NotEmpty(t, result.RefreshToken)
 	require.WithinDuration(t, time.Now().Add(DefaultRefreshTokenTTL), result.ExpiresAt, 5*time.Second)
+	require.WithinDuration(t, time.Now().Add(DefaultAccessTokenTTL), result.AccessExpiresAt, 5*time.Second)
+	require.Equal(t, AccountTypeOwner, result.AccountType)
 
 	// the plaintext refresh token returned to the client must hash to exactly
 	// what was persisted - otherwise a later refresh could never match it.
@@ -352,6 +354,7 @@ func TestService_Login_HappyPath(t *testing.T) {
 	require.Equal(t, user.ID, claims.UserID)
 	require.Equal(t, user.OrgID, claims.OrgID)
 	require.Nil(t, claims.BranchID, "an owner/service_center login has no branch - the claim must be absent, not zero")
+	require.Equal(t, string(AccountTypeOwner), claims.AccountType, "route-level authorization reads this claim instead of hitting the DB per request")
 }
 
 func TestService_Login_PosAccount_IncludesBranchIDInClaims(t *testing.T) {
@@ -361,7 +364,7 @@ func TestService_Login_PosAccount_IncludesBranchIDInClaims(t *testing.T) {
 
 	const plaintext = "correct horse battery staple"
 	branchID := uint(9)
-	user := &User{ID: 42, OrgID: 7, BranchID: &branchID, CredentialHash: hashPassword(t, plaintext)}
+	user := &User{ID: 42, OrgID: 7, AccountType: AccountTypePos, BranchID: &branchID, CredentialHash: hashPassword(t, plaintext)}
 
 	repo.EXPECT().GetUserByEmail(mock.Anything, "pos1@acme.test").Return(user, nil).Once()
 	repo.EXPECT().GetOrganization(mock.Anything, uint(7)).Return(&Organization{ID: 7, Status: OrganizationStatusActive}, nil).Once()
@@ -377,6 +380,7 @@ func TestService_Login_PosAccount_IncludesBranchIDInClaims(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, claims.BranchID)
 	require.Equal(t, branchID, *claims.BranchID)
+	require.Equal(t, string(AccountTypePos), claims.AccountType)
 }
 
 func TestService_Login_UnknownEmail_ReturnsGenericUnauthorized(t *testing.T) {

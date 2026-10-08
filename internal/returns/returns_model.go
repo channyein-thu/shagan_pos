@@ -67,8 +67,15 @@ type Void struct {
 	Qty         int        `gorm:"not null" json:"qty"`
 	Reason      VoidReason `gorm:"type:varchar(30);not null" json:"reason"` // one of VoidReason* constants below (TODO: confirm real values)
 	Explanation string     `gorm:"not null" json:"explanation"`
-	ApprovedBy  uint       `gorm:"index;not null" json:"approved_by"`
-	CreatedAt   time.Time  `gorm:"autoCreateTime;not null" json:"created_at"`
+	// ApprovedBy is the staff member (own permission, or via a manager's
+	// approval token) who approved the void; nil when the Owner voided the
+	// sale directly (the Owner has no Staff record - see ApprovedByUserID).
+	// Exactly one of ApprovedBy/ApprovedByUserID is set.
+	ApprovedBy *uint `gorm:"index" json:"approved_by"`
+	// ApprovedByUserID is the org-wide account (identity.User, an Owner or
+	// Service Center) that voided the sale directly, with no PIN.
+	ApprovedByUserID *uint     `gorm:"index" json:"approved_by_user_id"`
+	CreatedAt        time.Time `gorm:"autoCreateTime;not null" json:"created_at"`
 }
 
 // Return maps to the "Returns" table in the ERD.

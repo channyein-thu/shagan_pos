@@ -19,6 +19,14 @@ type BranchLookup interface {
 	ListBranches(ctx context.Context, orgID uint) ([]identity.Branch, error)
 }
 
+// StaffLookup is what datasync needs from identity: confirming a queued
+// sale's claimed staff member really belongs to the device's branch -
+// see Service.IngestQueuedSales. identity.Repository already satisfies this
+// signature - no adapter needed.
+type StaffLookup interface {
+	GetStaff(ctx context.Context, orgID uint, id uint) (*identity.Staff, error)
+}
+
 // CatalogReader is what datasync needs from catalog: the three lists that
 // make up a device's offline cache - see CatalogSnapshot. catalog.Interface
 // already satisfies this signature - no adapter needed. Deliberately the
@@ -59,14 +67,18 @@ type Interface interface {
 	// the one real cross-device conflict this domain expects - see
 	// docs/WORKFLOWS.md Section 10), recording a SyncConflict instead of
 	// rejecting so a Manager/Owner can resolve it later (e.g. via the
-	// Inventory Ledger). Every queued sale is treated as pre-authorized
-	// (manual discounts included) - it already happened at the register
-	// under whatever authorization the device enforced at the time; this
-	// backend's job during resync is to persist it, not re-litigate
-	// permissions after the fact. A sale whose shift has since closed, or
-	// that otherwise fails validation, is reported as a failed item (not a
-	// SyncConflict) for the device to retry or flag - not silently
-	// dropped.
+	// Inventory Ledger). Queued sales are NOT trusted with authority they
+	// can't prove: an offline till allows no manual discounts (no manager
+	// can approve one offline - no new PIN sign-ins), so any item discount
+	// fails the sale; and each sale's staff_id (client-supplied - there is no
+	// staff token on a replayed sale) must be a staff member of the calling
+	// device's own branch, so a token can't attribute sales to anyone else.
+	// A sale already stored from this same branch and device is a no-op
+	// success checked first, so a retry never fails on later changes (staff
+	// moved or removed); the same id from another branch/device is a
+	// failed item. A sale whose shift has since closed, or that otherwise
+	// fails validation, is reported as a failed item (not a SyncConflict)
+	// for the device to retry or flag - not silently dropped.
 	IngestQueuedSales(ctx context.Context, orgID uint, branchID uint, in IngestQueuedSalesRequest) (*IngestQueuedSalesResponse, error)
 	GetSyncStatus(ctx context.Context, orgID uint, branchID *uint) (*SyncStatus, error)
 	ListSyncConflicts(ctx context.Context, orgID uint, branchID *uint) ([]SyncConflict, error)

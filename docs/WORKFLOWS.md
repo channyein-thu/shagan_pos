@@ -81,8 +81,11 @@ Three distinct tokens exist, often needed together on one request:
 
 ### Which middleware/helper, when
 - `middleware.RequireStaffToken(jwtSecret)` — used on: `OpenShift`,
-  `CloseShift`, `CreateDrawerEvent`, `CreateExpense`, `UpdateExpense`,
-  `DeleteExpense`, `CreateSale`. These need to know who's acting, but don't
+  `CloseShift`, `CreateDrawerEvent`, `CreateSale`. (`CreateExpense`,
+  `UpdateExpense`, `DeleteExpense` and `VoidSale` use
+  `RequireStaffTokenOrOrgAdmin` instead — same, but an Owner / Service Center
+  bearer token may pass with no staff token; see "Owner acts as owner" below.)
+  These need to know who's acting, but don't
   hard-gate on one fixed permission via middleware — the handler makes its
   own permission decision inline (see below).
 - `middleware.RequirePermission(jwtSecret, "access_backoffice")` — used on:
@@ -101,6 +104,69 @@ Three distinct tokens exist, often needed together on one request:
     `StaffHasPermission || ManagerApproved` pattern against
     `approve_void`/`approve_return`/`approve_exchange`, don't invent a
     different shape.
+
+### Route authorization by account type (confirmed 2026-10-08)
+
+The access JWT carries an `account_type` claim (`owner` / `pos` /
+`service_center`), and `POST /auth/login` / `POST /auth/refresh` return
+`account_type` and `access_expires_at` (the access token's expiry;
+`expires_at` is still the *refresh* token's). A token issued before the claim
+existed gets **401** on any gated route (re-login / refresh), never 403.
+
+| Gate (`internal/middleware/access.go`) | Who passes | Routes |
+|---|---|---|
+| `RequireOrgAdmin` | Owner, Service Center (never a till, manager PIN or not) | `POST /staff`, `PATCH /staff/:id`, `POST/PATCH /branches`, `POST/PATCH /devices` |
+| `RequireBackOffice` | Owner, Service Center, **or** a POS-device token + `X-Staff-Token` whose role has `access_backoffice` (a manager who unlocked Back Office at the till) | catalog writes (products/categories/combos), supplier writes, `PUT /receipt-settings`, payment-QR upload/delete, `POST /inventory/adjustments`, `POST/PATCH /stock-transfers`, `POST/PATCH /purchase-orders`, `POST /purchase-orders/:id/receipts` |
+| (none beyond `Auth`) | any authenticated caller | all reads the till needs to sell (products, stock levels, receipt settings, QR codes, ...), plus the staff-token routes in the list above |
+
+- **Service Center = same as Owner** on every admin route (decision, 2026-10-08).
+
+#### Sales history list (built 2026-10-08)
+`GET /sales` is `{sales, page, page_size, total_count}` (the same envelope and
+`page`/`page_size` rules as `/reports/transactions`: default 20, max 100), newest
+first, filterable by `branch_id`, `from` and `to` (`YYYY-MM-DD`, inclusive, UTC
+days). Unlike the reports there is **no default date window** — no filters
+means the whole history, paged. A branch-bound POS-device token is locked to its
+own branch (a `branch_id` it sends is ignored), exactly like the reports. Every
+row, here and in `/reports/transactions`, carries `payment_methods`: the
+distinct methods used on the sale, sorted (`["cash"]`, `["qr"]`,
+`["cash","qr"]` for a split), never null. Voided sales appear in `/sales`
+(status shows it) but not in the reports.
+
+#### Owner acts as owner — expenses and void (confirmed 2026-10-06, built 2026-10-08)
+The Owner has no `Staff` record (and can't — `Staff.branch_id` is required),
+so these four routes — `POST/PATCH/DELETE /expenses/:id` and
+`POST /sales/:id/void` — accept an **Owner or Service Center bearer token
+with no `X-Staff-Token`** (`RequireStaffTokenOrOrgAdmin`). A POS-device token
+still needs a staff token exactly as before. For the owner:
+- **No PIN, no manager approval.** The owner is treated as holding
+  `access_backoffice` and `approve_void`; they may edit/delete any expense in
+  their org. Any `X-Staff-Token` they send is ignored.
+- **Attribution is explicit, never a fake staff id.** `expenses.created_by`
+  and `voids.approved_by` are now nullable, with new `created_by_user_id` /
+  `approved_by_user_id` columns: exactly one of each pair is set. An
+  owner-logged expense reassigned to a staff member (`PATCH created_by`)
+  becomes staff-logged. The audit log gets `actor_user_id` (with `actor_id`
+  null) for an owner void; the void's inventory-ledger rows leave `actor_id`
+  null and point at the void via `reference_id`.
+- **Expenses**: `branch_id` is required in the body (an org-wide account has
+  no branch of its own); it must be an active branch of the owner's org.
+- **Void keeps its rules**: the sale's shift must still be open, no existing
+  return/exchange, not already voided (all 409).
+- Return and Exchange are **not** opened to the owner (no decision yet).
+- **A manager at the till is branch-bound** on top of the gate: stock
+  adjustments, purchase orders and transfer *sources* must be the till's own
+  branch (403 `cannot act on a different branch`); a purchase order or
+  transfer belonging to another branch reads as **404**, and
+  `GET /purchase-orders` returns only the till's branch. A manager editing
+  products/categories/combos/suppliers affects the whole org - those are
+  org-wide records (confirmed).
+- `GET /branches/:id/staff` and `/managers` are limited to the till's own
+  branch for a POS-device token (403 otherwise).
+- `credential_hash` / `pin_hash` are never serialized in any response.
+- **Not yet gated (flagged, not decided):** reads of reports, audit log,
+  org-wide `GET /staff`, `/sync/conflicts` resolve, `POST /printers/test`
+  - a POS token can still call them.
 
 **Rule of thumb:** if a client-supplied `staff_id`/`created_by` field still
 exists on a request DTO, it's for wire compatibility only — the server
@@ -270,7 +336,8 @@ what each grants).
   close/reopen, not a shared open shift.
 - **Cash reconciliation**: only cash is physically counted at close;
   `reason` required only when counted cash differs from expected.
-- **Expenses**: creator or a Manager (`access_backoffice`) may edit/delete;
+- **Expenses**: creator, a Manager (`access_backoffice`), or the Owner /
+  Service Center acting directly may edit/delete;
   anyone signed in may create one (always attributed to themselves).
 - **Sales discount**: any item discount requires `apply_manual_discount`
   (own, or via manager approval); item discounts and item tax must both be
@@ -408,6 +475,27 @@ inventing something new.
   doesn't need to be online to know what it's selling.
 - `Sale.SyncedAt` exists to mark when a locally-created record was
   confirmed received by the server.
+
+### Implemented rules (confirmed 2026-10-08, from the 2026-10-06 offline decisions)
+- **`POST /sales` is idempotent by `id`.** A retry of a sale this same branch
+  and device already recorded returns the original sale with **200** (not 201);
+  nothing is re-validated or re-written, so no stock moves twice and no fresh
+  manager approval is needed. The same id from a different branch/device is
+  **409**. (Two retries racing is handled the same way, never a 500.)
+- **`POST /sync/sales` trusts a queued sale with nothing it can't prove.** A
+  queued sale carries no staff token and an offline till can't get a manager
+  approval (no new PIN sign-ins offline), so: any item discount fails that
+  sale, and its `staff_id` must be a staff member of the calling device's own
+  branch. The already-stored check runs *first*, so retrying an ingested sale
+  stays a success even if the staff member has since moved or left; an id
+  already stored by another branch/device is a failed item, never a silent
+  success. Failures are per-item in the response; the rest of the batch still
+  lands.
+- **Known gap:** a discount sale rung up *online* whose response was lost
+  and which then gets queued offline will be rejected on sync (discount) -
+  retry it through `POST /sales` instead, which now succeeds idempotently.
+  `price_override` on a sale item has no permission gate on either path
+  (unconfirmed whether it should).
 
 ### Recommended shape
 1. **Local write-ahead queue on the device.** Every mutation created while

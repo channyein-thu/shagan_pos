@@ -68,12 +68,24 @@ type DrawerEvent struct {
 
 // Expense maps to the "expenses" table in the ERD.
 type Expense struct {
-	ID        uint            `gorm:"primaryKey;autoIncrement" json:"id"`
-	BranchID  uint            `gorm:"index;not null" json:"branch_id"`
-	Date      time.Time       `gorm:"type:date;not null" json:"date"`
-	Category  string          `gorm:"size:255;not null" json:"category"`
-	Amount    decimal.Decimal `gorm:"type:decimal(10,2);not null" json:"amount"`
-	CreatedBy uint            `gorm:"index;not null" json:"created_by"`
+	ID       uint            `gorm:"primaryKey;autoIncrement" json:"id"`
+	BranchID uint            `gorm:"index;not null" json:"branch_id"`
+	Date     time.Time       `gorm:"type:date;not null" json:"date"`
+	Category string          `gorm:"size:255;not null" json:"category"`
+	Amount   decimal.Decimal `gorm:"type:decimal(10,2);not null" json:"amount"`
+	// CreatedBy is the staff member who logged the expense; nil when the
+	// Owner logged it themself (the Owner has no Staff record - see
+	// CreatedByUserID). Exactly one of CreatedBy/CreatedByUserID is set.
+	CreatedBy *uint `gorm:"index" json:"created_by"`
+	// CreatedByUserID is the org-wide account (identity.User, an Owner or
+	// Service Center) that logged the expense directly, with no PIN.
+	CreatedByUserID *uint `gorm:"index" json:"created_by_user_id"`
+}
+
+// createdByStaff reports whether staffID is the staff member who logged
+// this expense - false for an expense an org-wide account logged.
+func (e *Expense) createdByStaff(staffID uint) bool {
+	return e.CreatedBy != nil && *e.CreatedBy == staffID
 }
 
 func (ShiftReconciliation) TableName() string { return "shifts_reconciliations" }

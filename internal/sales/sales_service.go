@@ -2,6 +2,7 @@ package sales
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -75,13 +76,24 @@ type Interface interface {
 	// docs/WORKFLOWS.md Section 10's sync-time-conflict rule), in which
 	// case a product going negative is allowed through and reported back
 	// as a NegativeStockEvent instead of rejected, and Sale.SyncedAt is
-	// stamped (nil on the live path - see Sale.SyncedAt's own doc). Writes
+	// stamped (nil on the live path - see Sale.SyncedAt's own doc). Idempotent
+	// by in.ID: a sale already stored from the same branch and device is
+	// returned as-is with Replayed set (nothing is re-validated or written -
+	// a retry never needs fresh manager approval), a stored sale from any
+	// other branch/device is a 409. Writes
 	// an audit entry
 	// when any item carried a discount - a manual discount is a privileged
 	// action worth an accountability trail regardless of whether it came
 	// from the cashier's own permission or a manager's approval.
 	CreateSale(ctx context.Context, orgID uint, branchID uint, actor SaleActor, in CreateSaleRequest, allowNegativeStock bool) (*Sale, []NegativeStockEvent, error)
-	ListSales(ctx context.Context, orgID uint) ([]Sale, error)
+	// ListSales is `GET /sales`: a page of sales, newest first, each with
+	// the payment methods used. branchID narrows to one branch (the handler
+	// forces a branch-bound token's own branch); from/to are inclusive
+	// calendar dates (UTC, like reports) and either may be nil for no bound -
+	// unlike the reports, no default window, so an unfiltered call is the
+	// whole history, paged. page/pageSize follow reports' convention
+	// (default 20, max 100).
+	ListSales(ctx context.Context, orgID uint, branchID *uint, from, to *time.Time, page, pageSize int) (*SalesPage, error)
 	GetSale(ctx context.Context, orgID uint, id uuid.UUID) (*Sale, error)
 	// GetSaleReceipt and ReprintSale return the same bundle - a receipt's
 	// content never changes between its first print and a reprint.

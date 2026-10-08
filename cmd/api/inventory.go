@@ -15,23 +15,28 @@ import (
 )
 
 type InventoryAPI struct {
-	service inventory.Interface
+	service   inventory.Interface
+	jwtSecret []byte
 }
 
-func NewInventoryAPI(db *gorm.DB) *InventoryAPI {
+func NewInventoryAPI(db *gorm.DB, jwtSecret []byte) *InventoryAPI {
 	return &InventoryAPI{
-		service: inventory.NewService(inventory.NewRepository(db), identity.NewRepository(db), catalog.NewRepository(db), db),
+		service:   inventory.NewService(inventory.NewRepository(db), identity.NewRepository(db), catalog.NewRepository(db), db),
+		jwtSecret: jwtSecret,
 	}
 }
 
 func (a *InventoryAPI) RegisterRoutes(rg *gin.RouterGroup) {
+	// Stock writes need Back Office. A manager at the till is further
+	// restricted to their own branch inside each handler (scopedBranchID).
+	backOffice := middleware.RequireBackOffice(a.jwtSecret)
 	rg.GET("/stock-levels", a.ListStockLevels)
 	rg.GET("/inventory/low-stock", a.ListLowStock)
 	rg.GET("/inventory/ledger", a.ListInventoryLedger)
-	rg.POST("/inventory/adjustments", a.CreateStockAdjustment)
+	rg.POST("/inventory/adjustments", backOffice, a.CreateStockAdjustment)
 	rg.GET("/stock-transfers", a.ListStockTransfers)
-	rg.POST("/stock-transfers", a.CreateStockTransfer)
-	rg.PATCH("/stock-transfers/:id", a.UpdateStockTransfer)
+	rg.POST("/stock-transfers", backOffice, a.CreateStockTransfer)
+	rg.PATCH("/stock-transfers/:id", backOffice, a.UpdateStockTransfer)
 }
 
 // ListStockLevels handles `GET /stock-levels`. Restricted to the caller's
@@ -153,6 +158,13 @@ func (a *InventoryAPI) CreateStockAdjustment(c *gin.Context) {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
+	// A manager at the till (branch-bound token) may only adjust their own
+	// branch's stock; owner/service_center pick any branch in the org.
+	branchID, ok := scopedBranchID(c, in.BranchID)
+	if !ok {
+		return
+	}
+	in.BranchID = branchID
 	result, err := a.service.CreateStockAdjustment(c.Request.Context(), orgID, actorID, in)
 	if err != nil {
 		common.HandleError(c, err)
@@ -199,6 +211,11 @@ func (a *InventoryAPI) CreateStockTransfer(c *gin.Context) {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
+	// A manager at the till may only send stock out of their own branch;
+	// to_branch is whichever branch in the org they're sending to.
+	if _, ok := scopedBranchID(c, in.FromBranch); !ok {
+		return
+	}
 	result, err := a.service.CreateStockTransfer(c.Request.Context(), orgID, actorID, in)
 	if err != nil {
 		common.HandleError(c, err)
@@ -225,6 +242,27 @@ func (a *InventoryAPI) UpdateStockTransfer(c *gin.Context) {
 	if err := c.ShouldBindJSON(&in); err != nil {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
+	}
+	// A manager at the till may only move a transfer their own branch is
+	// the sender or receiver of. Not-found, not forbidden, so a till can't
+	// probe other branches' transfer ids.
+	if ownBranchID, ok := middleware.BranchIDFromContext(c); ok {
+		touching, err := a.service.ListStockTransfers(c.Request.Context(), orgID, &ownBranchID)
+		if err != nil {
+			common.HandleError(c, err)
+			return
+		}
+		found := false
+		for _, t := range touching {
+			if t.ID == uint(idVal) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			common.HandleError(c, common.NotFoundError("stock transfer not found"))
+			return
+		}
 	}
 	result, err := a.service.UpdateStockTransfer(c.Request.Context(), orgID, uint(idVal), in)
 	if err != nil {

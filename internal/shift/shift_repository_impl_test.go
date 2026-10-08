@@ -893,7 +893,99 @@ func TestRepository_UpdateExpense_AllowsAtomicBranchAndCreatorMoveForOrgWideScop
 
 	require.NoError(t, err)
 	require.Equal(t, otherBranch.ID, updated.BranchID)
-	require.Equal(t, otherStaff.ID, updated.CreatedBy)
+	require.NotNil(t, updated.CreatedBy)
+	require.Equal(t, otherStaff.ID, *updated.CreatedBy)
+}
+
+// --- Owner / Service Center acting directly (backend-recommendations #6) ---
+
+func TestRepository_CreateExpense_ByOwner_RecordsUserNotStaff(t *testing.T) {
+	db := newOpenShiftTestDB(t)
+	branch, _, _ := seedActiveOpenShiftResources(t, db, 7)
+	repo := NewRepository(db)
+
+	// Org-wide scope (no BranchID): the owner names the branch.
+	created, err := repo.CreateExpense(context.Background(), AccessScope{OrgID: 7}, CreateExpenseRequest{
+		BranchID: branch.ID, Date: time.Now().UTC(), Category: "rent", Amount: decimal.NewFromInt(900), CreatedByUserID: 55,
+	})
+	require.NoError(t, err)
+	require.Nil(t, created.CreatedBy, "an owner-logged expense has no staff creator")
+	require.NotNil(t, created.CreatedByUserID)
+	require.Equal(t, uint(55), *created.CreatedByUserID)
+
+	var persisted Expense
+	require.NoError(t, db.First(&persisted, created.ID).Error)
+	require.Nil(t, persisted.CreatedBy)
+	require.Equal(t, uint(55), *persisted.CreatedByUserID)
+}
+
+func TestRepository_CreateExpense_ByOwner_RejectsBranchOutsideOrg(t *testing.T) {
+	db := newOpenShiftTestDB(t)
+	branch, _, _ := seedActiveOpenShiftResources(t, db, 99) // another org's branch
+	repo := NewRepository(db)
+
+	_, err := repo.CreateExpense(context.Background(), AccessScope{OrgID: 7}, CreateExpenseRequest{
+		BranchID: branch.ID, Date: time.Now().UTC(), Category: "rent", Amount: decimal.NewFromInt(1), CreatedByUserID: 55,
+	})
+	requireRestErrorStatus(t, err, http.StatusNotFound)
+}
+
+func TestRepository_OwnerExpense_StaffCannotModifyButOwnerAndManagerCan(t *testing.T) {
+	db := newOpenShiftTestDB(t)
+	branch, staff, _ := seedActiveOpenShiftResources(t, db, 7)
+	repo := NewRepository(db)
+	scope := AccessScope{OrgID: 7}
+	created, err := repo.CreateExpense(context.Background(), scope, CreateExpenseRequest{
+		BranchID: branch.ID, Date: time.Now().UTC(), Category: "rent", Amount: decimal.NewFromInt(900), CreatedByUserID: 55,
+	})
+	require.NoError(t, err)
+
+	category := "utilities"
+	// A cashier whose staff id happens to equal the owner's user id is still not the creator.
+	cashier := ExpenseActor{StaffID: staff.ID}
+	_, err = repo.UpdateExpense(context.Background(), scope, created.ID, cashier, UpdateExpenseRequest{Category: &category})
+	requireRestErrorStatus(t, err, http.StatusForbidden)
+	requireRestErrorStatus(t, repo.DeleteExpense(context.Background(), scope, created.ID, cashier), http.StatusForbidden)
+
+	manager := ExpenseActor{StaffID: staff.ID, CanManageAny: true}
+	_, err = repo.UpdateExpense(context.Background(), scope, created.ID, manager, UpdateExpenseRequest{Category: &category})
+	require.NoError(t, err)
+
+	owner := ExpenseActor{UserID: 55, CanManageAny: true}
+	updated, err := repo.UpdateExpense(context.Background(), scope, created.ID, owner, UpdateExpenseRequest{Category: &category})
+	require.NoError(t, err)
+	require.Nil(t, updated.CreatedBy, "editing must not invent a staff creator")
+	require.NotNil(t, updated.CreatedByUserID)
+	require.NoError(t, repo.DeleteExpense(context.Background(), scope, created.ID, owner))
+}
+
+func TestRepository_OwnerCanManageStaffExpense_AndReassigningToStaffClearsUserID(t *testing.T) {
+	db := newOpenShiftTestDB(t)
+	branch, staff, _ := seedActiveOpenShiftResources(t, db, 7)
+	repo := NewRepository(db)
+	scope := AccessScope{OrgID: 7}
+
+	// Owner edits an expense a cashier logged.
+	staffExpense, err := repo.CreateExpense(context.Background(), scope, CreateExpenseRequest{
+		BranchID: branch.ID, Date: time.Now().UTC(), Category: "supplies", Amount: decimal.NewFromInt(5), CreatedBy: staff.ID,
+	})
+	require.NoError(t, err)
+	category := "fixed"
+	owner := ExpenseActor{UserID: 55, CanManageAny: true}
+	got, err := repo.UpdateExpense(context.Background(), scope, staffExpense.ID, owner, UpdateExpenseRequest{Category: &category})
+	require.NoError(t, err)
+	require.Equal(t, staff.ID, *got.CreatedBy)
+	require.Nil(t, got.CreatedByUserID)
+
+	// An owner-logged expense reassigned to a staff member stops being "by the owner".
+	ownerExpense, err := repo.CreateExpense(context.Background(), scope, CreateExpenseRequest{
+		BranchID: branch.ID, Date: time.Now().UTC(), Category: "rent", Amount: decimal.NewFromInt(9), CreatedByUserID: 55,
+	})
+	require.NoError(t, err)
+	reassigned, err := repo.UpdateExpense(context.Background(), scope, ownerExpense.ID, owner, UpdateExpenseRequest{CreatedBy: &staff.ID})
+	require.NoError(t, err)
+	require.Equal(t, staff.ID, *reassigned.CreatedBy)
+	require.Nil(t, reassigned.CreatedByUserID)
 }
 
 func seedShift(t *testing.T, db *gorm.DB, branchID, staffID, deviceID uint, status ShiftStatus) *Shift {

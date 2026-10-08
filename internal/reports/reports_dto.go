@@ -196,6 +196,10 @@ type TransactionSummary struct {
 	Total       decimal.Decimal `json:"total"`
 	Status      string          `json:"status"`
 	CompletedAt *time.Time      `json:"completed_at"`
+	// PaymentMethods is every distinct method used on the sale, sorted
+	// ("cash", "qr", or both for a split payment) - never null. Filled in by
+	// the service from Repository.PaymentMethodsBySale, not scanned.
+	PaymentMethods []string `json:"payment_methods" gorm:"-"`
 }
 
 // TransactionsReport backs `GET /reports/transactions`.

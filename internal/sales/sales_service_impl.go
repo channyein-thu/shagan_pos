@@ -2,6 +2,8 @@ package sales
 
 import (
 	"context"
+	"errors"
+	"net/http"
 	"time"
 
 	"github.com/google/uuid"
@@ -49,6 +51,18 @@ var _ Interface = (*Service)(nil)
 // CreateStockTransfer doc). Every item's stock effect and the sale itself
 // commit or roll back together.
 func (s *Service) CreateSale(ctx context.Context, orgID uint, branchID uint, actor SaleActor, in CreateSaleRequest, allowNegativeStock bool) (*Sale, []NegativeStockEvent, error) {
+	// Idempotent by in.ID - checked before anything else (including the
+	// discount-permission check), so a till retrying after a lost response
+	// gets its original sale back even if the manager-approval token that
+	// authorized it has long expired.
+	existing, err := s.repo.GetSale(ctx, orgID, in.ID)
+	switch {
+	case err == nil:
+		return s.replay(existing, branchID, in.DeviceID)
+	case !isNotFound(err):
+		return nil, nil, err
+	}
+
 	saleItems := make([]SaleItem, 0, len(in.Items))
 	subtotal := decimal.Zero
 	itemDiscountTotal := decimal.Zero
@@ -150,7 +164,7 @@ func (s *Service) CreateSale(ctx context.Context, orgID uint, branchID uint, act
 	}
 
 	var negativeEvents []NegativeStockEvent
-	err := s.db.Transaction(func(tx *gorm.DB) error {
+	err = s.db.Transaction(func(tx *gorm.DB) error {
 		if err := s.repo.RequireOpenShift(tx, orgID, branchID, in.ShiftID); err != nil {
 			return err
 		}
@@ -191,9 +205,36 @@ func (s *Service) CreateSale(ctx context.Context, orgID uint, branchID uint, act
 		return nil
 	})
 	if err != nil {
+		// Two retries of the same sale racing past the check above: the
+		// loser's insert hits the primary key. Resolve it the same way as
+		// a sequential retry instead of surfacing a 500.
+		if common.IsDuplicateError(err) {
+			if existing, getErr := s.repo.GetSale(ctx, orgID, in.ID); getErr == nil {
+				return s.replay(existing, branchID, in.DeviceID)
+			}
+			// Not in this org: the id belongs to someone else's sale.
+			return nil, nil, common.ConflictError("a sale with this id already exists")
+		}
 		return nil, nil, err
 	}
 	return sale, negativeEvents, nil
+}
+
+// replay answers a CreateSale whose id is already stored: the original sale
+// back (flagged Replayed) when it was rung up at this same branch and
+// device, a 409 otherwise - a different till reusing a client UUID is a
+// bug or an attack, never a retry, and mustn't hand over the other sale.
+func (s *Service) replay(existing *Sale, branchID, deviceID uint) (*Sale, []NegativeStockEvent, error) {
+	if !existing.SameOrigin(branchID, deviceID) {
+		return nil, nil, common.ConflictError("a sale with this id already exists")
+	}
+	existing.Replayed = true
+	return existing, nil, nil
+}
+
+func isNotFound(err error) bool {
+	var restErr common.RestError
+	return errors.As(err, &restErr) && restErr.Status == http.StatusNotFound
 }
 
 // applyStockDelta is sales' own copy of the get-or-create-then-adjust
@@ -225,8 +266,55 @@ func (s *Service) applyStockDelta(tx *gorm.DB, productID uint, branchID uint, de
 	return newQty, nil
 }
 
-func (s *Service) ListSales(ctx context.Context, orgID uint) ([]Sale, error) {
-	return s.repo.ListSales(ctx, orgID)
+func (s *Service) ListSales(ctx context.Context, orgID uint, branchID *uint, from, to *time.Time, page, pageSize int) (*SalesPage, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	f := SaleFilter{BranchID: branchID, Page: page, PageSize: pageSize}
+	if from != nil {
+		start := utcDay(*from)
+		f.Start = &start
+	}
+	if to != nil {
+		// to is an inclusive calendar date: its whole day counts.
+		end := utcDay(*to).Add(24 * time.Hour)
+		f.End = &end
+	}
+
+	sales, total, err := s.repo.ListSales(ctx, orgID, f)
+	if err != nil {
+		return nil, err
+	}
+
+	ids := make([]uuid.UUID, len(sales))
+	for i, sale := range sales {
+		ids[i] = sale.ID
+	}
+	methods, err := s.repo.ListPaymentMethods(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]SaleListItem, len(sales))
+	for i, sale := range sales {
+		m := methods[sale.ID]
+		if m == nil {
+			m = []PaymentMethod{}
+		}
+		items[i] = SaleListItem{Sale: sale, PaymentMethods: m}
+	}
+	return &SalesPage{Sales: items, Page: page, PageSize: pageSize, TotalCount: total}, nil
+}
+
+func utcDay(t time.Time) time.Time {
+	y, m, d := t.Date()
+	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
 }
 
 func (s *Service) GetSale(ctx context.Context, orgID uint, id uuid.UUID) (*Sale, error) {

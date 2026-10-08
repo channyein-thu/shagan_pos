@@ -120,7 +120,8 @@ func (s *Service) Login(ctx context.Context, in LoginRequest) (*SessionResult, e
 		return nil, common.UnauthorizedError(invalidCredentialsMessage)
 	}
 
-	accessToken, err := authtoken.GenerateAccessToken(s.jwtSecret, user.ID, user.OrgID, user.BranchID, s.accessTokenTTL)
+	accessExpiresAt := time.Now().Add(s.accessTokenTTL)
+	accessToken, err := authtoken.GenerateAccessToken(s.jwtSecret, user.ID, user.OrgID, string(user.AccountType), user.BranchID, s.accessTokenTTL)
 	if err != nil {
 		return nil, common.SystemError("failed to issue access token")
 	}
@@ -136,9 +137,11 @@ func (s *Service) Login(ctx context.Context, in LoginRequest) (*SessionResult, e
 	}
 
 	return &SessionResult{
-		AccessToken:  accessToken,
-		RefreshToken: refreshPlaintext,
-		ExpiresAt:    expiresAt,
+		AccessToken:     accessToken,
+		RefreshToken:    refreshPlaintext,
+		ExpiresAt:       expiresAt,
+		AccessExpiresAt: accessExpiresAt,
+		AccountType:     user.AccountType,
 	}, nil
 }
 
@@ -194,7 +197,8 @@ func (s *Service) RefreshSession(ctx context.Context, in RefreshRequest) (*Sessi
 		return nil, common.UnauthorizedError(invalidRefreshTokenMessage)
 	}
 
-	accessToken, err := authtoken.GenerateAccessToken(s.jwtSecret, user.ID, user.OrgID, user.BranchID, s.accessTokenTTL)
+	accessExpiresAt := time.Now().Add(s.accessTokenTTL)
+	accessToken, err := authtoken.GenerateAccessToken(s.jwtSecret, user.ID, user.OrgID, string(user.AccountType), user.BranchID, s.accessTokenTTL)
 	if err != nil {
 		return nil, common.SystemError("failed to issue access token")
 	}
@@ -213,9 +217,11 @@ func (s *Service) RefreshSession(ctx context.Context, in RefreshRequest) (*Sessi
 	}
 
 	return &SessionResult{
-		AccessToken:  accessToken,
-		RefreshToken: refreshPlaintext,
-		ExpiresAt:    expiresAt,
+		AccessToken:     accessToken,
+		RefreshToken:    refreshPlaintext,
+		ExpiresAt:       expiresAt,
+		AccessExpiresAt: accessExpiresAt,
+		AccountType:     user.AccountType,
 	}, nil
 }
 

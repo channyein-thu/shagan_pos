@@ -68,7 +68,7 @@ func TestService_VoidSale_HappyPath_CreditsStockAndMarksSaleVoided(t *testing.T)
 	salesRepo.EXPECT().ListSaleItemsTx(mock.Anything, saleID).Return(items, nil).Once()
 	repo.EXPECT().
 		CreateVoid(mock.Anything, mock.MatchedBy(func(v *Void) bool {
-			return v.SaleID == saleID && v.Qty == 3 && v.Reason == VoidReasonStaffError && v.Explanation == "rang up wrong item" && v.ApprovedBy == 30
+			return v.SaleID == saleID && v.Qty == 3 && v.Reason == VoidReasonStaffError && v.Explanation == "rang up wrong item" && v.ApprovedBy != nil && *v.ApprovedBy == 30 && v.ApprovedByUserID == nil
 		})).
 		Run(func(_ *gorm.DB, v *Void) { v.ID = 100 }).
 		Return(nil).Once()
@@ -93,6 +93,52 @@ func TestService_VoidSale_HappyPath_CreditsStockAndMarksSaleVoided(t *testing.T)
 		VoidSaleRequest{Reason: VoidReasonStaffError, Explanation: "rang up wrong item"})
 	require.NoError(t, err)
 	require.Equal(t, uint(100), got.ID)
+}
+
+// An Owner voiding directly has no Staff record: recorded as approved_by_user_id,
+// audit actor_user_id, and no (fake) staff actor on the ledger rows.
+func TestService_VoidSale_ByOwner_RecordsUserNotStaff(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	salesRepo := NewMockSalesReader(t)
+	inv := NewMockInventoryWriter(t)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, branches, salesRepo, inv, audW)
+
+	saleID := uuid.New()
+	sale := &sales.Sale{ID: saleID, OrgID: 7, BranchID: 5, ShiftID: 9, Status: sales.SaleStatusCompleted}
+	items := []sales.SaleItem{{ID: 1, SaleID: saleID, ProductID: 2, Qty: 3}}
+
+	salesRepo.EXPECT().GetSaleWithLock(mock.Anything, uint(7), saleID).Return(sale, nil).Once()
+	// The "shift must still be open" rule applies to the Owner too.
+	salesRepo.EXPECT().RequireOpenShift(mock.Anything, uint(7), uint(5), uint(9)).Return(nil).Once()
+	repo.EXPECT().SaleHasReturnOrExchange(mock.Anything, saleID).Return(false, nil).Once()
+	salesRepo.EXPECT().ListSaleItemsTx(mock.Anything, saleID).Return(items, nil).Once()
+	repo.EXPECT().
+		CreateVoid(mock.Anything, mock.MatchedBy(func(v *Void) bool {
+			return v.ApprovedBy == nil && v.ApprovedByUserID != nil && *v.ApprovedByUserID == 77
+		})).
+		Run(func(_ *gorm.DB, v *Void) { v.ID = 100 }).
+		Return(nil).Once()
+	inv.EXPECT().GetStockLevel(mock.Anything, uint(2), uint(5)).Return(&inventory.StockLevel{ID: 50, ProductID: 2, BranchID: 5, Qty: 4}, nil).Once()
+	inv.EXPECT().UpdateStockLevelQty(mock.Anything, uint(50), 7).Return(nil).Once()
+	inv.EXPECT().
+		CreateInventoryLedgerEntry(mock.Anything, mock.MatchedBy(func(e *inventory.InventoryLedger) bool {
+			return e.Type == inventory.LedgerEntryTypeVoid && e.ActorID == nil && e.ReferenceID == "100"
+		})).
+		Return(nil).Once()
+	salesRepo.EXPECT().UpdateSaleStatus(mock.Anything, saleID, sales.SaleStatusVoided).Return(nil).Once()
+	audW.EXPECT().
+		CreateAuditLog(mock.Anything, mock.MatchedBy(func(e *audit.AuditLog) bool {
+			return e.ActorID == nil && e.ActorUserID != nil && *e.ActorUserID == 77 && e.Action == "voided"
+		})).
+		Return(nil).Once()
+
+	got, err := svc.VoidSale(context.Background(), 7, Actor{UserID: 77, CanApprove: true}, saleID,
+		VoidSaleRequest{Reason: VoidReasonStaffError, Explanation: "owner correction"})
+	require.NoError(t, err)
+	require.Nil(t, got.ApprovedBy)
+	require.Equal(t, uint(77), *got.ApprovedByUserID)
 }
 
 func TestService_VoidSale_AlreadyHasReturnOrExchange_ReturnsConflict(t *testing.T) {

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -36,7 +37,12 @@ func (fakeTransactioner) Transaction(fc func(tx *gorm.DB) error, _ ...*sql.TxOpt
 }
 
 func newTestService(repo Repository, branches BranchLookup, catalogReader CatalogReader, salesWriter SalesWriter) *Service {
-	return NewService(repo, branches, catalogReader, salesWriter, fakeTransactioner{})
+	// No staff lookup: only IngestQueuedSales needs one - see newIngestService.
+	return NewService(repo, branches, nil, catalogReader, salesWriter, fakeTransactioner{})
+}
+
+func newIngestService(repo Repository, staff StaffLookup, salesWriter SalesWriter) *Service {
+	return NewService(repo, nil, staff, nil, salesWriter, fakeTransactioner{})
 }
 
 // --- GetCatalogSnapshot ---
@@ -116,19 +122,35 @@ func TestService_GetCatalogSnapshot_DifferingOnlyByPresignedImageURL_YieldsSameE
 
 // --- IngestQueuedSales ---
 
-func TestService_IngestQueuedSales_NewSale_CreatesItAsPreAuthorized(t *testing.T) {
+// A queued sale from branch 5, staff 14 (a member of branch 5), device 3.
+func queuedSale(id uuid.UUID) sales.CreateSaleRequest {
+	return sales.CreateSaleRequest{
+		ID: id, StaffID: 14, ShiftID: 9, DeviceID: 3,
+		Items: []sales.CreateSaleItemRequest{{ProductID: 1, Qty: 1, Discount: decimal.Zero}},
+	}
+}
+
+func notStored(sw *MockSalesWriter, id uuid.UUID) {
+	sw.EXPECT().GetSale(mock.Anything, uint(7), id).Return(nil, common.NotFoundError("sale not found")).Once()
+}
+
+func staffOfBranch(staff *MockStaffLookup, id, branchID uint) {
+	staff.EXPECT().GetStaff(mock.Anything, uint(7), id).Return(&identity.Staff{ID: id, BranchID: branchID}, nil).Once()
+}
+
+func TestService_IngestQueuedSales_NewSale_CreatedWithNoDiscountAuthority(t *testing.T) {
 	repo := NewMockRepository(t)
-	branches := NewMockBranchLookup(t)
-	cat := NewMockCatalogReader(t)
+	staff := NewMockStaffLookup(t)
 	sw := NewMockSalesWriter(t)
-	svc := newTestService(repo, branches, cat, sw)
+	svc := newIngestService(repo, staff, sw)
 
 	saleID := uuid.New()
-	req := sales.CreateSaleRequest{ID: saleID, StaffID: 14, ShiftID: 9, DeviceID: 3}
+	req := queuedSale(saleID)
 
-	sw.EXPECT().GetSale(mock.Anything, uint(7), saleID).Return(nil, common.NotFoundError("sale not found")).Once()
+	notStored(sw, saleID)
+	staffOfBranch(staff, 14, 5)
 	sw.EXPECT().
-		CreateSale(mock.Anything, uint(7), uint(5), sales.SaleActor{StaffID: 14, CanApplyManualDiscount: true}, req, true).
+		CreateSale(mock.Anything, uint(7), uint(5), sales.SaleActor{StaffID: 14, CanApplyManualDiscount: false}, req, true).
 		Return(&sales.Sale{ID: saleID}, nil, nil).Once()
 
 	got, err := svc.IngestQueuedSales(context.Background(), 7, 5, IngestQueuedSalesRequest{Sales: []sales.CreateSaleRequest{req}})
@@ -139,17 +161,105 @@ func TestService_IngestQueuedSales_NewSale_CreatesItAsPreAuthorized(t *testing.T
 	require.Equal(t, saleID.String(), got.Results[0].SaleID)
 }
 
-func TestService_IngestQueuedSales_AlreadyExists_TreatedAsIdempotentSuccess(t *testing.T) {
+func TestService_IngestQueuedSales_ItemDiscount_FailsWithoutCreating(t *testing.T) {
 	repo := NewMockRepository(t)
-	branches := NewMockBranchLookup(t)
-	cat := NewMockCatalogReader(t)
+	staff := NewMockStaffLookup(t)
 	sw := NewMockSalesWriter(t)
-	svc := newTestService(repo, branches, cat, sw)
+	svc := newIngestService(repo, staff, sw)
 
 	saleID := uuid.New()
-	req := sales.CreateSaleRequest{ID: saleID}
+	req := queuedSale(saleID)
+	req.Items[0].Discount = decimal.NewFromInt(5)
 
-	sw.EXPECT().GetSale(mock.Anything, uint(7), saleID).Return(&sales.Sale{ID: saleID}, nil).Once()
+	notStored(sw, saleID)
+	// Neither GetStaff nor CreateSale is reached.
+
+	got, err := svc.IngestQueuedSales(context.Background(), 7, 5, IngestQueuedSalesRequest{Sales: []sales.CreateSaleRequest{req}})
+	require.NoError(t, err)
+	require.False(t, got.Results[0].Success)
+	require.Contains(t, got.Results[0].Error, "manual discount")
+}
+
+func TestService_IngestQueuedSales_StaffFromAnotherBranch_FailsWithoutCreating(t *testing.T) {
+	repo := NewMockRepository(t)
+	staff := NewMockStaffLookup(t)
+	sw := NewMockSalesWriter(t)
+	svc := newIngestService(repo, staff, sw)
+
+	saleID := uuid.New()
+	req := queuedSale(saleID)
+
+	notStored(sw, saleID)
+	staffOfBranch(staff, 14, 6) // device is branch 5
+
+	got, err := svc.IngestQueuedSales(context.Background(), 7, 5, IngestQueuedSalesRequest{Sales: []sales.CreateSaleRequest{req}})
+	require.NoError(t, err)
+	require.False(t, got.Results[0].Success)
+	require.Contains(t, got.Results[0].Error, "staff_id")
+}
+
+func TestService_IngestQueuedSales_StaffNotFoundInOrg_FailsWithoutCreating(t *testing.T) {
+	repo := NewMockRepository(t)
+	staff := NewMockStaffLookup(t)
+	sw := NewMockSalesWriter(t)
+	svc := newIngestService(repo, staff, sw)
+
+	saleID := uuid.New()
+	req := queuedSale(saleID)
+
+	notStored(sw, saleID)
+	staff.EXPECT().GetStaff(mock.Anything, uint(7), uint(14)).Return(nil, common.NotFoundError("staff not found")).Once()
+
+	got, err := svc.IngestQueuedSales(context.Background(), 7, 5, IngestQueuedSalesRequest{Sales: []sales.CreateSaleRequest{req}})
+	require.NoError(t, err)
+	require.False(t, got.Results[0].Success)
+	require.Contains(t, got.Results[0].Error, "staff_id")
+}
+
+func TestService_IngestQueuedSales_MissingStaffID_FailsWithoutLookup(t *testing.T) {
+	repo := NewMockRepository(t)
+	staff := NewMockStaffLookup(t)
+	sw := NewMockSalesWriter(t)
+	svc := newIngestService(repo, staff, sw)
+
+	saleID := uuid.New()
+	req := queuedSale(saleID)
+	req.StaffID = 0
+
+	notStored(sw, saleID)
+
+	got, err := svc.IngestQueuedSales(context.Background(), 7, 5, IngestQueuedSalesRequest{Sales: []sales.CreateSaleRequest{req}})
+	require.NoError(t, err)
+	require.False(t, got.Results[0].Success)
+}
+
+func TestService_IngestQueuedSales_StaffLookupInfraError_FailsItemWithoutCreating(t *testing.T) {
+	repo := NewMockRepository(t)
+	staff := NewMockStaffLookup(t)
+	sw := NewMockSalesWriter(t)
+	svc := newIngestService(repo, staff, sw)
+
+	saleID := uuid.New()
+	req := queuedSale(saleID)
+
+	notStored(sw, saleID)
+	staff.EXPECT().GetStaff(mock.Anything, uint(7), uint(14)).Return(nil, errors.New("db down")).Once()
+
+	got, err := svc.IngestQueuedSales(context.Background(), 7, 5, IngestQueuedSalesRequest{Sales: []sales.CreateSaleRequest{req}})
+	require.NoError(t, err)
+	require.False(t, got.Results[0].Success)
+}
+
+func TestService_IngestQueuedSales_AlreadyStoredFromSameDevice_IdempotentSuccessEvenIfStaffGone(t *testing.T) {
+	repo := NewMockRepository(t)
+	staff := NewMockStaffLookup(t) // never consulted: a retry must not fail on later staff changes
+	sw := NewMockSalesWriter(t)
+	svc := newIngestService(repo, staff, sw)
+
+	saleID := uuid.New()
+	req := queuedSale(saleID)
+
+	sw.EXPECT().GetSale(mock.Anything, uint(7), saleID).Return(&sales.Sale{ID: saleID, BranchID: 5, DeviceID: 3}, nil).Once()
 	// CreateSale must never be called - already arrived, a safe no-op.
 
 	got, err := svc.IngestQueuedSales(context.Background(), 7, 5, IngestQueuedSalesRequest{Sales: []sales.CreateSaleRequest{req}})
@@ -157,17 +267,34 @@ func TestService_IngestQueuedSales_AlreadyExists_TreatedAsIdempotentSuccess(t *t
 	require.True(t, got.Results[0].Success)
 }
 
-func TestService_IngestQueuedSales_CreateSaleFails_ReportedAsFailedItemNotError(t *testing.T) {
+func TestService_IngestQueuedSales_IdStoredFromAnotherDevice_FailsInsteadOfSilentSuccess(t *testing.T) {
 	repo := NewMockRepository(t)
-	branches := NewMockBranchLookup(t)
-	cat := NewMockCatalogReader(t)
+	staff := NewMockStaffLookup(t)
 	sw := NewMockSalesWriter(t)
-	svc := newTestService(repo, branches, cat, sw)
+	svc := newIngestService(repo, staff, sw)
 
 	saleID := uuid.New()
-	req := sales.CreateSaleRequest{ID: saleID}
+	req := queuedSale(saleID)
 
-	sw.EXPECT().GetSale(mock.Anything, uint(7), saleID).Return(nil, common.NotFoundError("sale not found")).Once()
+	sw.EXPECT().GetSale(mock.Anything, uint(7), saleID).Return(&sales.Sale{ID: saleID, BranchID: 5, DeviceID: 99}, nil).Once()
+
+	got, err := svc.IngestQueuedSales(context.Background(), 7, 5, IngestQueuedSalesRequest{Sales: []sales.CreateSaleRequest{req}})
+	require.NoError(t, err)
+	require.False(t, got.Results[0].Success, "dropping a different till's sale as 'already synced' would lose it")
+	require.Contains(t, got.Results[0].Error, "already exists")
+}
+
+func TestService_IngestQueuedSales_CreateSaleFails_ReportedAsFailedItemNotError(t *testing.T) {
+	repo := NewMockRepository(t)
+	staff := NewMockStaffLookup(t)
+	sw := NewMockSalesWriter(t)
+	svc := newIngestService(repo, staff, sw)
+
+	saleID := uuid.New()
+	req := queuedSale(saleID)
+
+	notStored(sw, saleID)
+	staffOfBranch(staff, 14, 5)
 	sw.EXPECT().CreateSale(mock.Anything, uint(7), uint(5), mock.Anything, req, true).
 		Return(nil, nil, common.NotFoundError("shift not found, not open, or doesn't belong to this branch")).Once()
 
@@ -179,16 +306,16 @@ func TestService_IngestQueuedSales_CreateSaleFails_ReportedAsFailedItemNotError(
 
 func TestService_IngestQueuedSales_NegativeStockEvent_WritesSyncConflict(t *testing.T) {
 	repo := NewMockRepository(t)
-	branches := NewMockBranchLookup(t)
-	cat := NewMockCatalogReader(t)
+	staff := NewMockStaffLookup(t)
 	sw := NewMockSalesWriter(t)
-	svc := newTestService(repo, branches, cat, sw)
+	svc := newIngestService(repo, staff, sw)
 
 	saleID := uuid.New()
-	req := sales.CreateSaleRequest{ID: saleID}
+	req := queuedSale(saleID)
 	events := []sales.NegativeStockEvent{{ProductID: 2, BranchID: 5, ResultingQty: -1}}
 
-	sw.EXPECT().GetSale(mock.Anything, uint(7), saleID).Return(nil, common.NotFoundError("sale not found")).Once()
+	notStored(sw, saleID)
+	staffOfBranch(staff, 14, 5)
 	sw.EXPECT().CreateSale(mock.Anything, uint(7), uint(5), mock.Anything, req, true).
 		Return(&sales.Sale{ID: saleID}, events, nil).Once()
 	repo.EXPECT().
@@ -204,20 +331,21 @@ func TestService_IngestQueuedSales_NegativeStockEvent_WritesSyncConflict(t *test
 
 func TestService_IngestQueuedSales_MultipleItems_ProcessedIndependently(t *testing.T) {
 	repo := NewMockRepository(t)
-	branches := NewMockBranchLookup(t)
-	cat := NewMockCatalogReader(t)
+	staff := NewMockStaffLookup(t)
 	sw := NewMockSalesWriter(t)
-	svc := newTestService(repo, branches, cat, sw)
+	svc := newIngestService(repo, staff, sw)
 
 	saleID1 := uuid.New()
 	saleID2 := uuid.New()
-	req1 := sales.CreateSaleRequest{ID: saleID1}
-	req2 := sales.CreateSaleRequest{ID: saleID2}
+	req1 := queuedSale(saleID1)
+	req2 := queuedSale(saleID2)
 
-	sw.EXPECT().GetSale(mock.Anything, uint(7), saleID1).Return(nil, common.NotFoundError("sale not found")).Once()
+	notStored(sw, saleID1)
+	staffOfBranch(staff, 14, 5)
 	sw.EXPECT().CreateSale(mock.Anything, uint(7), uint(5), mock.Anything, req1, true).
 		Return(nil, nil, common.BadRequestError("payments must add up to the sale total")).Once()
-	sw.EXPECT().GetSale(mock.Anything, uint(7), saleID2).Return(nil, common.NotFoundError("sale not found")).Once()
+	notStored(sw, saleID2)
+	staffOfBranch(staff, 14, 5)
 	sw.EXPECT().CreateSale(mock.Anything, uint(7), uint(5), mock.Anything, req2, true).
 		Return(&sales.Sale{ID: saleID2}, nil, nil).Once()
 

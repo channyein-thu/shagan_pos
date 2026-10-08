@@ -90,3 +90,32 @@ type CreateSaleRequest struct {
 	Items      []CreateSaleItemRequest    `json:"items" binding:"required,min=1,dive"`
 	Payments   []CreateSalePaymentRequest `json:"payments" binding:"required,min=1,dive"`
 }
+
+// SaleFilter narrows and pages `GET /sales`. Start/End are the already-resolved
+// half-open [Start, End) bounds on Sale.CompletedAt (nil = unbounded on that
+// side) and Page/PageSize are already normalized - see Service.ListSales.
+type SaleFilter struct {
+	BranchID *uint
+	Start    *time.Time
+	End      *time.Time
+	Page     int
+	PageSize int
+}
+
+// SaleListItem is one row of `GET /sales`: the Sale plus how it was paid, so
+// a history screen can show the method without a receipt fetch per row.
+// PaymentMethods is every distinct method used on the sale, sorted
+// ("cash", "qr", or both for a split payment) - never null.
+type SaleListItem struct {
+	Sale
+	PaymentMethods []PaymentMethod `json:"payment_methods"`
+}
+
+// SalesPage is the `GET /sales` response - same envelope as
+// reports.TransactionsReport.
+type SalesPage struct {
+	Sales      []SaleListItem `json:"sales"`
+	Page       int            `json:"page"`
+	PageSize   int            `json:"page_size"`
+	TotalCount int64          `json:"total_count"`
+}

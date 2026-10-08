@@ -112,7 +112,7 @@ type User struct {
 	// branch-scoped without an extra Device lookup.
 	BranchID       *uint   `gorm:"index" json:"branch_id"`
 	Email          *string `gorm:"size:255;uniqueIndex" json:"email"`
-	CredentialHash string  `gorm:"size:255;not null" json:"credential_hash"`
+	CredentialHash string  `gorm:"size:255;not null" json:"-"`
 	// Status defaults to active for every existing and new row - see
 	// UserStatus. Checked in Login/RefreshSession; never settable by the
 	// account itself, only via the internal UpdatePosAccountStatus endpoint.
@@ -136,7 +136,7 @@ type Staff struct {
 	BranchID uint        `gorm:"index;not null" json:"branch_id"`
 	Name     string      `gorm:"size:255;not null" json:"name"`
 	RoleID   uint        `gorm:"column:role;index;not null" json:"role"`
-	PinHash  string      `gorm:"size:255;not null" json:"pin_hash"`
+	PinHash  string      `gorm:"size:255;not null" json:"-"`
 	Phone    string      `gorm:"size:25;not null" json:"phone"`
 	Status   StaffStatus `gorm:"type:varchar(30);not null" json:"status"` // one of StaffStatus* constants below (TODO: confirm real values)
 	// FailedPinAttempts/PinLockedUntil back PIN brute-force lockout - shared

@@ -152,6 +152,9 @@ packages:
       BranchLookup:
         config:
           filename: "mock_datasync_branch_lookup_test.go"
+      StaffLookup:
+        config:
+          filename: "mock_datasync_staff_lookup_test.go"
       CatalogReader:
         config:
           filename: "mock_datasync_catalog_reader_test.go"

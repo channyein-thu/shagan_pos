@@ -3044,7 +3044,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "expenses"]
             },
-            "description": "Requires X-Staff-Token - always logged as created by whichever staff that token identifies, not a client-supplied created_by."
+            "description": "A POS-device token requires X-Staff-Token - always logged as created by whichever staff that token identifies, not a client-supplied created_by. An Owner / Service Center bearer token may instead log it directly with NO staff token: created_by is then null and created_by_user_id is the account (branch_id is then required in the body - an org-wide account has no branch of its own)."
           },
           "response": []
         },
@@ -3089,7 +3089,7 @@
                 }
               ]
             },
-            "description": "Requires X-Staff-Token. Returns 403 unless that token identifies either the staff member who originally logged this expense, or someone with access_backoffice (a Manager)."
+            "description": "A POS-device token requires X-Staff-Token. Returns 403 unless that token identifies either the staff member who originally logged this expense, or someone with access_backoffice (a Manager). An Owner / Service Center bearer token needs no staff token and may edit any expense in its org."
           },
           "response": []
         },
@@ -3120,7 +3120,7 @@
                 }
               ]
             },
-            "description": "Requires X-Staff-Token. Same authorization as UpdateExpense - only the original creator or a Manager (access_backoffice) may delete it."
+            "description": "Same authorization as UpdateExpense - the original creator, a Manager (access_backoffice), or an Owner / Service Center bearer token (no staff token needed) may delete it."
           },
           "response": []
         }
@@ -3898,7 +3898,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "sales"]
             },
-            "description": "Requires a branch-bound pos-device token (org_id and branch_id both come from it, never the body) AND X-Staff-Token (run VerifyStaffPIN first - it auto-saves into {{staffToken}}). id is a client-generated UUID (idempotency key for the offline-first device). Subtotal/Discount/Tax/Total are NOT accepted at the sale level - each item snapshots its own tax (from Product.Tax, same offline-first reasoning as unit_price/name_snapshot); the server sums Subtotal/Discount/Tax from items and derives Total = Subtotal - Discount + Tax, then rejects the request (400) if payments don't add up to that Total. combo_id is optional - set it to tag several line items as components of the same Combo rung up together (purely a grouping label for receipts/reporting; each component is still priced/taxed/discounted as its own normal line item). shift_id must be a currently-open shift belonging to this branch, else 404. Status/completed_at are always server-set to completed/now(). Any item's discount or tax must be zero or greater (400 otherwise). A positive item discount requires the calling staff's role to grant apply_manual_discount (only super_staff/manager have it by default) OR a valid X-Manager-Approval-Token granting it (enable that header and run VerifyManagerPIN with permission=apply_manual_discount first, as the target staff) - 403 without either. Stock decrement/inventory-ledger writes are deliberately deferred until the Inventory domain exists."
+            "description": "Requires a branch-bound pos-device token (org_id and branch_id both come from it, never the body) AND X-Staff-Token (run VerifyStaffPIN first - it auto-saves into {{staffToken}}). id is a client-generated UUID and the idempotency key: re-sending a sale this same device already recorded (e.g. after a lost response) returns the original sale with 200 instead of 201, creates nothing and decrements no stock again, and needs no fresh manager approval; the same id from a different branch/device is 409. Subtotal/Discount/Tax/Total are NOT accepted at the sale level - each item snapshots its own tax (from Product.Tax, same offline-first reasoning as unit_price/name_snapshot); the server sums Subtotal/Discount/Tax from items and derives Total = Subtotal - Discount + Tax, then rejects the request (400) if payments don't add up to that Total. combo_id is optional - set it to tag several line items as components of the same Combo rung up together (purely a grouping label for receipts/reporting; each component is still priced/taxed/discounted as its own normal line item). shift_id must be a currently-open shift belonging to this branch, else 404. Status/completed_at are always server-set to completed/now(). Any item's discount or tax must be zero or greater (400 otherwise). A positive item discount requires the calling staff's role to grant apply_manual_discount (only super_staff/manager have it by default) OR a valid X-Manager-Approval-Token granting it (enable that header and run VerifyManagerPIN with permission=apply_manual_discount first, as the target staff) - 403 without either. Stock decrement/inventory-ledger writes are deliberately deferred until the Inventory domain exists."
           },
           "response": []
         },
@@ -3914,11 +3914,18 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/sales",
+              "raw": "{{baseUrl}}/api/v1/sales?branch_id=1&from=2026-10-01&to=2026-10-08&page=1&page_size=20",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "sales"]
+              "path": ["api", "v1", "sales"],
+              "query": [
+                {"key": "branch_id", "value": "1", "description": "Optional - owner/service_center only (a pos-device token's own branch always wins instead)."},
+                {"key": "from", "value": "2026-10-01", "description": "Optional, YYYY-MM-DD, inclusive. Unlike the reports there is NO default window - omit both for the whole history, paged."},
+                {"key": "to", "value": "2026-10-08", "description": "Optional, YYYY-MM-DD, inclusive (that whole UTC day counts)."},
+                {"key": "page", "value": "1", "description": "Optional, defaults to 1."},
+                {"key": "page_size", "value": "20", "description": "Optional, defaults to 20, capped at 100."}
+              ]
             },
-            "description": "Org-scoped, newest-completed-first."
+            "description": "Org-scoped, newest-completed-first, paginated. Response is an envelope {sales, page, page_size, total_count} (NOT a bare array - changed 2026-10-08). Each row is the sale plus payment_methods: the distinct methods used, sorted, e.g. [\"cash\"], [\"qr\"] or [\"cash\",\"qr\"] for a split payment. A branch-bound (pos-device) token only ever sees its own branch."
           },
           "response": []
         },
@@ -4132,7 +4139,7 @@
                 }
               ]
             },
-            "description": "Reverses the entire sale - there is no partial void (see docs/WORKFLOWS.md Section 9). Requires X-Staff-Token; the acting staff needs approve_void themselves, OR X-Manager-Approval-Token grants it instead. Rejects (409) if the sale is already voided, if its shift is no longer open (a void is only valid within the same shift it was rung up in), or if any Return/Exchange already references it. Credits back every item's decremented stock and marks the sale voided, atomically."
+            "description": "Reverses the entire sale - there is no partial void (see docs/WORKFLOWS.md Section 9). A POS-device token requires X-Staff-Token; the acting staff needs approve_void themselves, OR X-Manager-Approval-Token grants it instead. An Owner / Service Center bearer token may void directly with NO staff token and no approval - recorded as approved_by_user_id (approved_by is null) and as actor_user_id in the audit log; the shift-must-still-be-open rule applies to them too. Rejects (409) if the sale is already voided, if its shift is no longer open (a void is only valid within the same shift it was rung up in), or if any Return/Exchange already references it. Credits back every item's decremented stock and marks the sale voided, atomically."
           },
           "response": []
         },
@@ -5093,7 +5100,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "sync", "sales"]
             },
-            "description": "Batch-uploads a device's offline-queued sales - each shaped exactly like a normal POST /sales body. branch_id comes from the caller's own pos-device token, never client input. Idempotent by each sale's own client-generated id - resubmitting an already-arrived sale is a safe no-op reported as success, not an error. Every queued sale is treated as pre-authorized (manual discounts included, no permission re-check) since it already happened at the register. If it would take a product's stock negative, it's let through anyway (not rejected) and a SyncConflict is recorded instead - see GetSyncStatus/ListSyncConflicts. A sale that fails for another reason (e.g. its shift has since closed) is reported as a failed item in the response, not silently dropped."
+            "description": "Batch-uploads a device's offline-queued sales - each shaped exactly like a normal POST /sales body. branch_id comes from the caller's own pos-device token, never client input. Idempotent by each sale's own client-generated id - resubmitting an already-arrived sale is a safe no-op reported as success, not an error. Queued sales get NO manual-discount authority (an offline till cannot get a manager approval): any item discount fails that sale. Each sale's staff_id (client-supplied - a replayed sale carries no staff token) must be a staff member of the calling device's own branch or that sale fails. A sale id already stored by a different branch/device is reported as a failed item (already exists), not as a silent success. If it would take a product's stock negative, it's let through anyway (not rejected) and a SyncConflict is recorded instead - see GetSyncStatus/ListSyncConflicts. A sale that fails for another reason (e.g. its shift has since closed) is reported as a failed item in the response, not silently dropped."
           },
           "response": []
         },
@@ -5388,7 +5395,7 @@
                 {"key": "page_size", "value": "20", "description": "Optional, defaults to 20, capped at 100."}
               ]
             },
-            "description": "A paginated raw sale list (newest-first) over from/to (default: the last 30 days)."
+            "description": "A paginated raw sale list (newest-first) over from/to (default: the last 30 days). Each row carries payment_methods: the distinct methods used, sorted (e.g. [\"cash\",\"qr\"] for a split payment)."
           },
           "response": []
         },

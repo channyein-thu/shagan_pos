@@ -18,17 +18,24 @@ type Claims struct {
 	UserID   uint  `json:"user_id"`
 	OrgID    uint  `json:"org_id"`
 	BranchID *uint `json:"branch_id,omitempty"`
+	// AccountType is identity.User.AccountType ("owner", "pos",
+	// "service_center"), carried so route-level authorization
+	// (middleware.RequireAccountType) needs no per-request DB read. Empty on
+	// a token issued before this claim existed - callers that gate on it
+	// must treat empty as "re-authenticate", never as "allowed".
+	AccountType string `json:"account_type,omitempty"`
 	jwt.RegisteredClaims
 }
 
 // GenerateAccessToken signs a short-lived JWT identifying userID/orgID
-// (and branchID, when the caller has one), valid for ttl.
-func GenerateAccessToken(secret []byte, userID, orgID uint, branchID *uint, ttl time.Duration) (string, error) {
+// (and branchID, when the caller has one) and its accountType, valid for ttl.
+func GenerateAccessToken(secret []byte, userID, orgID uint, accountType string, branchID *uint, ttl time.Duration) (string, error) {
 	now := time.Now()
 	claims := Claims{
-		UserID:   userID,
-		OrgID:    orgID,
-		BranchID: branchID,
+		UserID:      userID,
+		OrgID:       orgID,
+		BranchID:    branchID,
+		AccountType: accountType,
 		RegisteredClaims: jwt.RegisteredClaims{
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),

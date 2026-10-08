@@ -59,9 +59,33 @@ type SalesReader interface {
 // (approve_void/approve_return/approve_exchange) or because a manager
 // approved this one action via X-Manager-Approval-Token, same
 // StaffHasPermission-or-ManagerApproved shape as sales.SaleActor.
+//
+// UserID is the other shape of caller: an org-wide Owner / Service Center
+// account acting directly with no PIN (the Owner has no Staff record) -
+// StaffID is 0 then, and CanApprove is true (the Owner holds every approval
+// permission implicitly). Only VoidSale accepts it today; exactly one of
+// StaffID/UserID is non-zero.
 type Actor struct {
 	StaffID    uint
+	UserID     uint
 	CanApprove bool
+}
+
+// staffIDPtr/userIDPtr turn the zero value of whichever ID isn't in play
+// into nil, for nullable columns (Void.ApprovedBy / ApprovedByUserID, the
+// audit entry's actor, the ledger's actor).
+func (a Actor) staffIDPtr() *uint {
+	if a.StaffID == 0 {
+		return nil
+	}
+	return &a.StaffID
+}
+
+func (a Actor) userIDPtr() *uint {
+	if a.UserID == 0 {
+		return nil
+	}
+	return &a.UserID
 }
 
 // Interface defines the returns domain's use cases. Every write method

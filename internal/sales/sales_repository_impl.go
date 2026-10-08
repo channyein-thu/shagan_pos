@@ -56,12 +56,58 @@ func (r *RepositoryImpl) CreatePayments(db *gorm.DB, payments []Payment) error {
 }
 
 // ListSales backs `GET /sales`.
-func (r *RepositoryImpl) ListSales(ctx context.Context, orgID uint) ([]Sale, error) {
+func (r *RepositoryImpl) ListSales(ctx context.Context, orgID uint, f SaleFilter) ([]Sale, int64, error) {
+	base := r.db.WithContext(ctx).Model(&Sale{}).Where("org_id = ?", orgID)
+	if f.BranchID != nil {
+		base = base.Where("branch_id = ?", *f.BranchID)
+	}
+	if f.Start != nil {
+		base = base.Where("completed_at >= ?", *f.Start)
+	}
+	if f.End != nil {
+		base = base.Where("completed_at < ?", *f.End)
+	}
+
+	var total int64
+	if err := base.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
 	var sales []Sale
-	if err := r.db.WithContext(ctx).Where("org_id = ?", orgID).Order("completed_at DESC").Find(&sales).Error; err != nil {
+	// id breaks completed_at ties so pages never repeat or skip a row.
+	err := base.Session(&gorm.Session{}).
+		Order("completed_at DESC, id DESC").
+		Offset((f.Page - 1) * f.PageSize).
+		Limit(f.PageSize).
+		Find(&sales).Error
+	if err != nil {
+		return nil, 0, err
+	}
+	return sales, total, nil
+}
+
+// ListPaymentMethods backs the payment_methods field on `GET /sales` rows.
+func (r *RepositoryImpl) ListPaymentMethods(ctx context.Context, saleIDs []uuid.UUID) (map[uuid.UUID][]PaymentMethod, error) {
+	out := make(map[uuid.UUID][]PaymentMethod, len(saleIDs))
+	if len(saleIDs) == 0 {
+		return out, nil
+	}
+	var rows []struct {
+		SaleID uuid.UUID
+		Method PaymentMethod
+	}
+	err := r.db.WithContext(ctx).Table("payments").
+		Select("DISTINCT sale_id, method").
+		Where("sale_id IN ?", saleIDs).
+		Order("sale_id, method").
+		Scan(&rows).Error
+	if err != nil {
 		return nil, err
 	}
-	return sales, nil
+	for _, row := range rows {
+		out[row.SaleID] = append(out[row.SaleID], row.Method)
+	}
+	return out, nil
 }
 
 // GetSale backs `GET /sales/:id`.

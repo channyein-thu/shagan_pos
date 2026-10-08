@@ -80,7 +80,10 @@ func (s *Service) applyStockDelta(tx *gorm.DB, productID uint, branchID uint, de
 // VoidSale reverses the entire sale - see the Interface doc. actor.StaffID
 // is captured as ApprovedBy regardless of whether CanApprove came from the
 // staff's own permission or a manager's approval token, same reasoning as
-// sales.CreateSale's actor handling.
+// sales.CreateSale's actor handling. An Owner voiding directly (actor.UserID,
+// no StaffID) is captured as ApprovedByUserID instead; the audit entry
+// records them as ActorUserID, and the inventory ledger rows leave actor_id
+// nil (its reference_id points at the void, which names the Owner).
 func (s *Service) VoidSale(ctx context.Context, orgID uint, actor Actor, saleID uuid.UUID, in VoidSaleRequest) (*Void, error) {
 	if !actor.CanApprove {
 		return nil, common.ForbiddenError("staff does not have permission to approve a void")
@@ -118,11 +121,12 @@ func (s *Service) VoidSale(ctx context.Context, orgID uint, actor Actor, saleID 
 		}
 
 		v = Void{
-			SaleID:      saleID,
-			Qty:         totalQty,
-			Reason:      in.Reason,
-			Explanation: in.Explanation,
-			ApprovedBy:  actor.StaffID,
+			SaleID:           saleID,
+			Qty:              totalQty,
+			Reason:           in.Reason,
+			Explanation:      in.Explanation,
+			ApprovedBy:       actor.staffIDPtr(),
+			ApprovedByUserID: actor.userIDPtr(),
 		}
 		if err := s.repo.CreateVoid(tx, &v); err != nil {
 			return err
@@ -137,7 +141,7 @@ func (s *Service) VoidSale(ctx context.Context, orgID uint, actor Actor, saleID 
 			if err := s.inventory.CreateInventoryLedgerEntry(tx, &inventory.InventoryLedger{
 				OrgID: orgID, ProductID: productID, BranchID: sale.BranchID,
 				Type: inventory.LedgerEntryTypeVoid, Qty: qty, BalanceAfter: newQty,
-				ActorID: &actor.StaffID, ReferenceType: inventory.ReferenceTypeVoid, ReferenceID: voidRef,
+				ActorID: actor.staffIDPtr(), ReferenceType: inventory.ReferenceTypeVoid, ReferenceID: voidRef,
 			}); err != nil {
 				return err
 			}
@@ -148,7 +152,7 @@ func (s *Service) VoidSale(ctx context.Context, orgID uint, actor Actor, saleID 
 		}
 
 		return s.audit.CreateAuditLog(tx, &audit.AuditLog{
-			OrgID: orgID, ActorID: &actor.StaffID, BranchID: &sale.BranchID,
+			OrgID: orgID, ActorID: actor.staffIDPtr(), ActorUserID: actor.userIDPtr(), BranchID: &sale.BranchID,
 			Entity: "sale", EntityID: saleID.String(), Action: "voided",
 			Before: audit.ToJSON(sale),
 			After:  audit.ToJSON(map[string]any{"status": sales.SaleStatusVoided, "void_id": v.ID, "qty_reversed": totalQty}),

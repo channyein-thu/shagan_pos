@@ -37,7 +37,9 @@ func NewReturnsAPI(db *gorm.DB, jwtSecret []byte) *ReturnsAPI {
 }
 
 func (a *ReturnsAPI) RegisterRoutes(rg *gin.RouterGroup) {
-	rg.POST("/sales/:id/void", middleware.RequireStaffToken(a.jwtSecret), a.VoidSale)
+	// Void also accepts an Owner / Service Center bearer token acting
+	// directly with no PIN (the Owner has no Staff record) - see VoidSale.
+	rg.POST("/sales/:id/void", middleware.RequireStaffTokenOrOrgAdmin(a.jwtSecret), a.VoidSale)
 	rg.GET("/voids", a.ListVoids)
 	rg.POST("/returns", middleware.RequireStaffToken(a.jwtSecret), a.CreateReturn)
 	rg.GET("/returns", a.ListReturns)
@@ -48,17 +50,16 @@ func (a *ReturnsAPI) RegisterRoutes(rg *gin.RouterGroup) {
 }
 
 // VoidSale handles `POST /sales/:id/void`. Reverses the entire sale - see
-// returns.Interface's doc. Requires X-Staff-Token; the acting staff needs
-// approve_void themselves, OR an optional X-Manager-Approval-Token grants
-// it instead (see middleware.ManagerApproved) - same
-// StaffHasPermission-or-ManagerApproved shape as sales.CreateSale's manual
-// discount check.
+// returns.Interface's doc. A POS-device caller requires X-Staff-Token; the
+// acting staff needs approve_void themselves, OR an optional
+// X-Manager-Approval-Token grants it instead (see middleware.ManagerApproved)
+// - same StaffHasPermission-or-ManagerApproved shape as sales.CreateSale's
+// manual discount check. An Owner / Service Center bearer token may void
+// directly with no staff token and no approval: they're the approver
+// (recorded as approved_by_user_id). The "shift must still be open" rule
+// applies to them too.
 func (a *ReturnsAPI) VoidSale(c *gin.Context) {
 	orgID, ok := requireOrgID(c)
-	if !ok {
-		return
-	}
-	staffID, ok := requireStaffID(c)
 	if !ok {
 		return
 	}
@@ -72,10 +73,18 @@ func (a *ReturnsAPI) VoidSale(c *gin.Context) {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
-	actor := returns.Actor{
-		StaffID: staffID,
-		CanApprove: middleware.StaffHasPermission(c, "approve_void") ||
-			middleware.ManagerApproved(c, a.jwtSecret, "approve_void"),
+	var actor returns.Actor
+	if staffID, ok := middleware.StaffIDFromContext(c); ok {
+		actor = returns.Actor{
+			StaffID: staffID,
+			CanApprove: middleware.StaffHasPermission(c, "approve_void") ||
+				middleware.ManagerApproved(c, a.jwtSecret, "approve_void"),
+		}
+	} else if userID, ok := middleware.UserIDFromContext(c); ok {
+		actor = returns.Actor{UserID: userID, CanApprove: true}
+	} else {
+		common.HandleError(c, common.UnauthorizedError("missing staff token"))
+		return
 	}
 	result, err := a.service.VoidSale(c.Request.Context(), orgID, actor, id, in)
 	if err != nil {

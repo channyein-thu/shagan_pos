@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -286,6 +287,7 @@ func TestService_GetTransactionsReport_DefaultsPagination(t *testing.T) {
 	repo.EXPECT().
 		ListTransactions(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything, 1, 20).
 		Return([]TransactionSummary{}, int64(0), nil).Once()
+	repo.EXPECT().PaymentMethodsBySale(mock.Anything, mock.Anything).Return(map[uuid.UUID][]string{}, nil).Once()
 
 	got, err := svc.GetTransactionsReport(context.Background(), 7, nil, nil, nil, 0, 0)
 	require.NoError(t, err)
@@ -301,12 +303,47 @@ func TestService_GetTransactionsReport_PassesThroughExplicitPagination(t *testin
 	repo.EXPECT().
 		ListTransactions(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything, 2, 50).
 		Return([]TransactionSummary{}, int64(120), nil).Once()
+	repo.EXPECT().PaymentMethodsBySale(mock.Anything, mock.Anything).Return(map[uuid.UUID][]string{}, nil).Once()
 
 	got, err := svc.GetTransactionsReport(context.Background(), 7, nil, nil, nil, 2, 50)
 	require.NoError(t, err)
 	require.Equal(t, 2, got.Page)
 	require.Equal(t, 50, got.PageSize)
 	require.Equal(t, int64(120), got.TotalCount)
+}
+
+func TestService_GetTransactionsReport_AttachesPaymentMethodsPerRow(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	svc := NewService(repo, branches)
+
+	cashOnly, split, none := uuid.New(), uuid.New(), uuid.New()
+	repo.EXPECT().
+		ListTransactions(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything, 1, 20).
+		Return([]TransactionSummary{{ID: cashOnly}, {ID: split}, {ID: none}}, int64(3), nil).Once()
+	// One query for the whole page, not one per row.
+	repo.EXPECT().PaymentMethodsBySale(mock.Anything, []uuid.UUID{cashOnly, split, none}).
+		Return(map[uuid.UUID][]string{cashOnly: {"cash"}, split: {"cash", "qr"}}, nil).Once()
+
+	got, err := svc.GetTransactionsReport(context.Background(), 7, nil, nil, nil, 1, 20)
+	require.NoError(t, err)
+	require.Equal(t, []string{"cash"}, got.Transactions[0].PaymentMethods)
+	require.Equal(t, []string{"cash", "qr"}, got.Transactions[1].PaymentMethods)
+	require.Equal(t, []string{}, got.Transactions[2].PaymentMethods, "no payment rows -> [], not null")
+}
+
+func TestService_GetTransactionsReport_PaymentMethodsErrorPropagates(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	svc := NewService(repo, branches)
+
+	boom := errors.New("db down")
+	repo.EXPECT().ListTransactions(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything, 1, 20).
+		Return([]TransactionSummary{{ID: uuid.New()}}, int64(1), nil).Once()
+	repo.EXPECT().PaymentMethodsBySale(mock.Anything, mock.Anything).Return(nil, boom).Once()
+
+	_, err := svc.GetTransactionsReport(context.Background(), 7, nil, nil, nil, 1, 20)
+	require.ErrorIs(t, err, boom)
 }
 
 func TestService_GetProductSalesReport_PassesCategoryIDThrough(t *testing.T) {

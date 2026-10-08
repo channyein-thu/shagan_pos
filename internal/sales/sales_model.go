@@ -46,6 +46,18 @@ type Sale struct {
 	Status      SaleStatus      `gorm:"type:varchar(30);not null" json:"status"` // one of SaleStatus* constants below (TODO: confirm real values)
 	CompletedAt *time.Time      `json:"completed_at"`
 	SyncedAt    *time.Time      `json:"synced_at"`
+	// Replayed is never stored or serialized: Service.CreateSale sets it
+	// when the call matched an already-stored sale from the same branch and
+	// device (an idempotent retry) instead of creating a new one, so the
+	// handler can answer 200 rather than 201.
+	Replayed bool `gorm:"-" json:"-"`
+}
+
+// SameOrigin reports whether this stored sale was rung up at branchID on
+// deviceID - the test for "this request is a retry of that sale", as opposed
+// to a different till reusing the same client-generated UUID.
+func (s *Sale) SameOrigin(branchID, deviceID uint) bool {
+	return s.BranchID == branchID && s.DeviceID == deviceID
 }
 
 // SaleItem maps to the "Sale_items" table in the ERD. ComboID is set when

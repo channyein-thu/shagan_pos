@@ -548,6 +548,34 @@ func TestService_CreateExpense_ValidatesNormalizesAndPersists(t *testing.T) {
 	require.Equal(t, scope, repo.scope)
 }
 
+// An Owner / Service Center logs an expense directly: CreatedByUserID instead of CreatedBy.
+func TestService_CreateExpense_ByOrgWideAccount_Persists(t *testing.T) {
+	repo := &remainingRepositoryStub{expense: &Expense{ID: 1}}
+	in := CreateExpenseRequest{
+		BranchID: 2, Date: time.Now(), Category: "rent",
+		Amount: decimal.NewFromInt(900), CreatedByUserID: 55,
+	}
+
+	_, err := NewService(repo).CreateExpense(context.Background(), AccessScope{OrgID: 7}, in)
+
+	require.NoError(t, err)
+	require.Equal(t, "CreateExpense", repo.method)
+	require.Zero(t, repo.createExpense.CreatedBy)
+	require.Equal(t, uint(55), repo.createExpense.CreatedByUserID)
+}
+
+func TestService_CreateExpense_RejectsBothOrNeitherActor(t *testing.T) {
+	for _, in := range []CreateExpenseRequest{
+		{BranchID: 1, Date: time.Now(), Category: "x", Amount: decimal.NewFromInt(1), CreatedBy: 3, CreatedByUserID: 55},
+		{BranchID: 1, Date: time.Now(), Category: "x", Amount: decimal.NewFromInt(1)},
+	} {
+		repo := &remainingRepositoryStub{}
+		_, err := NewService(repo).CreateExpense(context.Background(), AccessScope{OrgID: 7}, in)
+		require.Empty(t, repo.method)
+		requireRestErrorStatus(t, err, http.StatusBadRequest)
+	}
+}
+
 func TestService_CreateExpense_RejectsInvalidInput(t *testing.T) {
 	tests := []CreateExpenseRequest{
 		{Date: time.Now(), Category: "x", Amount: decimal.NewFromInt(1), CreatedBy: 1},

@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"net/http"
 	"time"
 
 	"gorm.io/gorm"
@@ -17,13 +19,14 @@ import (
 type Service struct {
 	repo     Repository
 	branches BranchLookup
+	staff    StaffLookup
 	catalog  CatalogReader
 	sales    SalesWriter
 	db       common.Transactioner
 }
 
-func NewService(repo Repository, branches BranchLookup, catalogReader CatalogReader, salesWriter SalesWriter, db common.Transactioner) *Service {
-	return &Service{repo: repo, branches: branches, catalog: catalogReader, sales: salesWriter, db: db}
+func NewService(repo Repository, branches BranchLookup, staff StaffLookup, catalogReader CatalogReader, salesWriter SalesWriter, db common.Transactioner) *Service {
+	return &Service{repo: repo, branches: branches, staff: staff, catalog: catalogReader, sales: salesWriter, db: db}
 }
 
 var _ Interface = (*Service)(nil)
@@ -126,13 +129,28 @@ func (s *Service) IngestQueuedSales(ctx context.Context, orgID uint, branchID ui
 	for _, req := range in.Sales {
 		result := IngestSaleResult{SaleID: req.ID.String()}
 
+		// Already arrived? Checked before any validation below so a retry of
+		// an ingested sale stays a success even if its staff has since moved
+		// or left.
 		if existing, err := s.sales.GetSale(ctx, orgID, req.ID); err == nil && existing != nil {
-			result.Success = true
+			if existing.SameOrigin(branchID, req.DeviceID) {
+				result.Success = true
+			} else {
+				result.Error = "a sale with this id already exists"
+			}
 			results = append(results, result)
 			continue
 		}
 
-		actor := sales.SaleActor{StaffID: req.StaffID, CanApplyManualDiscount: true}
+		if err := s.validateQueuedSale(ctx, orgID, branchID, req); err != nil {
+			result.Error = err.Error()
+			results = append(results, result)
+			continue
+		}
+
+		// No manual-discount authority is ever granted on this path - see
+		// validateQueuedSale; false here is the backstop behind it.
+		actor := sales.SaleActor{StaffID: req.StaffID, CanApplyManualDiscount: false}
 		_, negativeEvents, err := s.sales.CreateSale(ctx, orgID, branchID, actor, req, true)
 		if err != nil {
 			result.Success = false
@@ -210,4 +228,33 @@ func (s *Service) ResolveSyncConflict(ctx context.Context, orgID uint, actorUser
 		return nil, err
 	}
 	return &conflict, nil
+}
+
+// validateQueuedSale enforces what a queued sale can't prove for itself (it
+// carries no staff token): no item discount - an offline till can't get a
+// manager's approval - and a staff_id that is a real staff member of the
+// calling device's own branch. Returns a message-only error for the failed
+// IngestSaleResult.
+func (s *Service) validateQueuedSale(ctx context.Context, orgID uint, branchID uint, req sales.CreateSaleRequest) error {
+	for _, item := range req.Items {
+		if item.Discount.IsPositive() {
+			return common.BadRequestError("an offline-queued sale cannot carry a manual discount")
+		}
+	}
+	const notYourStaff = "staff_id is not a staff member of this branch"
+	if req.StaffID == 0 {
+		return common.BadRequestError(notYourStaff)
+	}
+	staff, err := s.staff.GetStaff(ctx, orgID, req.StaffID)
+	if err != nil {
+		var restErr common.RestError
+		if errors.As(err, &restErr) && restErr.Status == http.StatusNotFound {
+			return common.BadRequestError(notYourStaff)
+		}
+		return err
+	}
+	if staff.BranchID != branchID {
+		return common.BadRequestError(notYourStaff)
+	}
+	return nil
 }

@@ -13,32 +13,38 @@ import (
 
 	"shagan_pos/internal/catalog"
 	"shagan_pos/internal/common"
+	"shagan_pos/internal/middleware"
 	"shagan_pos/internal/storage"
 )
 
 type CatalogAPI struct {
-	service catalog.Interface
+	service   catalog.Interface
+	jwtSecret []byte
 }
 
-func NewCatalogAPI(db *gorm.DB, store storage.Storage) *CatalogAPI {
-	return &CatalogAPI{service: catalog.NewService(catalog.NewRepository(db), db, store)}
+func NewCatalogAPI(db *gorm.DB, store storage.Storage, jwtSecret []byte) *CatalogAPI {
+	return &CatalogAPI{service: catalog.NewService(catalog.NewRepository(db), db, store), jwtSecret: jwtSecret}
 }
 
 func (a *CatalogAPI) RegisterRoutes(rg *gin.RouterGroup) {
+	// Writes need Back Office: an owner/service_center token, or a till's
+	// POS token plus a manager's X-Staff-Token (access_backoffice). Reads
+	// stay open to any authenticated caller - the till needs them to sell.
+	backOffice := middleware.RequireBackOffice(a.jwtSecret)
 	rg.GET("/products", a.ListProducts)
 	rg.GET("/products/:id", a.GetProduct)
 	rg.GET("/products/barcode/:code", a.GetProductByBarcode)
-	rg.POST("/products", a.CreateProduct)
-	rg.PATCH("/products/:id", a.UpdateProduct)
-	rg.DELETE("/products/:id", a.DeleteProduct)
+	rg.POST("/products", backOffice, a.CreateProduct)
+	rg.PATCH("/products/:id", backOffice, a.UpdateProduct)
+	rg.DELETE("/products/:id", backOffice, a.DeleteProduct)
 	rg.GET("/categories", a.ListCategories)
-	rg.POST("/categories", a.CreateCategory)
-	rg.PATCH("/categories/:id", a.UpdateCategory)
-	rg.DELETE("/categories/:id", a.DeleteCategory)
+	rg.POST("/categories", backOffice, a.CreateCategory)
+	rg.PATCH("/categories/:id", backOffice, a.UpdateCategory)
+	rg.DELETE("/categories/:id", backOffice, a.DeleteCategory)
 	rg.GET("/combos", a.ListCombos)
-	rg.POST("/combos", a.CreateCombo)
-	rg.PATCH("/combos/:id", a.UpdateCombo)
-	rg.DELETE("/combos/:id", a.DeleteCombo)
+	rg.POST("/combos", backOffice, a.CreateCombo)
+	rg.PATCH("/combos/:id", backOffice, a.UpdateCombo)
+	rg.DELETE("/combos/:id", backOffice, a.DeleteCombo)
 }
 
 // ListProducts handles `GET /products`. Org-wide - every caller in the org

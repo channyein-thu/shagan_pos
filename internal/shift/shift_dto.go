@@ -14,13 +14,17 @@ type AccessScope struct {
 	BranchID *uint
 }
 
-// ExpenseActor identifies the authenticated staff member calling
-// UpdateExpense/DeleteExpense, and whether their role's granted permissions
-// let them act on any staff's expense at the branch (access_backoffice -
-// i.e. a Manager) rather than only their own (an ordinary Staff member).
-// Derived from the verified X-Staff-Token, never client input.
+// ExpenseActor identifies the authenticated caller of
+// UpdateExpense/DeleteExpense, and whether they may act on any expense in
+// scope (rather than only their own). Two shapes, both derived from verified
+// tokens, never client input: a staff member (StaffID, from X-Staff-Token;
+// CanManageAny when their role grants access_backoffice - a Manager), or an
+// org-wide Owner / Service Center account acting directly (UserID, from the
+// bearer token; StaffID is 0 and CanManageAny is true - the Owner holds
+// access_backoffice implicitly).
 type ExpenseActor struct {
 	StaffID      uint
+	UserID       uint
 	CanManageAny bool
 }
 
@@ -42,12 +46,17 @@ type CreateDrawerEventRequest struct {
 // CreatedBy isn't binding:"required" - it's always overwritten from the
 // verified X-Staff-Token before persistence, same reasoning as
 // CreateDrawerEventRequest.StaffID - see cmd/api/shift.go's CreateExpense handler.
+// CreatedByUserID is the same idea for an Owner / Service Center logging an
+// expense directly (no staff token): set from the bearer token only, never
+// read from the body (json:"-"). Exactly one of the two is non-zero by the
+// time the service sees it.
 type CreateExpenseRequest struct {
-	BranchID  uint            `json:"branch_id"`
-	Date      time.Time       `json:"date" binding:"required"`
-	Category  string          `json:"category" binding:"required"`
-	Amount    decimal.Decimal `json:"amount" binding:"required"`
-	CreatedBy uint            `json:"created_by"`
+	BranchID        uint            `json:"branch_id"`
+	Date            time.Time       `json:"date" binding:"required"`
+	Category        string          `json:"category" binding:"required"`
+	Amount          decimal.Decimal `json:"amount" binding:"required"`
+	CreatedBy       uint            `json:"created_by"`
+	CreatedByUserID uint            `json:"-"`
 }
 
 // CloseShiftRequest is the request body for both `POST /shifts/:id/close`

@@ -15,20 +15,25 @@ import (
 )
 
 type PlatformAPI struct {
-	service platform.Interface
+	service   platform.Interface
+	jwtSecret []byte
 }
 
-func NewPlatformAPI(db *gorm.DB, store storage.Storage) *PlatformAPI {
-	return &PlatformAPI{service: platform.NewService(platform.NewRepository(db), identity.NewRepository(db), db, store)}
+func NewPlatformAPI(db *gorm.DB, store storage.Storage, jwtSecret []byte) *PlatformAPI {
+	return &PlatformAPI{service: platform.NewService(platform.NewRepository(db), identity.NewRepository(db), db, store), jwtSecret: jwtSecret}
 }
 
 func (a *PlatformAPI) RegisterRoutes(rg *gin.RouterGroup) {
+	// Settings/QR writes need Back Office (owner/service_center, or a
+	// manager's staff token at the till); reads stay open - the till prints
+	// receipts and shows payment QRs to customers.
+	backOffice := middleware.RequireBackOffice(a.jwtSecret)
 	rg.GET("/receipt-settings", a.GetReceiptSettings)
-	rg.PUT("/receipt-settings", a.UpdateReceiptSettings)
+	rg.PUT("/receipt-settings", backOffice, a.UpdateReceiptSettings)
 	rg.POST("/printers/test", a.TestPrinter)
-	rg.POST("/branches/:id/payment-qr-codes", a.UploadPaymentQRCode)
+	rg.POST("/branches/:id/payment-qr-codes", backOffice, a.UploadPaymentQRCode)
 	rg.GET("/branches/:id/payment-qr-codes", a.ListPaymentQRCodes)
-	rg.DELETE("/branches/:id/payment-qr-codes/:qrId", a.DeletePaymentQRCode)
+	rg.DELETE("/branches/:id/payment-qr-codes/:qrId", backOffice, a.DeletePaymentQRCode)
 }
 
 // scopedBranchID resolves the branch a request targets: a pos-device/manager

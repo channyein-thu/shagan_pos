@@ -14,6 +14,9 @@ const (
 	ContextUserID   = "user_id"
 	ContextOrgID    = "org_id"
 	ContextBranchID = "branch_id"
+	// ContextAccountType is the access token's account_type claim. Unset
+	// for a token issued before the claim existed - see RequireAccountType.
+	ContextAccountType = "account_type"
 )
 
 const bearerPrefix = "Bearer "
@@ -47,6 +50,9 @@ func Auth(jwtSecret []byte) gin.HandlerFunc {
 		c.Set(ContextOrgID, claims.OrgID)
 		if claims.BranchID != nil {
 			c.Set(ContextBranchID, *claims.BranchID)
+		}
+		if claims.AccountType != "" {
+			c.Set(ContextAccountType, claims.AccountType)
 		}
 		c.Next()
 	}
@@ -82,4 +88,16 @@ func BranchIDFromContext(c *gin.Context) (uint, bool) {
 	}
 	id, ok := v.(uint)
 	return id, ok
+}
+
+// AccountTypeFromContext returns the authenticated caller's account type
+// ("owner", "pos", "service_center"), as set by Auth. False for a token
+// issued before the account_type claim existed.
+func AccountTypeFromContext(c *gin.Context) (string, bool) {
+	v, ok := c.Get(ContextAccountType)
+	if !ok {
+		return "", false
+	}
+	t, ok := v.(string)
+	return t, ok && t != ""
 }

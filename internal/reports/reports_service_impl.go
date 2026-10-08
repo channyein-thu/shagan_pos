@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 
 	"shagan_pos/internal/common"
@@ -290,6 +291,21 @@ func (s *Service) GetTransactionsReport(ctx context.Context, orgID uint, branchI
 	transactions, total, err := s.repo.ListTransactions(ctx, orgID, branchID, start, end, page, pageSize)
 	if err != nil {
 		return nil, err
+	}
+	ids := make([]uuid.UUID, len(transactions))
+	for i, t := range transactions {
+		ids[i] = t.ID
+	}
+	methods, err := s.repo.PaymentMethodsBySale(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	for i := range transactions {
+		m := methods[transactions[i].ID]
+		if m == nil {
+			m = []string{}
+		}
+		transactions[i].PaymentMethods = m
 	}
 	return &TransactionsReport{
 		Transactions: transactions,

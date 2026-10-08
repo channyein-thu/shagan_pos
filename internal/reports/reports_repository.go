@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 )
 
@@ -55,6 +56,10 @@ type Repository interface {
 	// ListTransactions backs GetTransactionsReport - a page of raw sale rows
 	// ordered newest-first, plus the total count across every page.
 	ListTransactions(ctx context.Context, orgID uint, branchID *uint, from, to time.Time, page, pageSize int) ([]TransactionSummary, int64, error)
+	// PaymentMethodsBySale backs TransactionSummary.PaymentMethods - for each
+	// of saleIDs that has payments, the distinct methods used, sorted; one
+	// query for the whole page. A sale with no payment rows is absent.
+	PaymentMethodsBySale(ctx context.Context, saleIDs []uuid.UUID) (map[uuid.UUID][]string, error)
 	// ProductSales backs GetProductSalesReport/GetTopProducts -
 	// SUM(SaleItem.Qty)/SUM(SaleItem.LineTotal) grouped by product, ranked
 	// by revenue descending. categoryID optionally narrows to one category;

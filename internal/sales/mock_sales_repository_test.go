@@ -404,6 +404,65 @@ func (_c *MockRepository_ListHeldSales_Call) RunAndReturn(run func(context.Conte
 	return _c
 }
 
+// ListPaymentMethods provides a mock function with given fields: ctx, saleIDs
+func (_m *MockRepository) ListPaymentMethods(ctx context.Context, saleIDs []uuid.UUID) (map[uuid.UUID][]PaymentMethod, error) {
+	ret := _m.Called(ctx, saleIDs)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListPaymentMethods")
+	}
+
+	var r0 map[uuid.UUID][]PaymentMethod
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, []uuid.UUID) (map[uuid.UUID][]PaymentMethod, error)); ok {
+		return rf(ctx, saleIDs)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, []uuid.UUID) map[uuid.UUID][]PaymentMethod); ok {
+		r0 = rf(ctx, saleIDs)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(map[uuid.UUID][]PaymentMethod)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, []uuid.UUID) error); ok {
+		r1 = rf(ctx, saleIDs)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// MockRepository_ListPaymentMethods_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListPaymentMethods'
+type MockRepository_ListPaymentMethods_Call struct {
+	*mock.Call
+}
+
+// ListPaymentMethods is a helper method to define mock.On call
+//   - ctx context.Context
+//   - saleIDs []uuid.UUID
+func (_e *MockRepository_Expecter) ListPaymentMethods(ctx interface{}, saleIDs interface{}) *MockRepository_ListPaymentMethods_Call {
+	return &MockRepository_ListPaymentMethods_Call{Call: _e.mock.On("ListPaymentMethods", ctx, saleIDs)}
+}
+
+func (_c *MockRepository_ListPaymentMethods_Call) Run(run func(ctx context.Context, saleIDs []uuid.UUID)) *MockRepository_ListPaymentMethods_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].([]uuid.UUID))
+	})
+	return _c
+}
+
+func (_c *MockRepository_ListPaymentMethods_Call) Return(_a0 map[uuid.UUID][]PaymentMethod, _a1 error) *MockRepository_ListPaymentMethods_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *MockRepository_ListPaymentMethods_Call) RunAndReturn(run func(context.Context, []uuid.UUID) (map[uuid.UUID][]PaymentMethod, error)) *MockRepository_ListPaymentMethods_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // ListPayments provides a mock function with given fields: ctx, saleID
 func (_m *MockRepository) ListPayments(ctx context.Context, saleID uuid.UUID) ([]Payment, error) {
 	ret := _m.Called(ctx, saleID)
@@ -581,34 +640,41 @@ func (_c *MockRepository_ListSaleItemsTx_Call) RunAndReturn(run func(*gorm.DB, u
 	return _c
 }
 
-// ListSales provides a mock function with given fields: ctx, orgID
-func (_m *MockRepository) ListSales(ctx context.Context, orgID uint) ([]Sale, error) {
-	ret := _m.Called(ctx, orgID)
+// ListSales provides a mock function with given fields: ctx, orgID, f
+func (_m *MockRepository) ListSales(ctx context.Context, orgID uint, f SaleFilter) ([]Sale, int64, error) {
+	ret := _m.Called(ctx, orgID, f)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ListSales")
 	}
 
 	var r0 []Sale
-	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, uint) ([]Sale, error)); ok {
-		return rf(ctx, orgID)
+	var r1 int64
+	var r2 error
+	if rf, ok := ret.Get(0).(func(context.Context, uint, SaleFilter) ([]Sale, int64, error)); ok {
+		return rf(ctx, orgID, f)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, uint) []Sale); ok {
-		r0 = rf(ctx, orgID)
+	if rf, ok := ret.Get(0).(func(context.Context, uint, SaleFilter) []Sale); ok {
+		r0 = rf(ctx, orgID, f)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]Sale)
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, uint) error); ok {
-		r1 = rf(ctx, orgID)
+	if rf, ok := ret.Get(1).(func(context.Context, uint, SaleFilter) int64); ok {
+		r1 = rf(ctx, orgID, f)
 	} else {
-		r1 = ret.Error(1)
+		r1 = ret.Get(1).(int64)
 	}
 
-	return r0, r1
+	if rf, ok := ret.Get(2).(func(context.Context, uint, SaleFilter) error); ok {
+		r2 = rf(ctx, orgID, f)
+	} else {
+		r2 = ret.Error(2)
+	}
+
+	return r0, r1, r2
 }
 
 // MockRepository_ListSales_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListSales'
@@ -619,23 +685,24 @@ type MockRepository_ListSales_Call struct {
 // ListSales is a helper method to define mock.On call
 //   - ctx context.Context
 //   - orgID uint
-func (_e *MockRepository_Expecter) ListSales(ctx interface{}, orgID interface{}) *MockRepository_ListSales_Call {
-	return &MockRepository_ListSales_Call{Call: _e.mock.On("ListSales", ctx, orgID)}
+//   - f SaleFilter
+func (_e *MockRepository_Expecter) ListSales(ctx interface{}, orgID interface{}, f interface{}) *MockRepository_ListSales_Call {
+	return &MockRepository_ListSales_Call{Call: _e.mock.On("ListSales", ctx, orgID, f)}
 }
 
-func (_c *MockRepository_ListSales_Call) Run(run func(ctx context.Context, orgID uint)) *MockRepository_ListSales_Call {
+func (_c *MockRepository_ListSales_Call) Run(run func(ctx context.Context, orgID uint, f SaleFilter)) *MockRepository_ListSales_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(uint))
+		run(args[0].(context.Context), args[1].(uint), args[2].(SaleFilter))
 	})
 	return _c
 }
 
-func (_c *MockRepository_ListSales_Call) Return(_a0 []Sale, _a1 error) *MockRepository_ListSales_Call {
-	_c.Call.Return(_a0, _a1)
+func (_c *MockRepository_ListSales_Call) Return(_a0 []Sale, _a1 int64, _a2 error) *MockRepository_ListSales_Call {
+	_c.Call.Return(_a0, _a1, _a2)
 	return _c
 }
 
-func (_c *MockRepository_ListSales_Call) RunAndReturn(run func(context.Context, uint) ([]Sale, error)) *MockRepository_ListSales_Call {
+func (_c *MockRepository_ListSales_Call) RunAndReturn(run func(context.Context, uint, SaleFilter) ([]Sale, int64, error)) *MockRepository_ListSales_Call {
 	_c.Call.Return(run)
 	return _c
 }

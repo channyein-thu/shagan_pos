@@ -418,15 +418,19 @@ func (r *RepositoryImpl) CreateExpense(ctx context.Context, scope AccessScope, i
 		if err := requireActiveBranchInScope(tx, scope, in.BranchID); err != nil {
 			return err
 		}
-		if err := requireActiveStaffInBranch(tx, in.CreatedBy, in.BranchID); err != nil {
-			return err
-		}
 		expense = Expense{
-			BranchID:  in.BranchID,
-			Date:      in.Date,
-			Category:  in.Category,
-			Amount:    in.Amount,
-			CreatedBy: in.CreatedBy,
+			BranchID: in.BranchID,
+			Date:     in.Date,
+			Category: in.Category,
+			Amount:   in.Amount,
+		}
+		if in.CreatedBy != 0 {
+			if err := requireActiveStaffInBranch(tx, in.CreatedBy, in.BranchID); err != nil {
+				return err
+			}
+			expense.CreatedBy = &in.CreatedBy
+		} else {
+			expense.CreatedByUserID = &in.CreatedByUserID
 		}
 		return tx.Create(&expense).Error
 	})
@@ -444,7 +448,7 @@ func (r *RepositoryImpl) UpdateExpense(ctx context.Context, scope AccessScope, i
 		if err != nil {
 			return err
 		}
-		if !actor.CanManageAny && found.CreatedBy != actor.StaffID {
+		if !actor.CanManageAny && !found.createdByStaff(actor.StaffID) {
 			return common.ForbiddenError("only the staff member who logged this expense, or a manager, may modify it")
 		}
 		expense = *found
@@ -455,12 +459,16 @@ func (r *RepositoryImpl) UpdateExpense(ctx context.Context, scope AccessScope, i
 		if err := requireActiveBranchInScope(tx, scope, effectiveBranchID); err != nil {
 			return err
 		}
+		// An expense an Owner logged has no staff creator to re-validate
+		// against the (possibly changed) branch; only check when there is one.
 		effectiveStaffID := expense.CreatedBy
 		if in.CreatedBy != nil {
-			effectiveStaffID = *in.CreatedBy
+			effectiveStaffID = in.CreatedBy
 		}
-		if err := requireActiveStaffInBranch(tx, effectiveStaffID, effectiveBranchID); err != nil {
-			return err
+		if effectiveStaffID != nil {
+			if err := requireActiveStaffInBranch(tx, *effectiveStaffID, effectiveBranchID); err != nil {
+				return err
+			}
 		}
 
 		updates := map[string]any{}
@@ -477,7 +485,9 @@ func (r *RepositoryImpl) UpdateExpense(ctx context.Context, scope AccessScope, i
 			updates["amount"] = *in.Amount
 		}
 		if in.CreatedBy != nil {
+			// Reassigned to a staff member: no longer an Owner-logged expense.
 			updates["created_by"] = *in.CreatedBy
+			updates["created_by_user_id"] = nil
 		}
 		if err := tx.Model(&Expense{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 			return err
@@ -497,7 +507,7 @@ func (r *RepositoryImpl) DeleteExpense(ctx context.Context, scope AccessScope, i
 		if err != nil {
 			return err
 		}
-		if !actor.CanManageAny && expense.CreatedBy != actor.StaffID {
+		if !actor.CanManageAny && !expense.createdByStaff(actor.StaffID) {
 			return common.ForbiddenError("only the staff member who logged this expense, or a manager, may delete it")
 		}
 		return tx.Delete(expense).Error

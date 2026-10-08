@@ -81,10 +81,10 @@ func main() {
 // TODO: as each domain grows, this is the place new sub-groups (e.g. per-branch scoping) get added.
 func registerRoutes(v1 *gin.RouterGroup, db *gorm.DB, store storage.Storage, jwtSecret []byte) {
 	api.NewCustomerAPI(db).RegisterRoutes(v1)
-	api.NewPlatformAPI(db, store).RegisterRoutes(v1)
-	api.NewCatalogAPI(db, store).RegisterRoutes(v1)
-	api.NewProcurementAPI(db).RegisterRoutes(v1)
-	api.NewInventoryAPI(db).RegisterRoutes(v1)
+	api.NewPlatformAPI(db, store, jwtSecret).RegisterRoutes(v1)
+	api.NewCatalogAPI(db, store, jwtSecret).RegisterRoutes(v1)
+	api.NewProcurementAPI(db, jwtSecret).RegisterRoutes(v1)
+	api.NewInventoryAPI(db, jwtSecret).RegisterRoutes(v1)
 	api.NewSalesAPI(db, jwtSecret).RegisterRoutes(v1)
 	api.NewReturnsAPI(db, jwtSecret).RegisterRoutes(v1)
 	api.NewShiftAPI(db, jwtSecret).RegisterRoutes(v1)

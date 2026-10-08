@@ -6,8 +6,10 @@ import (
 	"errors"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -42,6 +44,12 @@ func newTestService(repo Repository, inv InventoryWriter, products ProductLookup
 	return NewService(repo, inv, products, auditWriter, fakeTransactioner{})
 }
 
+// noStoredSale makes CreateSale's idempotency lookup find nothing, i.e. a
+// first-time sale.
+func noStoredSale(repo *MockRepository) {
+	repo.EXPECT().GetSale(mock.Anything, mock.Anything, mock.Anything).Return(nil, common.NotFoundError("sale not found")).Once()
+}
+
 func requireRestErrorStatus(t *testing.T, err error, status int) {
 	t.Helper()
 	var restErr common.RestError
@@ -55,6 +63,7 @@ func TestService_CreateSale_HappyPath_DerivesTotalsAndPersistsAtomically(t *test
 	audW := NewMockAuditWriter(t)
 	products := NewMockProductLookup(t)
 	svc := newTestService(repo, inv, products, audW)
+	noStoredSale(repo)
 
 	saleID := uuid.New()
 	in := CreateSaleRequest{
@@ -116,6 +125,7 @@ func TestService_CreateSale_UsesPriceOverrideWhenSet(t *testing.T) {
 	audW := NewMockAuditWriter(t)
 	products := NewMockProductLookup(t)
 	svc := newTestService(repo, inv, products, audW)
+	noStoredSale(repo)
 
 	override := decimal.NewFromInt(800)
 	in := CreateSaleRequest{
@@ -150,6 +160,7 @@ func TestService_CreateSale_PaymentsMismatch_RejectsWithoutOpeningTransaction(t 
 	audW := NewMockAuditWriter(t)
 	products := NewMockProductLookup(t)
 	svc := newTestService(repo, inv, products, audW)
+	noStoredSale(repo)
 
 	in := CreateSaleRequest{
 		ID:      uuid.New(),
@@ -170,6 +181,7 @@ func TestService_CreateSale_DiscountWithoutPermission_RejectsWithoutOpeningTrans
 	audW := NewMockAuditWriter(t)
 	products := NewMockProductLookup(t)
 	svc := newTestService(repo, inv, products, audW)
+	noStoredSale(repo)
 
 	in := CreateSaleRequest{
 		ID:      uuid.New(),
@@ -190,6 +202,7 @@ func TestService_CreateSale_NegativeItemDiscount_RejectsWithoutOpeningTransactio
 	audW := NewMockAuditWriter(t)
 	products := NewMockProductLookup(t)
 	svc := newTestService(repo, inv, products, audW)
+	noStoredSale(repo)
 
 	in := CreateSaleRequest{
 		ID:      uuid.New(),
@@ -210,6 +223,7 @@ func TestService_CreateSale_NegativeItemTax_RejectsWithoutOpeningTransaction(t *
 	audW := NewMockAuditWriter(t)
 	products := NewMockProductLookup(t)
 	svc := newTestService(repo, inv, products, audW)
+	noStoredSale(repo)
 
 	in := CreateSaleRequest{
 		ID:      uuid.New(),
@@ -230,6 +244,7 @@ func TestService_CreateSale_SumsComboItemTaxIntoSaleTax(t *testing.T) {
 	audW := NewMockAuditWriter(t)
 	products := NewMockProductLookup(t)
 	svc := newTestService(repo, inv, products, audW)
+	noStoredSale(repo)
 
 	saleID := uuid.New()
 	comboID := uint(5)
@@ -270,6 +285,7 @@ func TestService_CreateSale_InsufficientStock_RollsBackWithConflict(t *testing.T
 	audW := NewMockAuditWriter(t)
 	products := NewMockProductLookup(t)
 	svc := newTestService(repo, inv, products, audW)
+	noStoredSale(repo)
 
 	in := CreateSaleRequest{
 		ID:      uuid.New(),
@@ -300,6 +316,7 @@ func TestService_CreateSale_AllowNegativeStock_LetsItThroughAndReportsEvent(t *t
 	audW := NewMockAuditWriter(t)
 	products := NewMockProductLookup(t)
 	svc := newTestService(repo, inv, products, audW)
+	noStoredSale(repo)
 
 	in := CreateSaleRequest{
 		ID:      uuid.New(),
@@ -331,6 +348,7 @@ func TestService_CreateSale_SameProductAcrossMultipleLines_AggregatesQtyBeforeDe
 	audW := NewMockAuditWriter(t)
 	products := NewMockProductLookup(t)
 	svc := newTestService(repo, inv, products, audW)
+	noStoredSale(repo)
 
 	in := CreateSaleRequest{
 		ID:      uuid.New(),
@@ -372,6 +390,7 @@ func TestService_CreateSale_ShiftNotOpen_PropagatesErrorWithoutPersisting(t *tes
 	audW := NewMockAuditWriter(t)
 	products := NewMockProductLookup(t)
 	svc := newTestService(repo, inv, products, audW)
+	noStoredSale(repo)
 
 	in := CreateSaleRequest{
 		ID:      uuid.New(),
@@ -389,19 +408,106 @@ func TestService_CreateSale_ShiftNotOpen_PropagatesErrorWithoutPersisting(t *tes
 	repo.AssertNotCalled(t, "CreateSale", mock.Anything, mock.Anything)
 }
 
-func TestService_ListSales_DelegatesToRepository(t *testing.T) {
+func newListSalesService(t *testing.T) (*Service, *MockRepository) {
 	repo := NewMockRepository(t)
-	inv := NewMockInventoryWriter(t)
-	audW := NewMockAuditWriter(t)
-	products := NewMockProductLookup(t)
-	svc := newTestService(repo, inv, products, audW)
+	return newTestService(repo, NewMockInventoryWriter(t), NewMockProductLookup(t), NewMockAuditWriter(t)), repo
+}
 
-	want := []Sale{{OrgID: 7}, {OrgID: 7}}
-	repo.EXPECT().ListSales(mock.Anything, uint(7)).Return(want, nil).Once()
+func TestService_ListSales_DefaultsPaginationAndLeavesFiltersOpen(t *testing.T) {
+	svc, repo := newListSalesService(t)
 
-	got, err := svc.ListSales(context.Background(), 7)
+	repo.EXPECT().ListSales(mock.Anything, uint(7), SaleFilter{Page: 1, PageSize: 20}).Return([]Sale{}, int64(0), nil).Once()
+	repo.EXPECT().ListPaymentMethods(mock.Anything, mock.Anything).Return(map[uuid.UUID][]PaymentMethod{}, nil).Once()
+
+	got, err := svc.ListSales(context.Background(), 7, nil, nil, nil, 0, 0)
 	require.NoError(t, err)
-	require.Equal(t, want, got)
+	require.Equal(t, 1, got.Page)
+	require.Equal(t, 20, got.PageSize)
+	require.NotNil(t, got.Sales, "an empty page must serialize as [], not null")
+	require.Empty(t, got.Sales)
+}
+
+func TestService_ListSales_ClampsPageSizeToMax(t *testing.T) {
+	svc, repo := newListSalesService(t)
+
+	repo.EXPECT().ListSales(mock.Anything, uint(7), SaleFilter{Page: 3, PageSize: 100}).Return([]Sale{}, int64(250), nil).Once()
+	repo.EXPECT().ListPaymentMethods(mock.Anything, mock.Anything).Return(map[uuid.UUID][]PaymentMethod{}, nil).Once()
+
+	got, err := svc.ListSales(context.Background(), 7, nil, nil, nil, 3, 5000)
+	require.NoError(t, err)
+	require.Equal(t, 100, got.PageSize)
+	require.Equal(t, int64(250), got.TotalCount)
+}
+
+// from/to are inclusive calendar dates: to's whole day is included, and a
+// time-of-day on the input is ignored.
+func TestService_ListSales_TurnsDatesIntoHalfOpenUTCWindowAndPassesBranch(t *testing.T) {
+	svc, repo := newListSalesService(t)
+
+	branch := uint(5)
+	from := time.Date(2026, 10, 1, 17, 30, 0, 0, time.UTC)
+	to := time.Date(2026, 10, 7, 3, 0, 0, 0, time.UTC)
+	wantStart := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	wantEnd := time.Date(2026, 10, 8, 0, 0, 0, 0, time.UTC)
+
+	repo.EXPECT().ListSales(mock.Anything, uint(7), SaleFilter{BranchID: &branch, Start: &wantStart, End: &wantEnd, Page: 1, PageSize: 20}).
+		Return([]Sale{}, int64(0), nil).Once()
+	repo.EXPECT().ListPaymentMethods(mock.Anything, mock.Anything).Return(map[uuid.UUID][]PaymentMethod{}, nil).Once()
+
+	_, err := svc.ListSales(context.Background(), 7, &branch, &from, &to, 1, 20)
+	require.NoError(t, err)
+}
+
+func TestService_ListSales_OnlyFromSet_LeavesEndOpen(t *testing.T) {
+	svc, repo := newListSalesService(t)
+
+	from := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	repo.EXPECT().ListSales(mock.Anything, uint(7), SaleFilter{Start: &from, Page: 1, PageSize: 20}).
+		Return([]Sale{}, int64(0), nil).Once()
+	repo.EXPECT().ListPaymentMethods(mock.Anything, mock.Anything).Return(map[uuid.UUID][]PaymentMethod{}, nil).Once()
+
+	_, err := svc.ListSales(context.Background(), 7, nil, &from, nil, 1, 20)
+	require.NoError(t, err)
+}
+
+func TestService_ListSales_AttachesPaymentMethodsPerRow(t *testing.T) {
+	svc, repo := newListSalesService(t)
+
+	cashOnly, split, none := uuid.New(), uuid.New(), uuid.New()
+	repo.EXPECT().ListSales(mock.Anything, uint(7), mock.Anything).
+		Return([]Sale{{ID: cashOnly, OrgID: 7}, {ID: split, OrgID: 7}, {ID: none, OrgID: 7}}, int64(3), nil).Once()
+	// One query for the whole page, not one per row.
+	repo.EXPECT().ListPaymentMethods(mock.Anything, []uuid.UUID{cashOnly, split, none}).
+		Return(map[uuid.UUID][]PaymentMethod{
+			cashOnly: {PaymentMethodCash},
+			split:    {PaymentMethodCash, PaymentMethodQR},
+		}, nil).Once()
+
+	got, err := svc.ListSales(context.Background(), 7, nil, nil, nil, 1, 20)
+	require.NoError(t, err)
+	require.Len(t, got.Sales, 3)
+	require.Equal(t, []PaymentMethod{PaymentMethodCash}, got.Sales[0].PaymentMethods)
+	require.Equal(t, []PaymentMethod{PaymentMethodCash, PaymentMethodQR}, got.Sales[1].PaymentMethods)
+	require.Equal(t, []PaymentMethod{}, got.Sales[2].PaymentMethods, "a sale with no payment rows is [], not null")
+	require.Equal(t, cashOnly, got.Sales[0].ID)
+}
+
+func TestService_ListSales_RepositoryErrorsPropagate(t *testing.T) {
+	boom := errors.New("db down")
+
+	t.Run("list", func(t *testing.T) {
+		svc, repo := newListSalesService(t)
+		repo.EXPECT().ListSales(mock.Anything, uint(7), mock.Anything).Return(nil, int64(0), boom).Once()
+		_, err := svc.ListSales(context.Background(), 7, nil, nil, nil, 1, 20)
+		require.ErrorIs(t, err, boom)
+	})
+	t.Run("payment methods", func(t *testing.T) {
+		svc, repo := newListSalesService(t)
+		repo.EXPECT().ListSales(mock.Anything, uint(7), mock.Anything).Return([]Sale{{ID: uuid.New()}}, int64(1), nil).Once()
+		repo.EXPECT().ListPaymentMethods(mock.Anything, mock.Anything).Return(nil, boom).Once()
+		_, err := svc.ListSales(context.Background(), 7, nil, nil, nil, 1, 20)
+		require.ErrorIs(t, err, boom)
+	})
 }
 
 func TestService_GetSale_DelegatesToRepository(t *testing.T) {
@@ -552,4 +658,120 @@ func TestService_ResumeHeldSale_PropagatesNotFound(t *testing.T) {
 
 	_, err := svc.ResumeHeldSale(context.Background(), 3, 9)
 	requireRestErrorStatus(t, err, http.StatusNotFound)
+}
+
+// --- idempotency (backend-recommendations #4) ---
+
+func replayRequest(saleID uuid.UUID) CreateSaleRequest {
+	return CreateSaleRequest{
+		ID: saleID, ShiftID: 9, DeviceID: 3,
+		Items:    []CreateSaleItemRequest{{ProductID: 1, NameSnapshot: "Rice", UnitPrice: decimal.NewFromInt(100), Qty: 1}},
+		Payments: []CreateSalePaymentRequest{{Method: PaymentMethodCash, Amount: decimal.NewFromInt(100)}},
+	}
+}
+
+func TestService_CreateSale_AlreadyStoredFromSameDevice_ReturnsOriginalWithoutWriting(t *testing.T) {
+	repo := NewMockRepository(t)
+	inv := NewMockInventoryWriter(t)
+	audW := NewMockAuditWriter(t)
+	products := NewMockProductLookup(t)
+	svc := newTestService(repo, inv, products, audW)
+
+	saleID := uuid.New()
+	stored := &Sale{ID: saleID, OrgID: 7, BranchID: 3, DeviceID: 3, StaffID: 14, Total: decimal.NewFromInt(100)}
+	repo.EXPECT().GetSale(mock.Anything, uint(7), saleID).Return(stored, nil).Once()
+	// No product lookup, shift check, insert, stock or audit call: a retry is a pure read.
+
+	// A discount-less retry by a staff member lacking the discount permission
+	// still works - the original already passed whatever checks it needed.
+	got, negs, err := svc.CreateSale(context.Background(), 7, 3, SaleActor{StaffID: 14}, replayRequest(saleID), false)
+	require.NoError(t, err)
+	require.Empty(t, negs)
+	require.Same(t, stored, got)
+	require.True(t, got.Replayed)
+}
+
+func TestService_CreateSale_AlreadyStoredWithDiscount_RetryNeedsNoFreshApproval(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo, NewMockInventoryWriter(t), NewMockProductLookup(t), NewMockAuditWriter(t))
+
+	saleID := uuid.New()
+	repo.EXPECT().GetSale(mock.Anything, uint(7), saleID).Return(&Sale{ID: saleID, OrgID: 7, BranchID: 3, DeviceID: 3, Discount: decimal.NewFromInt(10)}, nil).Once()
+
+	in := replayRequest(saleID)
+	in.Items[0].Discount = decimal.NewFromInt(10)
+	// The manager-approval token has expired by retry time: CanApplyManualDiscount is false.
+	got, _, err := svc.CreateSale(context.Background(), 7, 3, SaleActor{StaffID: 14, CanApplyManualDiscount: false}, in, false)
+	require.NoError(t, err)
+	require.True(t, got.Replayed)
+}
+
+func TestService_CreateSale_AlreadyStoredFromDifferentDevice_Conflicts(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo, NewMockInventoryWriter(t), NewMockProductLookup(t), NewMockAuditWriter(t))
+
+	saleID := uuid.New()
+	repo.EXPECT().GetSale(mock.Anything, uint(7), saleID).Return(&Sale{ID: saleID, OrgID: 7, BranchID: 3, DeviceID: 99}, nil).Once()
+
+	_, _, err := svc.CreateSale(context.Background(), 7, 3, SaleActor{StaffID: 14}, replayRequest(saleID), false)
+	requireRestErrorStatus(t, err, http.StatusConflict)
+}
+
+func TestService_CreateSale_AlreadyStoredAtDifferentBranch_Conflicts(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo, NewMockInventoryWriter(t), NewMockProductLookup(t), NewMockAuditWriter(t))
+
+	saleID := uuid.New()
+	repo.EXPECT().GetSale(mock.Anything, uint(7), saleID).Return(&Sale{ID: saleID, OrgID: 7, BranchID: 8, DeviceID: 3}, nil).Once()
+
+	_, _, err := svc.CreateSale(context.Background(), 7, 3, SaleActor{StaffID: 14}, replayRequest(saleID), false)
+	requireRestErrorStatus(t, err, http.StatusConflict)
+}
+
+func TestService_CreateSale_LookupFails_PropagatesWithoutWriting(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo, NewMockInventoryWriter(t), NewMockProductLookup(t), NewMockAuditWriter(t))
+
+	boom := errors.New("db down")
+	repo.EXPECT().GetSale(mock.Anything, uint(7), mock.Anything).Return(nil, boom).Once()
+
+	_, _, err := svc.CreateSale(context.Background(), 7, 3, SaleActor{StaffID: 14}, replayRequest(uuid.New()), false)
+	require.ErrorIs(t, err, boom)
+}
+
+// Two retries race past the lookup; the loser's insert hits the primary key.
+// It must resolve to the winner's stored sale, not a 500.
+func TestService_CreateSale_RaceLoser_ResolvesToStoredSale(t *testing.T) {
+	repo := NewMockRepository(t)
+	products := NewMockProductLookup(t)
+	svc := newTestService(repo, NewMockInventoryWriter(t), products, NewMockAuditWriter(t))
+
+	saleID := uuid.New()
+	stored := &Sale{ID: saleID, OrgID: 7, BranchID: 3, DeviceID: 3}
+	repo.EXPECT().GetSale(mock.Anything, uint(7), saleID).Return(nil, common.NotFoundError("sale not found")).Once()
+	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7}, nil).Once()
+	repo.EXPECT().RequireOpenShift(mock.Anything, uint(7), uint(3), uint(9)).Return(nil).Once()
+	repo.EXPECT().CreateSale(mock.Anything, mock.Anything).Return(&pgconn.PgError{Code: "23505"}).Once()
+	repo.EXPECT().GetSale(mock.Anything, uint(7), saleID).Return(stored, nil).Once()
+
+	got, _, err := svc.CreateSale(context.Background(), 7, 3, SaleActor{StaffID: 14}, replayRequest(saleID), false)
+	require.NoError(t, err)
+	require.True(t, got.Replayed)
+}
+
+// The duplicate key belongs to another org's sale: this org can't see it, and
+// must not be handed it or told more than "already exists".
+func TestService_CreateSale_RaceLoser_IdOwnedByAnotherOrg_Conflicts(t *testing.T) {
+	repo := NewMockRepository(t)
+	products := NewMockProductLookup(t)
+	svc := newTestService(repo, NewMockInventoryWriter(t), products, NewMockAuditWriter(t))
+
+	saleID := uuid.New()
+	repo.EXPECT().GetSale(mock.Anything, uint(7), saleID).Return(nil, common.NotFoundError("sale not found")).Twice()
+	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7}, nil).Once()
+	repo.EXPECT().RequireOpenShift(mock.Anything, uint(7), uint(3), uint(9)).Return(nil).Once()
+	repo.EXPECT().CreateSale(mock.Anything, mock.Anything).Return(&pgconn.PgError{Code: "23505"}).Once()
+
+	_, _, err := svc.CreateSale(context.Background(), 7, 3, SaleActor{StaffID: 14}, replayRequest(saleID), false)
+	requireRestErrorStatus(t, err, http.StatusConflict)
 }

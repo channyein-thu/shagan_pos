@@ -39,19 +39,23 @@ func (a *IdentityAPI) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.PATCH("/me", a.UpdateMe)
 	rg.POST("/staff/:id/manager-pin/verify", a.VerifyManagerPIN)
 	rg.POST("/staff/:id/pin/verify", a.VerifyStaffPIN)
-	rg.POST("/devices", a.CreateDevice)
+	// Provisioning/management writes are org-wide-account only (owner /
+	// service_center): a till's POS-device token never reaches them, manager
+	// PIN or not - a manager's staff access is view-only (WORKFLOWS section 4).
+	orgAdmin := middleware.RequireOrgAdmin()
+	rg.POST("/devices", orgAdmin, a.CreateDevice)
 	rg.GET("/devices", a.ListDevices)
-	rg.PATCH("/devices/:id", a.UpdateDevice)
+	rg.PATCH("/devices/:id", orgAdmin, a.UpdateDevice)
 	rg.GET("/branches", a.ListBranches)
-	rg.POST("/branches", a.CreateBranch)
+	rg.POST("/branches", orgAdmin, a.CreateBranch)
 	rg.GET("/branches/:id", a.GetBranch)
-	rg.PATCH("/branches/:id", a.UpdateBranch)
+	rg.PATCH("/branches/:id", orgAdmin, a.UpdateBranch)
 	rg.GET("/branches/:id/staff", a.ListBranchStaff)
 	rg.GET("/branches/:id/managers", a.ListBranchManagers)
 	rg.GET("/staff", a.ListStaff)
-	rg.POST("/staff", a.CreateStaff)
+	rg.POST("/staff", orgAdmin, a.CreateStaff)
 	rg.GET("/staff/:id", a.GetStaff)
-	rg.PATCH("/staff/:id", a.UpdateStaff)
+	rg.PATCH("/staff/:id", orgAdmin, a.UpdateStaff)
 	rg.GET("/roles", a.ListRoles)
 	rg.GET("/permissions", a.ListPermissions)
 	rg.GET("/roles/:id/permissions", a.ListRolePermissions)
@@ -380,7 +384,12 @@ func (a *IdentityAPI) ListBranchStaff(c *gin.Context) {
 		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
-	result, err := a.service.ListBranchStaff(c.Request.Context(), orgID, uint(idVal))
+	// A POS-device token (a till) may only list its own branch's staff.
+	branchID, ok := scopedBranchID(c, uint(idVal))
+	if !ok {
+		return
+	}
+	result, err := a.service.ListBranchStaff(c.Request.Context(), orgID, branchID)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -407,7 +416,11 @@ func (a *IdentityAPI) ListBranchManagers(c *gin.Context) {
 		common.HandleError(c, common.BadRequestError("permission query param is required"))
 		return
 	}
-	result, err := a.service.ListBranchManagers(c.Request.Context(), orgID, uint(idVal), permission)
+	branchID, ok := scopedBranchID(c, uint(idVal))
+	if !ok {
+		return
+	}
+	result, err := a.service.ListBranchManagers(c.Request.Context(), orgID, branchID, permission)
 	if err != nil {
 		common.HandleError(c, err)
 		return

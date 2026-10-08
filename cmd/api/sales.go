@@ -47,8 +47,10 @@ func (a *SalesAPI) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.DELETE("/held-sales/:id", a.ResumeHeldSale)
 }
 
-// CreateSale handles `POST /sales`. Idempotent (ID is client-generated),
-// transactional. Stock decrement/ledger writes are deliberately deferred
+// CreateSale handles `POST /sales`. Idempotent by the client-generated ID: a
+// retry of a sale this same device already recorded returns it again with
+// 200 instead of 201, a duplicate id from a different branch/device is 409.
+// Transactional. Stock decrement/ledger writes are deliberately deferred
 // until the Inventory domain is implemented - see the sales_service_impl.go
 // doc comment on CreateSale. Requires X-Staff-Token - the sale is always
 // attributed to whichever staff that token identifies, and a discount on
@@ -83,16 +85,35 @@ func (a *SalesAPI) CreateSale(c *gin.Context) {
 		common.HandleError(c, err)
 		return
 	}
+	if result.Replayed {
+		// A retry of an already-recorded sale: same body back, nothing new
+		// was created.
+		c.JSON(http.StatusOK, result)
+		return
+	}
 	c.JSON(http.StatusCreated, result)
 }
 
-// ListSales handles `GET /sales`.
+// ListSales handles `GET /sales`. Optional ?branch_id= (owner/service_center
+// only - a pos-device token's own branch always wins, same as the reports),
+// ?from=/?to= (YYYY-MM-DD, inclusive), ?page= and ?page_size= (default 20,
+// max 100). Each row carries payment_methods.
 func (a *SalesAPI) ListSales(c *gin.Context) {
 	orgID, ok := requireOrgID(c)
 	if !ok {
 		return
 	}
-	result, err := a.service.ListSales(c.Request.Context(), orgID)
+	branchID, ok := reportBranchID(c)
+	if !ok {
+		return
+	}
+	from, to, ok := reportDateRange(c)
+	if !ok {
+		return
+	}
+	page, _ := strconv.Atoi(c.Query("page"))
+	pageSize, _ := strconv.Atoi(c.Query("page_size"))
+	result, err := a.service.ListSales(c.Request.Context(), orgID, branchID, from, to, page, pageSize)
 	if err != nil {
 		common.HandleError(c, err)
 		return

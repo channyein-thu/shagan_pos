@@ -146,7 +146,7 @@ func (s *Service) ListExpenses(ctx context.Context, scope AccessScope) ([]Expens
 }
 
 func (s *Service) CreateExpense(ctx context.Context, scope AccessScope, in CreateExpenseRequest) (*Expense, error) {
-	validationErrors := validateExpenseInput(in.BranchID, in.Date, in.Category, in.Amount, in.CreatedBy)
+	validationErrors := validateExpenseInput(in.BranchID, in.Date, in.Category, in.Amount, in.CreatedBy, in.CreatedByUserID)
 	if len(validationErrors) > 0 {
 		return nil, common.ValidationError("validation error", validationErrors)
 	}
@@ -189,7 +189,7 @@ func (s *Service) DeleteExpense(ctx context.Context, scope AccessScope, id uint,
 	return s.repo.DeleteExpense(ctx, scope, id, actor)
 }
 
-func validateExpenseInput(branchID uint, date time.Time, category string, amount decimal.Decimal, createdBy uint) []common.FieldError {
+func validateExpenseInput(branchID uint, date time.Time, category string, amount decimal.Decimal, createdBy, createdByUserID uint) []common.FieldError {
 	errs := make([]common.FieldError, 0, 5)
 	if branchID == 0 {
 		errs = append(errs, common.FieldError{Field: "BranchID", Message: "required"})
@@ -201,7 +201,8 @@ func validateExpenseInput(branchID uint, date time.Time, category string, amount
 		errs = append(errs, common.FieldError{Field: "Category", Message: "required"})
 	}
 	errs = append(errs, validatePositiveMoney("Amount", amount)...)
-	if createdBy == 0 {
+	// Exactly one actor: a staff member, or an org-wide account acting directly.
+	if (createdBy == 0) == (createdByUserID == 0) {
 		errs = append(errs, common.FieldError{Field: "CreatedBy", Message: "required"})
 	}
 	return errs

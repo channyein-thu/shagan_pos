@@ -27,6 +27,7 @@ func NewSyncAPI(db *gorm.DB, store storage.Storage) *SyncAPI {
 		service: datasync.NewService(
 			datasync.NewRepository(db),
 			identity.NewRepository(db),
+			identity.NewRepository(db),
 			catalog.NewService(catalog.NewRepository(db), db, store),
 			sales.NewService(sales.NewRepository(db), inventory.NewRepository(db), catalog.NewRepository(db), audit.NewRepository(db), db),
 			db,
