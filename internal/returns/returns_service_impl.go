@@ -51,32 +51,6 @@ func (s *Service) resolveBranchIDs(ctx context.Context, orgID uint, branchID *ui
 	return branchIDs, nil
 }
 
-// applyStockDelta is returns' own copy of the get-or-create-then-adjust
-// pattern behind every stock movement in this codebase (same shape as
-// inventory/procurement/sales' own copies).
-func (s *Service) applyStockDelta(tx *gorm.DB, productID uint, branchID uint, delta int) (int, error) {
-	level, err := s.inventory.GetStockLevel(tx, productID, branchID)
-	if err != nil {
-		return 0, err
-	}
-	current := 0
-	if level != nil {
-		current = level.Qty
-	}
-	newQty := current + delta
-	if newQty < 0 {
-		return 0, common.ConflictError("insufficient stock for this movement")
-	}
-	if level == nil {
-		if err := s.inventory.CreateStockLevel(tx, &inventory.StockLevel{ProductID: productID, BranchID: branchID, Qty: newQty}); err != nil {
-			return 0, err
-		}
-	} else if err := s.inventory.UpdateStockLevelQty(tx, level.ID, newQty); err != nil {
-		return 0, err
-	}
-	return newQty, nil
-}
-
 // fullyReturned reports whether, counting the lines being returned now
 // (requestedQty) on top of what earlier returns took, every line of the sale
 // has been returned in full. Exchange "in" qty deliberately doesn't count: a
@@ -196,15 +170,11 @@ func (s *Service) VoidSale(ctx context.Context, orgID uint, actor Actor, saleID 
 
 		voidRef := strconv.FormatUint(uint64(v.ID), 10)
 		for productID, qty := range qtyByProduct {
-			newQty, err := s.applyStockDelta(tx, productID, sale.BranchID, qty)
-			if err != nil {
-				return err
-			}
-			if err := s.inventory.CreateInventoryLedgerEntry(tx, &inventory.InventoryLedger{
+			if _, err := inventory.ApplyMovement(tx, s.inventory, inventory.InventoryLedger{
 				OrgID: orgID, ProductID: productID, BranchID: sale.BranchID,
-				Type: inventory.LedgerEntryTypeVoid, Qty: qty, BalanceAfter: newQty,
+				Type: inventory.LedgerEntryTypeVoid, Qty: qty,
 				ActorID: actor.staffIDPtr(), ReferenceType: inventory.ReferenceTypeVoid, ReferenceID: voidRef,
-			}); err != nil {
+			}, inventory.RejectNegativeStock); err != nil {
 				return err
 			}
 		}
@@ -236,9 +206,8 @@ func (s *Service) ListVoids(ctx context.Context, orgID uint, branchID *uint) ([]
 
 // CreateReturn confirms the sale is completed and every item belongs to it
 // with enough not-yet-returned-or-exchanged-in qty remaining, computes
-// RefundTotal as each returned item's own original per-unit price (derived
-// from SaleItem.LineTotal, so it's already net of that line's own discount)
-// times the qty being returned, and restocks each Condition
+// RefundTotal through the shared cumulative proportional valuation (derived
+// from SaleItem.LineTotal, already net of its discount), and restocks each Condition
 // ItemConditionSellable item at the sale's own branch - all atomically.
 func (s *Service) CreateReturn(ctx context.Context, orgID uint, actor Actor, in CreateReturnRequest) (*Return, error) {
 	if !actor.CanApprove {
@@ -258,56 +227,19 @@ func (s *Service) CreateReturn(ctx context.Context, orgID uint, actor Actor, in 
 		if err != nil {
 			return err
 		}
-		bySaleItemID := make(map[uint]sales.SaleItem, len(saleItems))
-		for _, si := range saleItems {
-			bySaleItemID[si.ID] = si
+		incoming := make([]incomingItem, len(in.Items))
+		for i, item := range in.Items {
+			incoming[i] = incomingItem{SaleItemID: item.SaleItemID, Qty: item.Qty, Condition: item.Condition}
 		}
-
-		refundTotal := decimal.Zero
-		returnItems := make([]ReturnItem, 0, len(in.Items))
-		creditByProduct := make(map[uint]int)
-		var writeoffProducts []uint
-		// requestedQty and returnedBefore are per sale item: the first sums
-		// this request's own lines (two lines may name the same sale item),
-		// the second is what earlier returns already took - together they
-		// decide both the over-return guard and whether the sale ends up
-		// fully returned.
-		requestedQty := make(map[uint]int)
-		returnedBefore := make(map[uint]int)
-		for _, reqItem := range in.Items {
-			saleItem, ok := bySaleItemID[reqItem.SaleItemID]
-			if !ok {
-				return common.BadRequestError("sale_item_id does not belong to this sale")
-			}
-			alreadyReturned, err := s.repo.ReturnedQtyForSaleItem(tx, reqItem.SaleItemID)
-			if err != nil {
-				return err
-			}
-			alreadyExchanged, err := s.repo.ExchangedInQtyForSaleItem(tx, reqItem.SaleItemID)
-			if err != nil {
-				return err
-			}
-			if alreadyReturned+alreadyExchanged+requestedQty[reqItem.SaleItemID]+reqItem.Qty > saleItem.Qty {
-				return common.BadRequestError("return qty exceeds what remains returnable for this item")
-			}
-			requestedQty[reqItem.SaleItemID] += reqItem.Qty
-			returnedBefore[reqItem.SaleItemID] = alreadyReturned
-
-			unitRefund := saleItem.LineTotal.Div(decimal.NewFromInt(int64(saleItem.Qty)))
-			lineRefund := unitRefund.Mul(decimal.NewFromInt(int64(reqItem.Qty))).Round(2)
-			refundTotal = refundTotal.Add(lineRefund)
-
-			restocked := reqItem.Condition == ItemConditionSellable
-			returnItems = append(returnItems, ReturnItem{
-				SaleItemID: reqItem.SaleItemID,
-				Qty:        reqItem.Qty,
-				Condition:  reqItem.Condition,
-				Restocked:  restocked,
-			})
-			if restocked {
-				creditByProduct[saleItem.ProductID] += reqItem.Qty
-			} else {
-				writeoffProducts = append(writeoffProducts, saleItem.ProductID)
+		plan, err := s.planIncomingItems(tx, saleItems, incoming)
+		if err != nil {
+			return err
+		}
+		returnItems := make([]ReturnItem, len(plan.Items))
+		for i, item := range plan.Items {
+			returnItems[i] = ReturnItem{
+				SaleItemID: item.SaleItemID, Qty: item.Qty,
+				Condition: item.Condition, Restocked: item.Restocked,
 			}
 		}
 
@@ -321,7 +253,7 @@ func (s *Service) CreateReturn(ctx context.Context, orgID uint, actor Actor, in 
 			ReasonCode:   in.ReasonCode,
 			Explanation:  in.Explanation,
 			RefundMethod: in.RefundMethod,
-			RefundTotal:  refundTotal,
+			RefundTotal:  plan.Total,
 			ApprovedBy:   actor.StaffID,
 			ShiftID:      shiftID,
 		}
@@ -336,23 +268,19 @@ func (s *Service) CreateReturn(ctx context.Context, orgID uint, actor Actor, in 
 		}
 
 		returnRef := strconv.FormatUint(uint64(ret.ID), 10)
-		for productID, qty := range creditByProduct {
-			newQty, err := s.applyStockDelta(tx, productID, sale.BranchID, qty)
-			if err != nil {
-				return err
-			}
-			if err := s.inventory.CreateInventoryLedgerEntry(tx, &inventory.InventoryLedger{
+		for productID, qty := range plan.CreditByProduct {
+			if _, err := inventory.ApplyMovement(tx, s.inventory, inventory.InventoryLedger{
 				OrgID: orgID, ProductID: productID, BranchID: sale.BranchID,
-				Type: inventory.LedgerEntryTypeReturn, Qty: qty, BalanceAfter: newQty,
+				Type: inventory.LedgerEntryTypeReturn, Qty: qty,
 				ActorID: &actor.StaffID, ReferenceType: inventory.ReferenceTypeReturn, ReferenceID: returnRef,
-			}); err != nil {
+			}, inventory.RejectNegativeStock); err != nil {
 				return err
 			}
 		}
 		// Every line back through returns alone settles the sale: mark it
 		// refunded so history shows it. Void rejects such a sale, and the
 		// shift totals keep counting its original payments.
-		fullyReturned, err := s.fullyReturned(tx, saleItems, returnedBefore, requestedQty)
+		fullyReturned, err := s.fullyReturned(tx, saleItems, plan.ReturnedBefore, plan.RequestedQty)
 		if err != nil {
 			return err
 		}
@@ -364,7 +292,7 @@ func (s *Service) CreateReturn(ctx context.Context, orgID uint, actor Actor, in 
 		// Goods that weren't restocked still left the customer and must show
 		// in the ledger - one write-off row per such line, after the restocks
 		// so the balance it reports includes them.
-		for _, productID := range writeoffProducts {
+		for _, productID := range plan.WriteoffProducts {
 			if err := s.recordWriteoff(tx, orgID, sale.BranchID, productID, &actor.StaffID, inventory.ReferenceTypeReturn, returnRef); err != nil {
 				return err
 			}
@@ -399,8 +327,8 @@ func (s *Service) GetReturn(ctx context.Context, orgID uint, id uint) (*Return, 
 }
 
 // CreateExchange confirms the sale is completed, computes NetDifference as
-// (every "out" item's qty*unit_price) minus (every "in" item's own original
-// per-unit sale price*qty) - positive means the customer owes more,
+// (every "out" item's qty*unit_price) minus the incoming plan's credit,
+// using the same rounding allocation as returns. Positive means the customer owes more,
 // negative means they're owed the difference - credits stock for every
 // "in" item and decrements it for every "out" item at the sale's own
 // branch, all atomically. Modeled as one combined transaction record
@@ -423,60 +351,37 @@ func (s *Service) CreateExchange(ctx context.Context, orgID uint, actor Actor, i
 		if err != nil {
 			return err
 		}
-		bySaleItemID := make(map[uint]sales.SaleItem, len(saleItems))
-		for _, si := range saleItems {
-			bySaleItemID[si.ID] = si
+		var incoming []incomingItem
+		for _, item := range in.Items {
+			if item.Direction != DirectionIn {
+				continue
+			}
+			if item.SaleItemID == nil {
+				return common.BadRequestError("sale_item_id is required for an \"in\" item")
+			}
+			condition := item.Condition
+			if condition == "" {
+				condition = ItemConditionSellable
+			}
+			incoming = append(incoming, incomingItem{SaleItemID: *item.SaleItemID, Qty: item.Qty, Condition: condition})
 		}
-
-		netDifference := decimal.Zero
+		plan, err := s.planIncomingItems(tx, saleItems, incoming)
+		if err != nil {
+			return err
+		}
+		netDifference := plan.Total.Neg()
 		exchangeItems := make([]ExchangeItem, 0, len(in.Items))
-		creditByProduct := make(map[uint]int)
 		debitByProduct := make(map[uint]int)
-		var writeoffProducts []uint
+		incomingIndex := 0
 
 		for _, reqItem := range in.Items {
 			switch reqItem.Direction {
 			case DirectionIn:
-				if reqItem.SaleItemID == nil {
-					return common.BadRequestError("sale_item_id is required for an \"in\" item")
-				}
-				saleItem, ok := bySaleItemID[*reqItem.SaleItemID]
-				if !ok {
-					return common.BadRequestError("sale_item_id does not belong to this sale")
-				}
-				alreadyReturned, err := s.repo.ReturnedQtyForSaleItem(tx, *reqItem.SaleItemID)
-				if err != nil {
-					return err
-				}
-				alreadyExchanged, err := s.repo.ExchangedInQtyForSaleItem(tx, *reqItem.SaleItemID)
-				if err != nil {
-					return err
-				}
-				if alreadyReturned+alreadyExchanged+reqItem.Qty > saleItem.Qty {
-					return common.BadRequestError("exchanged-in qty exceeds what remains returnable for this item")
-				}
-
-				unitPrice := saleItem.LineTotal.Div(decimal.NewFromInt(int64(saleItem.Qty))).Round(2)
-				lineValue := unitPrice.Mul(decimal.NewFromInt(int64(reqItem.Qty)))
-				netDifference = netDifference.Sub(lineValue)
-
-				// Same rule as a Return: only sellable goods go back on the
-				// shelf. An omitted condition is sellable (older clients
-				// never sent one and always restocked).
-				condition := reqItem.Condition
-				if condition == "" {
-					condition = ItemConditionSellable
-				}
-				if condition == ItemConditionSellable {
-					creditByProduct[saleItem.ProductID] += reqItem.Qty
-				} else {
-					writeoffProducts = append(writeoffProducts, saleItem.ProductID)
-				}
-
-				productID := saleItem.ProductID
+				item := plan.Items[incomingIndex]
+				incomingIndex++
 				exchangeItems = append(exchangeItems, ExchangeItem{
-					Direction: DirectionIn, SaleItemID: reqItem.SaleItemID, ProductID: &productID,
-					Qty: reqItem.Qty, UnitPrice: unitPrice, Condition: &condition,
+					Direction: DirectionIn, SaleItemID: &item.SaleItemID, ProductID: &item.ProductID,
+					Qty: item.Qty, UnitPrice: item.UnitPrice, Condition: &item.Condition,
 				})
 			case DirectionOut:
 				if reqItem.ProductID == nil || reqItem.UnitPrice == nil {
@@ -522,35 +427,27 @@ func (s *Service) CreateExchange(ctx context.Context, orgID uint, actor Actor, i
 		}
 
 		exchangeRef := strconv.FormatUint(uint64(ex.ID), 10)
-		for productID, qty := range creditByProduct {
-			newQty, err := s.applyStockDelta(tx, productID, sale.BranchID, qty)
-			if err != nil {
-				return err
-			}
-			if err := s.inventory.CreateInventoryLedgerEntry(tx, &inventory.InventoryLedger{
+		for productID, qty := range plan.CreditByProduct {
+			if _, err := inventory.ApplyMovement(tx, s.inventory, inventory.InventoryLedger{
 				OrgID: orgID, ProductID: productID, BranchID: sale.BranchID,
-				Type: inventory.LedgerEntryTypeExchangeIn, Qty: qty, BalanceAfter: newQty,
+				Type: inventory.LedgerEntryTypeExchangeIn, Qty: qty,
 				ActorID: &actor.StaffID, ReferenceType: inventory.ReferenceTypeExchange, ReferenceID: exchangeRef,
-			}); err != nil {
+			}, inventory.RejectNegativeStock); err != nil {
 				return err
 			}
 		}
 		for productID, qty := range debitByProduct {
-			newQty, err := s.applyStockDelta(tx, productID, sale.BranchID, -qty)
-			if err != nil {
-				return err
-			}
-			if err := s.inventory.CreateInventoryLedgerEntry(tx, &inventory.InventoryLedger{
+			if _, err := inventory.ApplyMovement(tx, s.inventory, inventory.InventoryLedger{
 				OrgID: orgID, ProductID: productID, BranchID: sale.BranchID,
-				Type: inventory.LedgerEntryTypeExchangeOut, Qty: -qty, BalanceAfter: newQty,
+				Type: inventory.LedgerEntryTypeExchangeOut, Qty: -qty,
 				ActorID: &actor.StaffID, ReferenceType: inventory.ReferenceTypeExchange, ReferenceID: exchangeRef,
-			}); err != nil {
+			}, inventory.RejectNegativeStock); err != nil {
 				return err
 			}
 		}
 		// Non-sellable "in" goods moved no stock but still came back: record
 		// them, after the credits and debits so the balance is the final one.
-		for _, productID := range writeoffProducts {
+		for _, productID := range plan.WriteoffProducts {
 			if err := s.recordWriteoff(tx, orgID, sale.BranchID, productID, &actor.StaffID, inventory.ReferenceTypeExchange, exchangeRef); err != nil {
 				return err
 			}

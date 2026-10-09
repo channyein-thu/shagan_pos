@@ -3,7 +3,6 @@ package shift
 import (
 	"context"
 	"errors"
-	"strings"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -37,9 +36,6 @@ func (r *RepositoryImpl) OpenShift(ctx context.Context, in OpenShiftRequest) (*S
 			First(&branch).Error; err != nil {
 			return openShiftLookupError(err, "branch not found")
 		}
-		if branch.Status != identity.BranchStatusActive {
-			return common.ConflictError("branch is not active")
-		}
 
 		var staff identity.Staff
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -47,9 +43,6 @@ func (r *RepositoryImpl) OpenShift(ctx context.Context, in OpenShiftRequest) (*S
 			First(&staff).Error
 		if err != nil {
 			return openShiftLookupError(err, "staff not found in branch")
-		}
-		if staff.Status != identity.StaffStatusActive {
-			return common.ConflictError("staff is not active")
 		}
 
 		var device identity.Device
@@ -59,9 +52,6 @@ func (r *RepositoryImpl) OpenShift(ctx context.Context, in OpenShiftRequest) (*S
 		if err != nil {
 			return openShiftLookupError(err, "device not found in branch")
 		}
-		if device.Status != identity.DeviceStatusActive {
-			return common.ConflictError("device is not active")
-		}
 
 		var existing Shift
 		err = tx.Where(
@@ -70,10 +60,10 @@ func (r *RepositoryImpl) OpenShift(ctx context.Context, in OpenShiftRequest) (*S
 			in.StaffID,
 			in.DeviceID,
 		).First(&existing).Error
-		switch {
-		case err == nil:
-			return common.ConflictError("staff or device already has an open shift")
-		case !errors.Is(err, gorm.ErrRecordNotFound):
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		if err := validateOpeningShift(branch, staff, device, err == nil); err != nil {
 			return err
 		}
 
@@ -115,8 +105,8 @@ func (r *RepositoryImpl) GetCurrentShift(ctx context.Context, orgID, userID uint
 	// "Current" is terminal-specific. Owner and service-center accounts are
 	// organization-wide and have no paired device, so there is no unambiguous
 	// current shift for those account types.
-	if user.AccountType != identity.AccountTypePos || user.BranchID == nil || user.DeviceID == nil {
-		return nil, common.ForbiddenError("current shift is only available to a paired POS account")
+	if err := validateCurrentShiftAccount(user); err != nil {
+		return nil, err
 	}
 
 	var current Shift
@@ -169,11 +159,8 @@ func (r *RepositoryImpl) closeShift(ctx context.Context, scope AccessScope, id u
 			return err
 		}
 		closed = *found
-		if closed.Status != ShiftStatusOpen {
-			return common.ConflictError("shift is already closed")
-		}
-		if requireOpenerStaffID != nil && closed.StaffID != *requireOpenerStaffID {
-			return common.ForbiddenError("only the staff member who opened this shift may close it")
+		if err := validateShiftCloser(closed, requireOpenerStaffID); err != nil {
+			return err
 		}
 
 		var openSales int64
@@ -182,75 +169,20 @@ func (r *RepositoryImpl) closeShift(ctx context.Context, scope AccessScope, id u
 			Count(&openSales).Error; err != nil {
 			return err
 		}
-		if openSales > 0 {
-			return common.ConflictError("shift has open sales")
-		}
-
-		type paymentTotal struct {
-			Method sales.PaymentMethod
-			Total  decimal.Decimal
-		}
-		var paymentTotals []paymentTotal
-		if err := tx.Model(&sales.Payment{}).
-			Select("payments.method, COALESCE(SUM(payments.amount), 0) AS total").
-			Joins("JOIN sales ON sales.id = payments.sale_id").
-			Where("sales.shift_id = ? AND sales.status IN ?", closed.ID, settledSaleStatuses).
-			Group("payments.method").
-			Scan(&paymentTotals).Error; err != nil {
+		if err := validateNoOpenSales(openSales); err != nil {
 			return err
 		}
-
-		expectedByMethod := map[ReconciliationMethod]decimal.Decimal{
-			ReconciliationMethodCash: closed.OpeningCash,
-		}
-		for _, payment := range paymentTotals {
-			method := reconciliationMethodForPayment(payment.Method)
-			expectedByMethod[method] = expectedByMethod[method].Add(payment.Total)
+		paymentTotals, err := shiftPaymentTotalsFor(tx, closed.ID)
+		if err != nil {
+			return err
 		}
 		adjustments, err := shiftCashAdjustmentsFor(tx, closed.ID)
 		if err != nil {
 			return err
 		}
-		expectedByMethod[ReconciliationMethodCash] = expectedByMethod[ReconciliationMethodCash].Add(adjustments.net())
-
-		orderedMethods := []ReconciliationMethod{
-			ReconciliationMethodCash,
-			ReconciliationMethodQR,
-		}
-		// Only cash is physically counted at close - QR payments settle
-		// electronically, so they're trusted to match what was recorded
-		// (Counted == Expected, Difference always zero). Cash uses what was
-		// actually counted in the drawer; a non-zero difference requires a
-		// reason, since that's the one number that can genuinely be short or
-		// over.
-		expectedCash := expectedByMethod[ReconciliationMethodCash]
-		cashDifference := in.ClosingCash.Sub(expectedCash)
-		if !cashDifference.IsZero() && strings.TrimSpace(in.Reason) == "" {
-			return common.BadRequestError("reason is required when closing_cash does not match the expected cash total")
-		}
-
-		reconciliations := make([]ShiftReconciliation, 0, len(expectedByMethod))
-		for _, method := range orderedMethods {
-			expected, exists := expectedByMethod[method]
-			if !exists {
-				continue
-			}
-			counted := expected
-			difference := decimal.Zero
-			reason := ""
-			if method == ReconciliationMethodCash {
-				counted = in.ClosingCash
-				difference = cashDifference
-				reason = strings.TrimSpace(in.Reason)
-			}
-			reconciliations = append(reconciliations, ShiftReconciliation{
-				ShiftID:    closed.ID,
-				Method:     method,
-				Expected:   expected,
-				Counted:    counted,
-				Difference: difference,
-				Reason:     reason,
-			})
+		reconciliations, err := calculateReconciliation(closed, paymentTotals, adjustments, in)
+		if err != nil {
+			return err
 		}
 		if err := tx.Create(&reconciliations).Error; err != nil {
 			return err
@@ -277,22 +209,6 @@ func (r *RepositoryImpl) closeShift(ctx context.Context, scope AccessScope, id u
 // cash going back out is the cash refund subtracted separately - so it
 // counts exactly like a completed one. Voided and open sales never do.
 var settledSaleStatuses = []sales.SaleStatus{sales.SaleStatusCompleted, sales.SaleStatusRefunded}
-
-// cashAdjustments is the cash that refunds and exchanges moved through a
-// shift's drawer on top of its sales: Refunds is what cash-method Returns
-// handed back, ExchangeIn is the extra cash customers paid on an Exchange,
-// ExchangeOut is the cash customers were handed back on one. QR refunds and
-// QR exchange differences settle electronically and never appear here.
-type cashAdjustments struct {
-	Refunds     decimal.Decimal
-	ExchangeIn  decimal.Decimal
-	ExchangeOut decimal.Decimal
-}
-
-// net is the change to the drawer's expected cash.
-func (a cashAdjustments) net() decimal.Decimal {
-	return a.ExchangeIn.Sub(a.ExchangeOut).Sub(a.Refunds)
-}
 
 // shiftCashAdjustmentsFor sums the cash refunds and cash exchange differences
 // stamped with shiftID. Shared by GetShiftSummary and closeShift so the
@@ -322,13 +238,14 @@ func shiftCashAdjustmentsFor(db *gorm.DB, shiftID uint) (cashAdjustments, error)
 	return cashAdjustments{Refunds: refunds.Total, ExchangeIn: exchanges.CashIn, ExchangeOut: exchanges.CashOut}, nil
 }
 
-func reconciliationMethodForPayment(method sales.PaymentMethod) ReconciliationMethod {
-	switch method {
-	case sales.PaymentMethodQR:
-		return ReconciliationMethodQR
-	default:
-		return ReconciliationMethodCash
-	}
+func shiftPaymentTotalsFor(db *gorm.DB, shiftID uint) ([]paymentTotal, error) {
+	var totals []paymentTotal
+	err := db.Model(&sales.Payment{}).
+		Select("payments.method, COALESCE(SUM(payments.amount), 0) AS total").
+		Joins("JOIN sales ON sales.id = payments.sale_id").
+		Where("sales.shift_id = ? AND sales.status IN ?", shiftID, settledSaleStatuses).
+		Group("payments.method").Scan(&totals).Error
+	return totals, err
 }
 
 // GetShiftSummary backs `GET /shifts/:id/summary`. Printable summary
@@ -351,33 +268,23 @@ func (r *RepositoryImpl) GetShiftSummary(ctx context.Context, scope AccessScope,
 		return nil, err
 	}
 
-	type methodTotal struct {
-		Method sales.PaymentMethod
-		Total  decimal.Decimal
-	}
-	var methodTotals []methodTotal
-	if err := db.Model(&sales.Payment{}).
-		Select("payments.method, COALESCE(SUM(payments.amount), 0) AS total").
-		Joins("JOIN sales ON sales.id = payments.sale_id").
-		Where("sales.shift_id = ? AND sales.status IN ?", shift.ID, settledSaleStatuses).
-		Group("payments.method").
-		Scan(&methodTotals).Error; err != nil {
+	methodTotals, err := shiftPaymentTotalsFor(db, shift.ID)
+	if err != nil {
 		return nil, err
 	}
-	paymentTotals := make(map[string]decimal.Decimal, len(methodTotals))
-	expectedCash := shift.OpeningCash
-	for _, total := range methodTotals {
-		paymentTotals[string(total.Method)] = total.Total
-		if total.Method == sales.PaymentMethodCash {
-			expectedCash = expectedCash.Add(total.Total)
-		}
-	}
-
 	adjustments, err := shiftCashAdjustmentsFor(db, shift.ID)
 	if err != nil {
 		return nil, err
 	}
-	expectedCash = expectedCash.Add(adjustments.net())
+	expected, err := expectedBalances(shift.OpeningCash, methodTotals, adjustments)
+	if err != nil {
+		return nil, err
+	}
+	paymentTotals := make(map[string]decimal.Decimal, len(methodTotals))
+	for _, total := range methodTotals {
+		paymentTotals[string(total.Method)] = total.Total
+	}
+	expectedCash := expected[ReconciliationMethodCash]
 
 	reconciliations, err := r.ListShiftReconciliations(ctx, scope, shift.ID)
 	if err != nil {

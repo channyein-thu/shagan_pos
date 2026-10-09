@@ -148,13 +148,16 @@ type Exchange struct {
 
 // ExchangeItem maps to the "Exchange_items" table in the ERD.
 type ExchangeItem struct {
-	ID         uint            `gorm:"primaryKey;autoIncrement" json:"id"`
-	ExchangeID uint            `gorm:"index;not null" json:"exchange_id"`
-	Direction  Direction       `gorm:"type:varchar(30);not null" json:"direction"` // one of Direction* constants below (TODO: confirm real values)
-	SaleItemID *uint           `gorm:"index" json:"sale_item_id"`
-	ProductID  *uint           `gorm:"index" json:"product_id"`
-	Qty        int             `gorm:"not null" json:"qty"`
-	UnitPrice  decimal.Decimal `gorm:"type:decimal(10,2);not null" json:"unit_price"`
+	ID         uint      `gorm:"primaryKey;autoIncrement" json:"id"`
+	ExchangeID uint      `gorm:"index;not null" json:"exchange_id"`
+	Direction  Direction `gorm:"type:varchar(30);not null" json:"direction"` // one of Direction* constants below (TODO: confirm real values)
+	SaleItemID *uint     `gorm:"index" json:"sale_item_id"`
+	ProductID  *uint     `gorm:"index" json:"product_id"`
+	Qty        int       `gorm:"not null" json:"qty"`
+	// UnitPrice is a rounded per-unit snapshot. Incoming credit is allocated
+	// from the original line total by the shared evaluator; NetDifference
+	// is authoritative and may differ by cents from summed Qty * UnitPrice.
+	UnitPrice decimal.Decimal `gorm:"type:decimal(10,2);not null" json:"unit_price"`
 	// Condition is the state an "in" line came back in; only sellable goes
 	// back on the shelf. Nil for "out" lines and for rows from before this
 	// column existed (those were all restocked, i.e. sellable).

@@ -6,7 +6,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 
 	"shagan_pos/internal/common"
@@ -94,19 +93,7 @@ func (s *Service) CreateStockAdjustment(ctx context.Context, orgID uint, actorID
 
 	var adjustment StockAdjustment
 	err = s.db.Transaction(func(tx *gorm.DB) error {
-		newQty, err := s.applyStockDelta(tx, in.ProductID, in.BranchID, in.Delta)
-		if err != nil {
-			return err
-		}
-
-		if in.UnitCost != nil {
-			currentQty := newQty - in.Delta
-			newCost := weightedAverageCost(currentQty, product.CostPrice, in.Delta, *in.UnitCost)
-			if err := s.products.UpdateProduct(tx, in.ProductID, map[string]any{"cost_price": newCost}); err != nil {
-				return err
-			}
-		}
-
+		// Create the reference first; it rolls back if movement or valuation fails.
 		adjustment = StockAdjustment{
 			ProductID: in.ProductID,
 			BranchID:  in.BranchID,
@@ -118,66 +105,28 @@ func (s *Service) CreateStockAdjustment(ctx context.Context, orgID uint, actorID
 			return err
 		}
 
-		return s.repo.CreateInventoryLedgerEntry(tx, &InventoryLedger{
-			OrgID:         orgID,
-			ProductID:     in.ProductID,
-			BranchID:      in.BranchID,
-			Type:          LedgerEntryTypeAdjustment,
-			Qty:           in.Delta,
-			BalanceAfter:  newQty,
-			ActorID:       &actorID,
+		newQty, err := ApplyMovement(tx, s.repo, InventoryLedger{
+			OrgID: orgID, ProductID: in.ProductID, BranchID: in.BranchID,
+			Type: LedgerEntryTypeAdjustment, Qty: in.Delta, ActorID: &actorID,
 			ReferenceType: ReferenceTypeAdjustment,
 			ReferenceID:   strconv.FormatUint(uint64(adjustment.ID), 10),
-		})
+		}, RejectNegativeStock)
+		if err != nil {
+			return err
+		}
+		if in.UnitCost != nil {
+			currentQty := newQty - in.Delta
+			newCost := WeightedAverageCost(currentQty, product.CostPrice, in.Delta, *in.UnitCost)
+			if err := s.products.UpdateProduct(tx, in.ProductID, map[string]any{"cost_price": newCost}); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
 	return &adjustment, nil
-}
-
-// applyStockDelta is the shared find-or-create-then-adjust step behind both
-// CreateStockAdjustment and UpdateStockTransfer's completion path -
-// resolves the current qty (0 if no StockLevel row exists yet for this
-// product/branch pair), applies delta, and persists the new value. Returns
-// common.ConflictError if applying delta would take qty negative - stock
-// can never go below zero from a movement this domain controls (see
-// docs/WORKFLOWS.md's stock-decrement rule).
-func (s *Service) applyStockDelta(tx *gorm.DB, productID uint, branchID uint, delta int) (int, error) {
-	level, err := s.repo.GetStockLevel(tx, productID, branchID)
-	if err != nil {
-		return 0, err
-	}
-	current := 0
-	if level != nil {
-		current = level.Qty
-	}
-	newQty := current + delta
-	if newQty < 0 {
-		return 0, common.ConflictError("insufficient stock for this movement")
-	}
-	if level == nil {
-		if err := s.repo.CreateStockLevel(tx, &StockLevel{ProductID: productID, BranchID: branchID, Qty: newQty}); err != nil {
-			return 0, err
-		}
-	} else if err := s.repo.UpdateStockLevelQty(tx, level.ID, newQty); err != nil {
-		return 0, err
-	}
-	return newQty, nil
-}
-
-// weightedAverageCost blends receivedQty units at receivedUnitCost into a
-// product's existing cost basis, weighted by currentQty - see
-// procurement.Service's own copy of this exact function for the full doc
-// (same small-helper-duplicated-per-domain shape as applyStockDelta).
-func weightedAverageCost(currentQty int, currentCost decimal.Decimal, receivedQty int, receivedUnitCost decimal.Decimal) decimal.Decimal {
-	if currentQty <= 0 {
-		return receivedUnitCost
-	}
-	existingValue := currentCost.Mul(decimal.NewFromInt(int64(currentQty)))
-	receivedValue := receivedUnitCost.Mul(decimal.NewFromInt(int64(receivedQty)))
-	totalQty := decimal.NewFromInt(int64(currentQty + receivedQty))
-	return existingValue.Add(receivedValue).Div(totalQty).Round(2)
 }
 
 func (s *Service) ListStockTransfers(ctx context.Context, orgID uint, branchID *uint) ([]StockTransferResult, error) {
@@ -231,7 +180,7 @@ func newStockTransferResult(t StockTransfer, lines []StockTransferItem) StockTra
 // before it, so it can't race with another movement against the same
 // StockLevel row. No stock actually moves here though; only
 // UpdateStockTransfer completing it does - this is a soft, point-in-time
-// sanity check, not the real enforcement (applyStockDelta's own
+// sanity check, not the real enforcement (ApplyMovement's own
 // negative-qty guard is what protects completion time, since stock can
 // still change while a transfer sits pending).
 func (s *Service) CreateStockTransfer(ctx context.Context, orgID uint, actorID uint, in CreateStockTransferRequest) (*StockTransferResult, error) {
@@ -324,27 +273,19 @@ func (s *Service) UpdateStockTransfer(ctx context.Context, orgID uint, id uint, 
 
 		if in.Status == TransferStatusCompleted {
 			for _, item := range items {
-				newFromQty, err := s.applyStockDelta(tx, item.ProductID, transfer.FromBranch, -item.Qty)
-				if err != nil {
-					return err
-				}
-				newToQty, err := s.applyStockDelta(tx, item.ProductID, transfer.ToBranch, item.Qty)
-				if err != nil {
-					return err
-				}
 				transferRef := strconv.FormatUint(uint64(transfer.ID), 10)
-				if err := s.repo.CreateInventoryLedgerEntry(tx, &InventoryLedger{
+				if _, err := ApplyMovement(tx, s.repo, InventoryLedger{
 					OrgID: orgID, ProductID: item.ProductID, BranchID: transfer.FromBranch,
-					Type: LedgerEntryTypeTransferOut, Qty: -item.Qty, BalanceAfter: newFromQty,
+					Type: LedgerEntryTypeTransferOut, Qty: -item.Qty,
 					ActorID: &transfer.ActorID, ReferenceType: ReferenceTypeStockTransfer, ReferenceID: transferRef,
-				}); err != nil {
+				}, RejectNegativeStock); err != nil {
 					return err
 				}
-				if err := s.repo.CreateInventoryLedgerEntry(tx, &InventoryLedger{
+				if _, err := ApplyMovement(tx, s.repo, InventoryLedger{
 					OrgID: orgID, ProductID: item.ProductID, BranchID: transfer.ToBranch,
-					Type: LedgerEntryTypeTransferIn, Qty: item.Qty, BalanceAfter: newToQty,
+					Type: LedgerEntryTypeTransferIn, Qty: item.Qty,
 					ActorID: &transfer.ActorID, ReferenceType: ReferenceTypeStockTransfer, ReferenceID: transferRef,
-				}); err != nil {
+				}, RejectNegativeStock); err != nil {
 					return err
 				}
 			}

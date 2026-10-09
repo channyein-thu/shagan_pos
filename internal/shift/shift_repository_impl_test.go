@@ -429,6 +429,31 @@ func TestRepository_CloseShift_ClosesAtomicallyAndWritesPaymentSnapshot(t *testi
 	}
 }
 
+func TestRepository_UnknownPaymentRejectedByCloseAndSummary(t *testing.T) {
+	db := newOpenShiftTestDB(t)
+	branch, staff, device := seedActiveOpenShiftResources(t, db, 7)
+	shift := Shift{BranchID: branch.ID, StaffID: staff.ID, DeviceID: device.ID,
+		OpenedAt: time.Now().UTC(), OpeningCash: decimal.NewFromInt(100), Status: ShiftStatusOpen}
+	require.NoError(t, db.Create(&shift).Error)
+	sale := sales.Sale{ID: uuid.New(), OrgID: 7, BranchID: branch.ID, ShiftID: shift.ID,
+		StaffID: staff.ID, DeviceID: device.ID, Status: sales.SaleStatusCompleted}
+	require.NoError(t, db.Create(&sale).Error)
+	require.NoError(t, db.Create(&sales.Payment{SaleID: sale.ID, Method: sales.PaymentMethod("card"), Amount: decimal.NewFromInt(10)}).Error)
+	repo := NewRepository(db)
+	_, err := repo.GetShiftSummary(context.Background(), AccessScope{OrgID: 7}, shift.ID)
+	require.ErrorContains(t, err, "unsupported payment method")
+	_, err = repo.CloseShift(context.Background(), AccessScope{OrgID: 7}, shift.ID, time.Now().UTC(), staff.ID,
+		CloseShiftRequest{ClosingCash: decimal.NewFromInt(110)})
+	require.ErrorContains(t, err, "unsupported payment method")
+	var stored Shift
+	require.NoError(t, db.First(&stored, shift.ID).Error)
+	require.Equal(t, ShiftStatusOpen, stored.Status)
+	require.Nil(t, stored.ClosedAt)
+	var count int64
+	require.NoError(t, db.Model(&ShiftReconciliation{}).Where("shift_id = ?", shift.ID).Count(&count).Error)
+	require.Zero(t, count)
+}
+
 func TestRepository_CloseShift_WithNoSalesStillReconcilesOpeningCash(t *testing.T) {
 	db := newOpenShiftTestDB(t)
 	branch, staff, device := seedActiveOpenShiftResources(t, db, 7)

@@ -297,8 +297,9 @@ func TestService_CreateStockAdjustment_InsufficientStock_ReturnsConflict(t *test
 	branches.EXPECT().GetBranch(mock.Anything, uint(7), uint(5)).Return(&identity.Branch{ID: 5, OrgID: 7}, nil).Once()
 	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7}, nil).Once()
 	repo.EXPECT().GetStockLevel(mock.Anything, uint(1), uint(5)).Return(&StockLevel{ID: 50, ProductID: 1, BranchID: 5, Qty: 2}, nil).Once()
-	// CreateStockAdjustment/CreateInventoryLedgerEntry must never be called -
-	// the movement is rejected before either write happens.
+	// The adjustment supplies the ledger reference ID before movement. Its
+	// insert rolls back with the transaction when stock is insufficient.
+	repo.EXPECT().CreateStockAdjustment(mock.Anything, mock.Anything).Return(nil).Once()
 
 	_, err := svc.CreateStockAdjustment(context.Background(), 7, 42, CreateStockAdjustmentRequest{BranchID: 5, ProductID: 1, Delta: -5, Reason: "damaged"})
 	require.Error(t, err)

@@ -179,20 +179,21 @@ func (s *Service) CreateSale(ctx context.Context, orgID uint, branchID uint, act
 		if err := s.repo.CreatePayments(tx, payments); err != nil {
 			return err
 		}
+		stockPolicy := inventory.RejectNegativeStock
+		if allowNegativeStock {
+			stockPolicy = inventory.AllowNegativeStock
+		}
 		for productID, qty := range qtyByProduct {
-			newQty, err := s.applyStockDelta(tx, productID, branchID, -qty, allowNegativeStock)
+			newQty, err := inventory.ApplyMovement(tx, s.inventory, inventory.InventoryLedger{
+				OrgID: orgID, ProductID: productID, BranchID: branchID,
+				Type: inventory.LedgerEntryTypeSale, Qty: -qty,
+				ActorID: &actor.StaffID, ReferenceType: inventory.ReferenceTypeSale, ReferenceID: sale.ID.String(),
+			}, stockPolicy)
 			if err != nil {
 				return err
 			}
 			if newQty < 0 {
 				negativeEvents = append(negativeEvents, NegativeStockEvent{ProductID: productID, BranchID: branchID, ResultingQty: newQty})
-			}
-			if err := s.inventory.CreateInventoryLedgerEntry(tx, &inventory.InventoryLedger{
-				OrgID: orgID, ProductID: productID, BranchID: branchID,
-				Type: inventory.LedgerEntryTypeSale, Qty: -qty, BalanceAfter: newQty,
-				ActorID: &actor.StaffID, ReferenceType: inventory.ReferenceTypeSale, ReferenceID: sale.ID.String(),
-			}); err != nil {
-				return err
 			}
 		}
 		if itemDiscountTotal.IsPositive() {
@@ -237,35 +238,6 @@ func (s *Service) replay(existing *Sale, branchID, deviceID uint) (*Sale, []Nega
 func isNotFound(err error) bool {
 	var restErr common.RestError
 	return errors.As(err, &restErr) && restErr.Status == http.StatusNotFound
-}
-
-// applyStockDelta is sales' own copy of the get-or-create-then-adjust
-// pattern behind every stock movement in this codebase (same shape as
-// inventory.Service/procurement.Service's own copies) - resolves the
-// current qty (0 if no StockLevel row exists yet for this product/branch
-// pair), applies delta, and persists the new value. Returns
-// common.ConflictError if applying delta would take qty negative.
-func (s *Service) applyStockDelta(tx *gorm.DB, productID uint, branchID uint, delta int, allowNegative bool) (int, error) {
-	level, err := s.inventory.GetStockLevel(tx, productID, branchID)
-	if err != nil {
-		return 0, err
-	}
-	current := 0
-	if level != nil {
-		current = level.Qty
-	}
-	newQty := current + delta
-	if newQty < 0 && !allowNegative {
-		return 0, common.ConflictError("insufficient stock for this movement")
-	}
-	if level == nil {
-		if err := s.inventory.CreateStockLevel(tx, &inventory.StockLevel{ProductID: productID, BranchID: branchID, Qty: newQty}); err != nil {
-			return 0, err
-		}
-	} else if err := s.inventory.UpdateStockLevelQty(tx, level.ID, newQty); err != nil {
-		return 0, err
-	}
-	return newQty, nil
 }
 
 func (s *Service) ListSales(ctx context.Context, orgID uint, branchID *uint, from, to *time.Time, page, pageSize int) (*SalesPage, error) {

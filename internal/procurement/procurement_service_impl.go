@@ -312,47 +312,20 @@ func (s *Service) CreateGoodsReceipt(ctx context.Context, orgID uint, poID uint,
 				continue
 			}
 
-			level, err := s.stock.GetStockLevel(tx, r.poItem.ProductID, po.BranchID)
+			// A positive receipt may partially replenish stock made negative
+			// by offline sales, without immediately bringing it above zero.
+			newQty, err := inventory.ApplyMovement(tx, s.stock, inventory.InventoryLedger{
+				OrgID: orgID, ProductID: r.poItem.ProductID, BranchID: po.BranchID,
+				Type: inventory.LedgerEntryTypePurchaseReceipt, Qty: r.req.ReceivedQty,
+				ActorID: &receivedBy, ReferenceType: inventory.ReferenceTypeGoodsReceipt,
+				ReferenceID: strconv.FormatUint(uint64(receipt.ID), 10),
+			}, inventory.AllowNegativeStock)
 			if err != nil {
 				return err
 			}
-
-			var newQty int
-			var currentQty int
-			if level == nil {
-				newQty = r.req.ReceivedQty
-				currentQty = 0
-				if err := s.stock.CreateStockLevel(tx, &inventory.StockLevel{
-					ProductID: r.poItem.ProductID,
-					BranchID:  po.BranchID,
-					Qty:       newQty,
-				}); err != nil {
-					return err
-				}
-			} else {
-				currentQty = level.Qty
-				newQty = level.Qty + r.req.ReceivedQty
-				if err := s.stock.UpdateStockLevelQty(tx, level.ID, newQty); err != nil {
-					return err
-				}
-			}
-
-			newCost := weightedAverageCost(currentQty, r.costPriceBefore, r.req.ReceivedQty, r.poItem.UnitCost)
+			currentQty := newQty - r.req.ReceivedQty
+			newCost := inventory.WeightedAverageCost(currentQty, r.costPriceBefore, r.req.ReceivedQty, r.poItem.UnitCost)
 			if err := s.products.UpdateProduct(tx, r.poItem.ProductID, map[string]any{"cost_price": newCost}); err != nil {
-				return err
-			}
-
-			if err := s.stock.CreateInventoryLedgerEntry(tx, &inventory.InventoryLedger{
-				OrgID:         orgID,
-				ProductID:     r.poItem.ProductID,
-				BranchID:      po.BranchID,
-				Type:          inventory.LedgerEntryTypePurchaseReceipt,
-				Qty:           r.req.ReceivedQty,
-				BalanceAfter:  newQty,
-				ActorID:       &receivedBy,
-				ReferenceType: inventory.ReferenceTypeGoodsReceipt,
-				ReferenceID:   strconv.FormatUint(uint64(receipt.ID), 10),
-			}); err != nil {
 				return err
 			}
 		}
@@ -369,23 +342,4 @@ func (s *Service) CreateGoodsReceipt(ctx context.Context, orgID uint, poID uint,
 	}
 
 	return result, nil
-}
-
-// weightedAverageCost blends receivedQty units at receivedUnitCost into a
-// product's existing cost basis, weighted by currentQty - the product's own
-// on-hand qty at this specific branch immediately before this movement (not
-// summed across every branch it might also exist at via a transfer - see
-// catalog.Product.CostPrice's own doc for why that's an accepted
-// simplification). currentQty <= 0 (nothing on hand yet) means there's
-// nothing to blend with - the new cost is just receivedUnitCost itself.
-// Same small-helper-duplicated-per-domain shape as applyStockDelta - see
-// inventory.Service's own copy of this exact function.
-func weightedAverageCost(currentQty int, currentCost decimal.Decimal, receivedQty int, receivedUnitCost decimal.Decimal) decimal.Decimal {
-	if currentQty <= 0 {
-		return receivedUnitCost
-	}
-	existingValue := currentCost.Mul(decimal.NewFromInt(int64(currentQty)))
-	receivedValue := receivedUnitCost.Mul(decimal.NewFromInt(int64(receivedQty)))
-	totalQty := decimal.NewFromInt(int64(currentQty + receivedQty))
-	return existingValue.Add(receivedValue).Div(totalQty).Round(2)
 }
