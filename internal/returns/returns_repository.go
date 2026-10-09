@@ -5,6 +5,8 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+
+	"shagan_pos/internal/sales"
 )
 
 // Repository defines the returns domain's persistence operations. Void/
@@ -52,4 +54,22 @@ type Repository interface {
 	// GetExchange returns common.NotFoundError if id doesn't exist or its
 	// sale isn't in branchIDs - same reasoning as GetReturn.
 	GetExchange(ctx context.Context, branchIDs []uint, id uint) (*Exchange, error)
+	// CurrentShiftID resolves the open shift of the till behind userID (a
+	// paired POS account): its own device's most recent open shift, or nil
+	// when userID isn't a paired POS account in orgID or its device has no
+	// open shift. Nil is a normal answer, not an error - the caller decides
+	// what a return/exchange with no shift means. Same lookup as
+	// shift.Repository.GetCurrentShift, done here by table name rather than
+	// by importing shift (shift's own close/summary logic reads this
+	// domain's tables, so importing it back would be a cycle) - same
+	// cross-domain-via-table-name approach as sales.RequireOpenShift.
+	CurrentShiftID(db *gorm.DB, orgID uint, userID uint) (*uint, error)
+	// ReturnedQtyBySaleItems and ReturnSummaries are what the sales receipt
+	// and history read (sales.ReturnActivityReader). The first is the batch
+	// form of ReturnedQtyForSaleItem + ExchangedInQtyForSaleItem: per
+	// sale_item_id, qty on return lines plus qty on exchange "in" lines,
+	// absent when nothing came back. The second is keyed by sale ID and
+	// absent for a sale with no return or exchange.
+	ReturnedQtyBySaleItems(ctx context.Context, saleItemIDs []uint) (map[uint]int, error)
+	ReturnSummaries(ctx context.Context, saleIDs []uuid.UUID) (map[uuid.UUID]sales.ReturnSummary, error)
 }

@@ -46,11 +46,13 @@ func Run(db *gorm.DB) error {
 
 	// grants is the v1 role -> permission matrix. staff gets POS access only;
 	// super_staff additionally covers till operations and discounts;
-	// manager additionally covers backoffice access and void/return approval.
+	// manager additionally covers backoffice access, void/return/exchange
+	// approval, and the no-sale drawer (a manager closing a shift needs it to
+	// count cash, same as super_staff).
 	grants := map[string][]string{
 		"staff":       {"access_pos_portal"},
 		"super_staff": {"access_pos_portal", "open_drawer_no_sale", "apply_manual_discount"},
-		"manager":     {"access_pos_portal", "access_backoffice", "apply_manual_discount", "approve_void", "approve_return", "approve_exchange"},
+		"manager":     {"access_pos_portal", "access_backoffice", "open_drawer_no_sale", "apply_manual_discount", "approve_void", "approve_return", "approve_exchange"},
 	}
 	for roleCode, permCodes := range grants {
 		role := roles[roleCode]

@@ -18,6 +18,7 @@ import (
 	"gorm.io/gorm/logger"
 
 	"shagan_pos/internal/identity"
+	"shagan_pos/internal/returns"
 	"shagan_pos/internal/sales"
 )
 
@@ -616,7 +617,7 @@ func newOpenShiftTestDB(t *testing.T) *gorm.DB {
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
 		&identity.Branch{}, &identity.Staff{}, &identity.Device{}, &identity.User{},
-		&sales.Sale{}, &sales.Payment{},
+		&sales.Sale{}, &sales.Payment{}, &returns.Return{}, &returns.Exchange{},
 		&Shift{}, &ShiftReconciliation{}, &DrawerEvent{}, &Expense{},
 	))
 	return db
@@ -711,6 +712,177 @@ func TestRepository_GetShiftSummary_ReturnsTenantScopedTotals(t *testing.T) {
 
 	_, err = NewRepository(db).GetShiftSummary(context.Background(), AccessScope{OrgID: 99}, shift.ID)
 	requireRestErrorStatus(t, err, http.StatusNotFound)
+}
+
+func seedShiftReturn(t *testing.T, db *gorm.DB, shiftID *uint, method returns.RefundMethod, refund string) {
+	t.Helper()
+	require.NoError(t, db.Create(&returns.Return{
+		SaleID: uuid.New(), ReasonCode: returns.ReturnReasonCode("customer_changed_mind"),
+		RefundMethod: method, RefundTotal: decimal.RequireFromString(refund),
+		ApprovedBy: 1, ShiftID: shiftID,
+	}).Error)
+}
+
+func seedShiftExchange(t *testing.T, db *gorm.DB, shiftID *uint, method *returns.ExchangeMethod, net string) {
+	t.Helper()
+	require.NoError(t, db.Create(&returns.Exchange{
+		SaleID: uuid.New(), NetDifference: decimal.RequireFromString(net),
+		ApprovedBy: 1, Method: method, ShiftID: shiftID,
+	}).Error)
+}
+
+func TestRepository_GetShiftSummary_CashRefundsReduceExpectedCash(t *testing.T) {
+	db := newOpenShiftTestDB(t)
+	branch, staff, device := seedActiveOpenShiftResources(t, db, 7)
+	shift := seedShift(t, db, branch.ID, staff.ID, device.ID, ShiftStatusOpen)
+	other := seedShift(t, db, branch.ID, staff.ID, device.ID, ShiftStatusClosed)
+	sale := sales.Sale{
+		ID: uuid.New(), OrgID: 7, BranchID: branch.ID, ShiftID: shift.ID,
+		StaffID: staff.ID, DeviceID: device.ID, Total: decimal.NewFromInt(80),
+		Status: sales.SaleStatusCompleted,
+	}
+	require.NoError(t, db.Create(&sale).Error)
+	require.NoError(t, db.Create(&sales.Payment{SaleID: sale.ID, Method: sales.PaymentMethodCash, Amount: decimal.NewFromInt(80)}).Error)
+	seedShiftReturn(t, db, &shift.ID, returns.RefundMethodCash, "12.50")
+	seedShiftReturn(t, db, &shift.ID, returns.RefundMethodCash, "7.50")
+	seedShiftReturn(t, db, &shift.ID, returns.RefundMethodQR, "30")    // QR refund never touches the drawer
+	seedShiftReturn(t, db, &other.ID, returns.RefundMethodCash, "999") // another shift's refund
+	seedShiftReturn(t, db, nil, returns.RefundMethodCash, "999")       // refund recorded with no shift
+
+	got, err := NewRepository(db).GetShiftSummary(context.Background(), AccessScope{OrgID: 7}, shift.ID)
+
+	require.NoError(t, err)
+	require.True(t, decimal.NewFromInt(20).Equal(got["cash_refunds"].(decimal.Decimal)))
+	// opening 100 + cash sale 80 - cash refunds 20
+	require.True(t, decimal.NewFromInt(160).Equal(got["expected_cash"].(decimal.Decimal)))
+	require.True(t, got["exchange_cash_in"].(decimal.Decimal).IsZero())
+	require.True(t, got["exchange_cash_out"].(decimal.Decimal).IsZero())
+}
+
+func TestRepository_GetShiftSummary_CashExchangeDifferencesMoveExpectedCash(t *testing.T) {
+	db := newOpenShiftTestDB(t)
+	branch, staff, device := seedActiveOpenShiftResources(t, db, 7)
+	shift := seedShift(t, db, branch.ID, staff.ID, device.ID, ShiftStatusOpen)
+	other := seedShift(t, db, branch.ID, staff.ID, device.ID, ShiftStatusClosed)
+	cash, qr := returns.ExchangeMethodCash, returns.ExchangeMethodQR
+	seedShiftExchange(t, db, &shift.ID, &cash, "15")    // customer paid 15 extra in cash
+	seedShiftExchange(t, db, &shift.ID, &cash, "-4.25") // customer was handed 4.25 cash back
+	seedShiftExchange(t, db, &shift.ID, &qr, "40")      // QR difference never touches the drawer
+	seedShiftExchange(t, db, &shift.ID, nil, "0")       // even swap, no method
+	seedShiftExchange(t, db, &other.ID, &cash, "500")   // another shift's exchange
+	seedShiftExchange(t, db, nil, &cash, "500")         // exchange recorded with no shift
+
+	got, err := NewRepository(db).GetShiftSummary(context.Background(), AccessScope{OrgID: 7}, shift.ID)
+
+	require.NoError(t, err)
+	require.True(t, decimal.NewFromInt(15).Equal(got["exchange_cash_in"].(decimal.Decimal)))
+	require.True(t, decimal.RequireFromString("4.25").Equal(got["exchange_cash_out"].(decimal.Decimal)))
+	require.True(t, got["cash_refunds"].(decimal.Decimal).IsZero())
+	// opening 100 + 15 - 4.25
+	require.True(t, decimal.RequireFromString("110.75").Equal(got["expected_cash"].(decimal.Decimal)))
+}
+
+func TestRepository_GetShiftSummary_NoReturnsOrExchanges_ReportsZeroAdjustments(t *testing.T) {
+	db := newOpenShiftTestDB(t)
+	branch, staff, device := seedActiveOpenShiftResources(t, db, 7)
+	shift := seedShift(t, db, branch.ID, staff.ID, device.ID, ShiftStatusOpen)
+
+	got, err := NewRepository(db).GetShiftSummary(context.Background(), AccessScope{OrgID: 7}, shift.ID)
+
+	require.NoError(t, err)
+	for _, key := range []string{"cash_refunds", "exchange_cash_in", "exchange_cash_out"} {
+		value, ok := got[key].(decimal.Decimal)
+		require.True(t, ok, key)
+		require.True(t, value.IsZero(), key)
+	}
+	require.True(t, decimal.NewFromInt(100).Equal(got["expected_cash"].(decimal.Decimal)))
+}
+
+func TestRepository_CloseShift_ExpectedCashIncludesCashRefundsAndExchanges(t *testing.T) {
+	db := newOpenShiftTestDB(t)
+	branch, staff, device := seedActiveOpenShiftResources(t, db, 7)
+	shift := seedShift(t, db, branch.ID, staff.ID, device.ID, ShiftStatusOpen)
+	cash, qr := returns.ExchangeMethodCash, returns.ExchangeMethodQR
+	seedShiftReturn(t, db, &shift.ID, returns.RefundMethodCash, "20")
+	seedShiftReturn(t, db, &shift.ID, returns.RefundMethodQR, "30")
+	seedShiftExchange(t, db, &shift.ID, &cash, "15")
+	seedShiftExchange(t, db, &shift.ID, &cash, "-4.25")
+	seedShiftExchange(t, db, &shift.ID, &qr, "40")
+
+	// opening 100 - 20 refund + 15 - 4.25 = 90.75
+	got, err := NewRepository(db).CloseShift(context.Background(), AccessScope{OrgID: 7}, shift.ID, time.Now().UTC(), staff.ID,
+		CloseShiftRequest{ClosingCash: decimal.RequireFromString("90.75")})
+
+	require.NoError(t, err)
+	require.Equal(t, ShiftStatusClosed, got.Status)
+	var reconciliation ShiftReconciliation
+	require.NoError(t, db.Where("shift_id = ? AND method = ?", shift.ID, ReconciliationMethodCash).First(&reconciliation).Error)
+	require.True(t, decimal.RequireFromString("90.75").Equal(reconciliation.Expected))
+	require.True(t, reconciliation.Difference.IsZero())
+}
+
+func TestRepository_CloseShift_CountingTillWithoutRefundAdjustmentNeedsReason(t *testing.T) {
+	db := newOpenShiftTestDB(t)
+	branch, staff, device := seedActiveOpenShiftResources(t, db, 7)
+	shift := seedShift(t, db, branch.ID, staff.ID, device.ID, ShiftStatusOpen)
+	seedShiftReturn(t, db, &shift.ID, returns.RefundMethodCash, "20")
+
+	// The drawer still holds the full 100: 20 more than the refund-adjusted 80 expected.
+	_, err := NewRepository(db).CloseShift(context.Background(), AccessScope{OrgID: 7}, shift.ID, time.Now().UTC(), staff.ID,
+		CloseShiftRequest{ClosingCash: decimal.NewFromInt(100)})
+
+	requireRestErrorStatus(t, err, http.StatusBadRequest)
+	var stored Shift
+	require.NoError(t, db.First(&stored, shift.ID).Error)
+	require.Equal(t, ShiftStatusOpen, stored.Status)
+}
+
+// A fully returned sale is "refunded", but its customer did pay the till
+// during this shift. If its payments dropped out while the cash refund is
+// still subtracted, expected cash would be short by the refund.
+func seedRefundedCashSale(t *testing.T, db *gorm.DB, branchID, shiftID, staffID, deviceID uint, amount string) {
+	t.Helper()
+	sale := sales.Sale{
+		ID: uuid.New(), OrgID: 7, BranchID: branchID, ShiftID: shiftID, StaffID: staffID, DeviceID: deviceID,
+		Total: decimal.RequireFromString(amount), Status: sales.SaleStatusRefunded,
+	}
+	require.NoError(t, db.Create(&sale).Error)
+	require.NoError(t, db.Create(&sales.Payment{SaleID: sale.ID, Method: sales.PaymentMethodCash, Amount: decimal.RequireFromString(amount)}).Error)
+}
+
+func TestRepository_GetShiftSummary_RefundedSaleStillCountsItsPayments(t *testing.T) {
+	db := newOpenShiftTestDB(t)
+	branch, staff, device := seedActiveOpenShiftResources(t, db, 7)
+	shift := seedShift(t, db, branch.ID, staff.ID, device.ID, ShiftStatusOpen)
+	seedRefundedCashSale(t, db, branch.ID, shift.ID, staff.ID, device.ID, "50")
+	seedShiftReturn(t, db, &shift.ID, returns.RefundMethodCash, "50")
+
+	got, err := NewRepository(db).GetShiftSummary(context.Background(), AccessScope{OrgID: 7}, shift.ID)
+
+	require.NoError(t, err)
+	require.Equal(t, int64(1), got["sales_count"])
+	require.True(t, decimal.NewFromInt(50).Equal(got["sales_total"].(decimal.Decimal)))
+	require.True(t, decimal.NewFromInt(50).Equal(got["payment_totals"].(map[string]decimal.Decimal)[string(sales.PaymentMethodCash)]))
+	// opening 100 + cash sale 50 - cash refund 50
+	require.True(t, decimal.NewFromInt(100).Equal(got["expected_cash"].(decimal.Decimal)))
+}
+
+func TestRepository_CloseShift_RefundedSaleStillCountsItsPayments(t *testing.T) {
+	db := newOpenShiftTestDB(t)
+	branch, staff, device := seedActiveOpenShiftResources(t, db, 7)
+	shift := seedShift(t, db, branch.ID, staff.ID, device.ID, ShiftStatusOpen)
+	seedRefundedCashSale(t, db, branch.ID, shift.ID, staff.ID, device.ID, "50")
+	seedShiftReturn(t, db, &shift.ID, returns.RefundMethodCash, "50")
+
+	// The drawer holds the original 100: the customer's 50 came in and went back out.
+	_, err := NewRepository(db).CloseShift(context.Background(), AccessScope{OrgID: 7}, shift.ID, time.Now().UTC(), staff.ID,
+		CloseShiftRequest{ClosingCash: decimal.NewFromInt(100)})
+
+	require.NoError(t, err)
+	var reconciliation ShiftReconciliation
+	require.NoError(t, db.Where("shift_id = ? AND method = ?", shift.ID, ReconciliationMethodCash).First(&reconciliation).Error)
+	require.True(t, decimal.NewFromInt(100).Equal(reconciliation.Expected))
+	require.True(t, reconciliation.Difference.IsZero())
 }
 
 func TestRepository_ListShiftReconciliations_EnforcesBranchScope(t *testing.T) {

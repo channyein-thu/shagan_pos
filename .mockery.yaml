@@ -83,6 +83,9 @@ packages:
       OrganizationLookup:
         config:
           filename: "mock_sales_organization_lookup_test.go"
+      ReturnActivityReader:
+        config:
+          filename: "mock_sales_return_activity_reader_test.go"
   shagan_pos/internal/procurement:
     config:
       dir: "internal/procurement"

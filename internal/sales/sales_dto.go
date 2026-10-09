@@ -102,12 +102,40 @@ type SaleFilter struct {
 	PageSize int
 }
 
+// ReturnSummary is a sale's return/exchange footprint, shown on history rows
+// and the receipt so the till doesn't have to load every return and exchange
+// to find out. RefundedTotal is the sum of the sale's Returns' refunds
+// (exchanges settle a difference, not a refund, so they are not in it).
+type ReturnSummary struct {
+	HasReturn     bool            `json:"has_return"`
+	HasExchange   bool            `json:"has_exchange"`
+	RefundedTotal decimal.Decimal `json:"refunded_total"`
+}
+
+// ReceiptSale is `sale` in the receipt bundle: the Sale plus its
+// ReturnSummary, flattened into one JSON object.
+type ReceiptSale struct {
+	Sale
+	ReturnSummary
+}
+
+// ReceiptItem is one line of the receipt bundle: the SaleItem plus how much
+// of it has already come back (returned on a Return, or exchanged in) and
+// what the till may still offer. ReturnableQty = Qty - ReturnedQty, never
+// below zero.
+type ReceiptItem struct {
+	SaleItem
+	ReturnedQty   int `json:"returned_qty"`
+	ReturnableQty int `json:"returnable_qty"`
+}
+
 // SaleListItem is one row of `GET /sales`: the Sale plus how it was paid, so
 // a history screen can show the method without a receipt fetch per row.
 // PaymentMethods is every distinct method used on the sale, sorted
 // ("cash", "qr", or both for a split payment) - never null.
 type SaleListItem struct {
 	Sale
+	ReturnSummary
 	PaymentMethods []PaymentMethod `json:"payment_methods"`
 }
 

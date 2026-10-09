@@ -13,8 +13,10 @@ import (
 // hold approve_void themselves or via a manager's X-Manager-Approval-Token,
 // same reasoning as sales.CreateSaleRequest's actor handling.
 type VoidSaleRequest struct {
-	Reason      VoidReason `json:"reason" binding:"required"`
-	Explanation string     `json:"explanation" binding:"required"`
+	Reason VoidReason `json:"reason" binding:"required,oneof=customer_request price_error item_error staff_error other duplicate_transaction wrong_order incorrect_payment cashier_mistake"`
+	// Explanation is optional: the till's void screen offers fixed reasons and
+	// no free-text box. Stored as "" when omitted.
+	Explanation string `json:"explanation"`
 }
 
 // CreateReturnItemRequest is one line within CreateReturnRequest - the
@@ -26,7 +28,7 @@ type VoidSaleRequest struct {
 type CreateReturnItemRequest struct {
 	SaleItemID uint          `json:"sale_item_id" binding:"required"`
 	Qty        int           `json:"qty" binding:"required,gt=0"`
-	Condition  ItemCondition `json:"condition" binding:"required"`
+	Condition  ItemCondition `json:"condition" binding:"required,oneof=sellable damaged opened defective expired other"`
 }
 
 // CreateReturnRequest is the request body for `POST /returns`. RefundTotal
@@ -42,6 +44,7 @@ type CreateReturnRequest struct {
 	SaleID       uuid.UUID                 `json:"sale_id" binding:"required"`
 	Items        []CreateReturnItemRequest `json:"items" binding:"required,min=1,dive"`
 	ReasonCode   ReturnReasonCode          `json:"reason_code" binding:"required"`
+	Explanation  string                    `json:"explanation"` // optional free text typed at the till
 	RefundMethod RefundMethod              `json:"refund_method" binding:"required,oneof=cash qr"`
 }
 
@@ -60,6 +63,10 @@ type CreateExchangeItemRequest struct {
 	ProductID  *uint            `json:"product_id"`
 	Qty        int              `json:"qty" binding:"required,gt=0"`
 	UnitPrice  *decimal.Decimal `json:"unit_price"`
+	// Condition applies to "in" lines only (ignored for "out"). Optional:
+	// omitted means sellable, which is what every client did before it
+	// existed.
+	Condition ItemCondition `json:"condition" binding:"omitempty,oneof=sellable damaged opened defective expired other"`
 }
 
 // CreateExchangeRequest is the request body for `POST /exchanges`.
@@ -67,8 +74,13 @@ type CreateExchangeItemRequest struct {
 // never-trust-client-totals reasoning as CreateReturnRequest). ApprovedBy
 // isn't here either - same reasoning as VoidSaleRequest, checked against
 // approve_exchange. Modeled as one combined transaction (not a chained
-// Return-then-Sale) - see Service.CreateExchange's doc.
+// Return-then-Sale) - see Service.CreateExchange's doc. Method is how the
+// customer paid, or was paid, a non-zero net difference (cash or qr) -
+// required then (enforced in the service, where the difference is
+// computed), optional for an even swap. It's what Close Shift reads to
+// decide whether the difference moved cash through the drawer.
 type CreateExchangeRequest struct {
 	SaleID uuid.UUID                   `json:"sale_id" binding:"required"`
+	Method ExchangeMethod              `json:"method" binding:"omitempty,oneof=cash qr"`
 	Items  []CreateExchangeItemRequest `json:"items" binding:"required,min=1,dive"`
 }

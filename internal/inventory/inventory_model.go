@@ -29,6 +29,12 @@ const (
 	LedgerEntryTypeTransferIn      LedgerEntryType = "transfer_in"
 	LedgerEntryTypeTransferOut     LedgerEntryType = "transfer_out"
 	LedgerEntryTypePurchaseReceipt LedgerEntryType = "purchase_receipt"
+	// LedgerEntryTypeReturnWriteoff records goods that came back through a
+	// Return or an Exchange but were not restocked (any condition but
+	// sellable). Qty is always 0 - stock did not move - and BalanceAfter is the
+	// balance as it stands, so the movement is visible in the ledger without
+	// changing it.
+	LedgerEntryTypeReturnWriteoff LedgerEntryType = "return_writeoff"
 )
 
 // ReferenceType is a best-guess enum (ERD only specified "enum"; confirm real values).

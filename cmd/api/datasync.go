@@ -14,6 +14,7 @@ import (
 	"shagan_pos/internal/identity"
 	"shagan_pos/internal/inventory"
 	"shagan_pos/internal/middleware"
+	"shagan_pos/internal/returns"
 	"shagan_pos/internal/sales"
 	"shagan_pos/internal/storage"
 )
@@ -29,7 +30,7 @@ func NewSyncAPI(db *gorm.DB, store storage.Storage) *SyncAPI {
 			identity.NewRepository(db),
 			identity.NewRepository(db),
 			catalog.NewService(catalog.NewRepository(db), db, store),
-			sales.NewService(sales.NewRepository(db), inventory.NewRepository(db), catalog.NewRepository(db), audit.NewRepository(db), identity.NewRepository(db), db),
+			sales.NewService(sales.NewRepository(db), inventory.NewRepository(db), catalog.NewRepository(db), audit.NewRepository(db), identity.NewRepository(db), returns.NewRepository(db), db),
 			db,
 		),
 	}

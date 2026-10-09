@@ -133,8 +133,12 @@ func (a *ReturnsAPI) CreateReturn(c *gin.Context) {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
+	// PosUserID is the till's own bearer account - how the service finds the
+	// till's open shift to stamp on the record (see returns.Actor).
+	posUserID, _ := middleware.UserIDFromContext(c)
 	actor := returns.Actor{
-		StaffID: staffID,
+		StaffID:   staffID,
+		PosUserID: posUserID,
 		CanApprove: middleware.StaffHasPermission(c, "approve_return") ||
 			middleware.ManagerApproved(c, a.jwtSecret, "approve_return"),
 	}
@@ -201,8 +205,12 @@ func (a *ReturnsAPI) CreateExchange(c *gin.Context) {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
+	// PosUserID is the till's own bearer account - how the service finds the
+	// till's open shift to stamp on the record (see returns.Actor).
+	posUserID, _ := middleware.UserIDFromContext(c)
 	actor := returns.Actor{
-		StaffID: staffID,
+		StaffID:   staffID,
+		PosUserID: posUserID,
 		CanApprove: middleware.StaffHasPermission(c, "approve_exchange") ||
 			middleware.ManagerApproved(c, a.jwtSecret, "approve_exchange"),
 	}

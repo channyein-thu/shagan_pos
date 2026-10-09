@@ -3113,7 +3113,7 @@
                 }
               ]
             },
-            "description": "Printable summary"
+            "description": "Printable summary. expected_cash = opening cash + cash sales - cash_refunds + exchange_cash_in - exchange_cash_out (the three adjustments are returned alongside it as decimal strings; they come from this shift's Returns/Exchanges)."
           },
           "response": []
         },
@@ -3184,7 +3184,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "drawer-events"]
             },
-            "description": "Cash drawer opened, with or without a triggering sale. sale_id is optional and must be a real Sale's UUID (not an integer) when given - e.g. copy the id from a CreateSale response. Requires X-Staff-Token - the event is always attributed to whichever staff that token identifies, not a client-supplied staff_id. Omitting sale_id (opening the drawer with no sale) additionally requires the calling staff's role to grant open_drawer_no_sale (super_staff/manager, per the seeded grants - note manager does NOT have this one by default, only super_staff does) OR a valid X-Manager-Approval-Token granting it instead (enable that header and run VerifyManagerPIN with permission=open_drawer_no_sale first, as a staff member who does have it) - 403 without either. A drawer event tied to a real sale_id needs no such check."
+            "description": "Cash drawer opened, with or without a triggering sale. sale_id is optional and must be a real Sale's UUID (not an integer) when given - e.g. copy the id from a CreateSale response. Requires X-Staff-Token - the event is always attributed to whichever staff that token identifies, not a client-supplied staff_id. Omitting sale_id (opening the drawer with no sale) additionally requires the calling staff's role to grant open_drawer_no_sale (super_staff and manager, per the seeded grants - re-run go run ./cmd/seed on an existing database to add the manager grant; plain staff does not have it) OR a valid X-Manager-Approval-Token granting it instead (enable that header and run VerifyManagerPIN with permission=open_drawer_no_sale first, as a staff member who does have it, i.e. a manager or super_staff) - 403 without either. A drawer event tied to a real sale_id needs no such check."
           },
           "response": []
         },
@@ -4144,7 +4144,7 @@
                 {"key": "page_size", "value": "20", "description": "Optional, defaults to 20, capped at 100."}
               ]
             },
-            "description": "Org-scoped, newest-completed-first, paginated. Response is an envelope {sales, page, page_size, total_count} (NOT a bare array - changed 2026-10-08). Each row is the sale plus payment_methods: the distinct methods used, sorted, e.g. [\"cash\"], [\"qr\"] or [\"cash\",\"qr\"] for a split payment. A branch-bound (pos-device) token only ever sees its own branch."
+            "description": "Org-scoped, newest-completed-first, paginated. Response is an envelope {sales, page, page_size, total_count} (NOT a bare array - changed 2026-10-08). Each row is the sale plus payment_methods: the distinct methods used, sorted, e.g. [\"cash\"], [\"qr\"] or [\"cash\",\"qr\"] for a split payment. Each row also carries has_return and has_exchange (bool) and refunded_total (decimal string, the sum of the sale's return refunds, \"0\" when none) so a history screen can badge a sale without loading /returns and /exchanges. A sale whose lines have all been returned (returns only) has status \"refunded\". A branch-bound (pos-device) token only ever sees its own branch."
           },
           "response": []
         },
@@ -4196,7 +4196,7 @@
                 }
               ]
             },
-            "description": "Structured receipt data (sale + items + payments) - not printer-specific ESC/POS byte formatting, which belongs to Platform's printer integration, not here."
+            "description": "Structured receipt data (sale + items + payments) - not printer-specific ESC/POS byte formatting, which belongs to Platform's printer integration, not here. sale also carries has_return, has_exchange and refunded_total (decimal string); every item also carries returned_qty (qty on return lines plus exchange 'in' lines) and returnable_qty (qty - returned_qty, never below 0) so the till can cap its Return/Exchange steppers before asking for a manager PIN."
           },
           "response": []
         },
@@ -4222,7 +4222,7 @@
                 }
               ]
             },
-            "description": "Returns the same bundle as GetSaleReceipt - a receipt's content never changes between its first print and a reprint."
+            "description": "Returns the same bundle as GetSaleReceipt (including has_return/has_exchange/refunded_total on sale and returned_qty/returnable_qty on each item, which reflect returns made up to now)."
           },
           "response": []
         },
@@ -4358,7 +4358,7 @@
                 }
               ]
             },
-            "description": "Reverses the entire sale - there is no partial void (see docs/WORKFLOWS.md Section 9). A POS-device token requires X-Staff-Token; the acting staff needs approve_void themselves, OR X-Manager-Approval-Token grants it instead. An Owner / Service Center bearer token may void directly with NO staff token and no approval - recorded as approved_by_user_id (approved_by is null) and as actor_user_id in the audit log; the shift-must-still-be-open rule applies to them too. Rejects (409) if the sale is already voided, if its shift is no longer open (a void is only valid within the same shift it was rung up in), or if any Return/Exchange already references it. Credits back every item's decremented stock and marks the sale voided, atomically."
+            "description": "Reverses the entire sale - there is no partial void (see docs/WORKFLOWS.md Section 9). A POS-device token requires X-Staff-Token; the acting staff needs approve_void themselves, OR X-Manager-Approval-Token grants it instead. An Owner / Service Center bearer token may void directly with NO staff token and no approval - recorded as approved_by_user_id (approved_by is null) and as actor_user_id in the audit log; the shift-must-still-be-open rule applies to them too. Rejects (409) if the sale is already voided, if it was fully returned (status refunded), if its shift is no longer open (a void is only valid within the same shift it was rung up in), or if any Return/Exchange already references it. Credits back every item's decremented stock and marks the sale voided, atomically. reason must be one of customer_request, price_error, item_error, staff_error, other, duplicate_transaction, wrong_order, incorrect_payment, cashier_mistake (400 otherwise); explanation is optional."
           },
           "response": []
         },
@@ -4418,7 +4418,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"sale_id\": \"11111111-1111-1111-1111-111111111111\",\n  \"items\": [\n    {\"sale_item_id\": 1, \"qty\": 1, \"condition\": \"sellable\"}\n  ],\n  \"reason_code\": \"changed_mind\",\n  \"refund_method\": \"cash\"\n}",
+              "raw": "{\n  \"sale_id\": \"11111111-1111-1111-1111-111111111111\",\n  \"items\": [\n    {\"sale_item_id\": 1, \"qty\": 1, \"condition\": \"sellable\"}\n  ],\n  \"reason_code\": \"changed_mind\",\n  \"explanation\": \"customer changed their mind\",\n  \"refund_method\": \"cash\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4430,7 +4430,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "returns"]
             },
-            "description": "Also writes return_items. Requires X-Staff-Token; the acting staff needs approve_return themselves, OR X-Manager-Approval-Token grants it instead. Confirms the sale is completed (not voided) and every item belongs to it with enough not-yet-returned-or-exchanged qty remaining, computes refund_total server-side from each item's own original per-unit price (never client-supplied), and restocks each condition=\"sellable\" item at the sale's own branch - all atomically. No fixed return time window in v1 - any completed sale can be returned regardless of age."
+            "description": "Also writes return_items. Requires X-Staff-Token; the acting staff needs approve_return themselves, OR X-Manager-Approval-Token grants it instead. Confirms the sale is completed (not voided) and every item belongs to it with enough not-yet-returned-or-exchanged qty remaining, computes refund_total server-side from each item's own original per-unit price (never client-supplied), and restocks each condition=\"sellable\" item at the sale's own branch - all atomically. condition is one of sellable, damaged, opened, defective, expired, other (400 otherwise) - only sellable restocks. explanation is optional free text (the till's typed reason for return); it is stored on the return and shown in ListReturns/GetReturn. When every line of the sale has been returned through returns alone, the sale's status becomes refunded (see ListSales/GetSaleReceipt). Each non-restocked line also writes an inventory ledger row of type return_writeoff (qty 0, balance_after = current balance, reference_type return). No fixed return time window in v1 - any completed sale can be returned regardless of age. The return is stamped with the till's open shift (shift_id, null if none); a cash refund_method reduces that shift's expected cash at Close Shift."
           },
           "response": []
         },
@@ -4516,7 +4516,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"sale_id\": \"11111111-1111-1111-1111-111111111111\",\n  \"items\": [\n    {\"direction\": \"in\", \"sale_item_id\": 1, \"qty\": 1},\n    {\"direction\": \"out\", \"product_id\": 5, \"qty\": 1, \"unit_price\": 2.00}\n  ]\n}",
+              "raw": "{\n  \"sale_id\": \"11111111-1111-1111-1111-111111111111\",\n  \"method\": \"cash\",\n  \"items\": [\n    {\"direction\": \"in\", \"sale_item_id\": 1, \"qty\": 1, \"condition\": \"sellable\"},\n    {\"direction\": \"out\", \"product_id\": 5, \"qty\": 1, \"unit_price\": 2.00}\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4528,7 +4528,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "exchanges"]
             },
-            "description": "Also writes exchange_items. Requires X-Staff-Token; the acting staff needs approve_exchange themselves, OR X-Manager-Approval-Token grants it instead. Modeled as one combined transaction (not a chained Return-then-Sale). An \"in\" item (sale_item_id) is something the customer is returning - its price is derived from the original sale, never client input. An \"out\" item (product_id + unit_price) is a new item the customer is taking instead. net_difference is computed server-side (out total minus in total) - positive means the customer owes more, negative means they're owed the difference. Credits stock for \"in\" items and decrements it for \"out\" items at the sale's own branch, atomically."
+            "description": "Also writes exchange_items. Requires X-Staff-Token; the acting staff needs approve_exchange themselves, OR X-Manager-Approval-Token grants it instead. Modeled as one combined transaction (not a chained Return-then-Sale). An \"in\" item (sale_item_id) is something the customer is returning - its price is derived from the original sale, never client input. An \"out\" item (product_id + unit_price) is a new item the customer is taking instead. net_difference is computed server-side (out total minus in total) - positive means the customer owes more, negative means they're owed the difference. Credits stock for sellable \"in\" items and decrements it for \"out\" items at the sale's own branch, atomically. An \"in\" item's optional condition (sellable, damaged, opened, defective, expired, other; 400 otherwise) decides restocking - only sellable goes back on the shelf, and an omitted condition means sellable; it is ignored on \"out\" items; a non-sellable \"in\" item writes an inventory ledger row of type return_writeoff (qty 0, reference_type exchange). method (cash or qr) is how a non-zero net_difference was settled - required then (400 otherwise), optional for an even swap; a cash difference moves the shift's expected cash (positive in, negative out). The exchange is stamped with the till's open shift (shift_id, null if none)."
           },
           "response": []
         },

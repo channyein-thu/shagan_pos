@@ -77,6 +77,65 @@ func (s *Service) applyStockDelta(tx *gorm.DB, productID uint, branchID uint, de
 	return newQty, nil
 }
 
+// fullyReturned reports whether, counting the lines being returned now
+// (requestedQty) on top of what earlier returns took, every line of the sale
+// has been returned in full. Exchange "in" qty deliberately doesn't count: a
+// line that was swapped rather than refunded keeps the sale "completed".
+// returnedBefore holds the prior returned qty already looked up for the
+// requested lines; any other line is looked up here.
+func (s *Service) fullyReturned(tx *gorm.DB, saleItems []sales.SaleItem, returnedBefore map[uint]int, requestedQty map[uint]int) (bool, error) {
+	if len(saleItems) == 0 {
+		return false, nil
+	}
+	for _, si := range saleItems {
+		before, known := returnedBefore[si.ID]
+		if !known {
+			var err error
+			before, err = s.repo.ReturnedQtyForSaleItem(tx, si.ID)
+			if err != nil {
+				return false, err
+			}
+		}
+		if before+requestedQty[si.ID] < si.Qty {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// recordWriteoff writes the ledger row for goods that came back but were not
+// restocked: type return_writeoff, qty 0, and the product's balance as it
+// stands (0 when it has no stock row yet - none is created, stock is
+// untouched). Call it after any restock in the same transaction so the
+// balance it reports includes that restock.
+func (s *Service) recordWriteoff(tx *gorm.DB, orgID uint, branchID uint, productID uint, actorID *uint, refType inventory.ReferenceType, refID string) error {
+	level, err := s.inventory.GetStockLevel(tx, productID, branchID)
+	if err != nil {
+		return err
+	}
+	balance := 0
+	if level != nil {
+		balance = level.Qty
+	}
+	return s.inventory.CreateInventoryLedgerEntry(tx, &inventory.InventoryLedger{
+		OrgID: orgID, ProductID: productID, BranchID: branchID,
+		Type: inventory.LedgerEntryTypeReturnWriteoff, Qty: 0, BalanceAfter: balance,
+		ActorID: actorID, ReferenceType: refType, ReferenceID: refID,
+	})
+}
+
+// currentShiftID returns the open shift of the till the request came from,
+// to stamp on a Return/Exchange so Close Shift can account for the cash that
+// left the drawer. Nil when there's no till context or no open shift - the
+// record is still written, it just isn't counted in any shift's expected
+// cash.
+func (s *Service) currentShiftID(tx *gorm.DB, orgID uint, actor Actor) (*uint, error) {
+	if actor.PosUserID == 0 {
+		return nil, nil
+	}
+	return s.repo.CurrentShiftID(tx, orgID, actor.PosUserID)
+}
+
 // VoidSale reverses the entire sale - see the Interface doc. actor.StaffID
 // is captured as ApprovedBy regardless of whether CanApprove came from the
 // staff's own permission or a manager's approval token, same reasoning as
@@ -97,6 +156,9 @@ func (s *Service) VoidSale(ctx context.Context, orgID uint, actor Actor, saleID 
 		}
 		if sale.Status == sales.SaleStatusVoided {
 			return common.ConflictError("this sale is already voided")
+		}
+		if sale.Status == sales.SaleStatusRefunded {
+			return common.ConflictError("this sale has been fully returned (refunded) and can no longer be voided")
 		}
 		if err := s.salesRepo.RequireOpenShift(tx, orgID, sale.BranchID, sale.ShiftID); err != nil {
 			return common.ConflictError("this sale's shift is no longer open - a void is only valid within the same shift it was rung up in")
@@ -204,6 +266,14 @@ func (s *Service) CreateReturn(ctx context.Context, orgID uint, actor Actor, in 
 		refundTotal := decimal.Zero
 		returnItems := make([]ReturnItem, 0, len(in.Items))
 		creditByProduct := make(map[uint]int)
+		var writeoffProducts []uint
+		// requestedQty and returnedBefore are per sale item: the first sums
+		// this request's own lines (two lines may name the same sale item),
+		// the second is what earlier returns already took - together they
+		// decide both the over-return guard and whether the sale ends up
+		// fully returned.
+		requestedQty := make(map[uint]int)
+		returnedBefore := make(map[uint]int)
 		for _, reqItem := range in.Items {
 			saleItem, ok := bySaleItemID[reqItem.SaleItemID]
 			if !ok {
@@ -217,9 +287,11 @@ func (s *Service) CreateReturn(ctx context.Context, orgID uint, actor Actor, in 
 			if err != nil {
 				return err
 			}
-			if alreadyReturned+alreadyExchanged+reqItem.Qty > saleItem.Qty {
+			if alreadyReturned+alreadyExchanged+requestedQty[reqItem.SaleItemID]+reqItem.Qty > saleItem.Qty {
 				return common.BadRequestError("return qty exceeds what remains returnable for this item")
 			}
+			requestedQty[reqItem.SaleItemID] += reqItem.Qty
+			returnedBefore[reqItem.SaleItemID] = alreadyReturned
 
 			unitRefund := saleItem.LineTotal.Div(decimal.NewFromInt(int64(saleItem.Qty)))
 			lineRefund := unitRefund.Mul(decimal.NewFromInt(int64(reqItem.Qty))).Round(2)
@@ -234,15 +306,24 @@ func (s *Service) CreateReturn(ctx context.Context, orgID uint, actor Actor, in 
 			})
 			if restocked {
 				creditByProduct[saleItem.ProductID] += reqItem.Qty
+			} else {
+				writeoffProducts = append(writeoffProducts, saleItem.ProductID)
 			}
+		}
+
+		shiftID, err := s.currentShiftID(tx, orgID, actor)
+		if err != nil {
+			return err
 		}
 
 		ret = Return{
 			SaleID:       in.SaleID,
 			ReasonCode:   in.ReasonCode,
+			Explanation:  in.Explanation,
 			RefundMethod: in.RefundMethod,
 			RefundTotal:  refundTotal,
 			ApprovedBy:   actor.StaffID,
+			ShiftID:      shiftID,
 		}
 		if err := s.repo.CreateReturn(tx, &ret); err != nil {
 			return err
@@ -265,6 +346,26 @@ func (s *Service) CreateReturn(ctx context.Context, orgID uint, actor Actor, in 
 				Type: inventory.LedgerEntryTypeReturn, Qty: qty, BalanceAfter: newQty,
 				ActorID: &actor.StaffID, ReferenceType: inventory.ReferenceTypeReturn, ReferenceID: returnRef,
 			}); err != nil {
+				return err
+			}
+		}
+		// Every line back through returns alone settles the sale: mark it
+		// refunded so history shows it. Void rejects such a sale, and the
+		// shift totals keep counting its original payments.
+		fullyReturned, err := s.fullyReturned(tx, saleItems, returnedBefore, requestedQty)
+		if err != nil {
+			return err
+		}
+		if fullyReturned {
+			if err := s.salesRepo.UpdateSaleStatus(tx, in.SaleID, sales.SaleStatusRefunded); err != nil {
+				return err
+			}
+		}
+		// Goods that weren't restocked still left the customer and must show
+		// in the ledger - one write-off row per such line, after the restocks
+		// so the balance it reports includes them.
+		for _, productID := range writeoffProducts {
+			if err := s.recordWriteoff(tx, orgID, sale.BranchID, productID, &actor.StaffID, inventory.ReferenceTypeReturn, returnRef); err != nil {
 				return err
 			}
 		}
@@ -331,6 +432,7 @@ func (s *Service) CreateExchange(ctx context.Context, orgID uint, actor Actor, i
 		exchangeItems := make([]ExchangeItem, 0, len(in.Items))
 		creditByProduct := make(map[uint]int)
 		debitByProduct := make(map[uint]int)
+		var writeoffProducts []uint
 
 		for _, reqItem := range in.Items {
 			switch reqItem.Direction {
@@ -357,12 +459,24 @@ func (s *Service) CreateExchange(ctx context.Context, orgID uint, actor Actor, i
 				unitPrice := saleItem.LineTotal.Div(decimal.NewFromInt(int64(saleItem.Qty))).Round(2)
 				lineValue := unitPrice.Mul(decimal.NewFromInt(int64(reqItem.Qty)))
 				netDifference = netDifference.Sub(lineValue)
-				creditByProduct[saleItem.ProductID] += reqItem.Qty
+
+				// Same rule as a Return: only sellable goods go back on the
+				// shelf. An omitted condition is sellable (older clients
+				// never sent one and always restocked).
+				condition := reqItem.Condition
+				if condition == "" {
+					condition = ItemConditionSellable
+				}
+				if condition == ItemConditionSellable {
+					creditByProduct[saleItem.ProductID] += reqItem.Qty
+				} else {
+					writeoffProducts = append(writeoffProducts, saleItem.ProductID)
+				}
 
 				productID := saleItem.ProductID
 				exchangeItems = append(exchangeItems, ExchangeItem{
 					Direction: DirectionIn, SaleItemID: reqItem.SaleItemID, ProductID: &productID,
-					Qty: reqItem.Qty, UnitPrice: unitPrice,
+					Qty: reqItem.Qty, UnitPrice: unitPrice, Condition: &condition,
 				})
 			case DirectionOut:
 				if reqItem.ProductID == nil || reqItem.UnitPrice == nil {
@@ -381,7 +495,22 @@ func (s *Service) CreateExchange(ctx context.Context, orgID uint, actor Actor, i
 			}
 		}
 
-		ex = Exchange{SaleID: in.SaleID, NetDifference: netDifference, ApprovedBy: actor.StaffID}
+		// A non-zero difference moved money, and Close Shift needs to know
+		// whether that was through the drawer - so say how it was settled.
+		if !netDifference.IsZero() && in.Method == "" {
+			return common.BadRequestError("method (cash or qr) is required when the exchange has a non-zero net difference")
+		}
+		var method *ExchangeMethod
+		if in.Method != "" {
+			m := in.Method
+			method = &m
+		}
+		shiftID, err := s.currentShiftID(tx, orgID, actor)
+		if err != nil {
+			return err
+		}
+
+		ex = Exchange{SaleID: in.SaleID, NetDifference: netDifference, ApprovedBy: actor.StaffID, Method: method, ShiftID: shiftID}
 		if err := s.repo.CreateExchange(tx, &ex); err != nil {
 			return err
 		}
@@ -416,6 +545,13 @@ func (s *Service) CreateExchange(ctx context.Context, orgID uint, actor Actor, i
 				Type: inventory.LedgerEntryTypeExchangeOut, Qty: -qty, BalanceAfter: newQty,
 				ActorID: &actor.StaffID, ReferenceType: inventory.ReferenceTypeExchange, ReferenceID: exchangeRef,
 			}); err != nil {
+				return err
+			}
+		}
+		// Non-sellable "in" goods moved no stock but still came back: record
+		// them, after the credits and debits so the balance is the final one.
+		for _, productID := range writeoffProducts {
+			if err := s.recordWriteoff(tx, orgID, sale.BranchID, productID, &actor.StaffID, inventory.ReferenceTypeExchange, exchangeRef); err != nil {
 				return err
 			}
 		}

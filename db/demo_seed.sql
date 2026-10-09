@@ -91,7 +91,7 @@ BEGIN
     SELECT r.id, p.id FROM (VALUES
       ('staff','access_pos_portal'),
       ('super_staff','access_pos_portal'),('super_staff','open_drawer_no_sale'),('super_staff','apply_manual_discount'),
-      ('manager','access_pos_portal'),('manager','access_backoffice'),('manager','apply_manual_discount'),
+      ('manager','access_pos_portal'),('manager','access_backoffice'),('manager','open_drawer_no_sale'),('manager','apply_manual_discount'),
       ('manager','approve_void'),('manager','approve_return'),('manager','approve_exchange')) g(rc,pc)
     JOIN roles r ON r.code = g.rc JOIN permissions p ON p.code = g.pc
     WHERE NOT EXISTS (SELECT 1 FROM role_permission x WHERE x.role_id = r.id AND x.permission_id = p.id);

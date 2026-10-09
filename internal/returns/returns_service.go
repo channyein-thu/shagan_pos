@@ -65,9 +65,15 @@ type SalesReader interface {
 // StaffID is 0 then, and CanApprove is true (the Owner holds every approval
 // permission implicitly). Only VoidSale accepts it today; exactly one of
 // StaffID/UserID is non-zero.
+//
+// PosUserID is the paired POS account whose bearer token the request
+// arrived on (the till itself, as opposed to the staff member PINned in at
+// it) - what CreateReturn/CreateExchange use to find the till's open shift.
+// Zero means there's no till context (e.g. an Owner acting directly).
 type Actor struct {
 	StaffID    uint
 	UserID     uint
+	PosUserID  uint
 	CanApprove bool
 }
 

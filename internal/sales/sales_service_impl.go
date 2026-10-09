@@ -21,11 +21,12 @@ type Service struct {
 	products  ProductLookup
 	audit     AuditWriter
 	orgs      OrganizationLookup
+	returns   ReturnActivityReader
 	db        common.Transactioner
 }
 
-func NewService(repo Repository, inv InventoryWriter, products ProductLookup, auditWriter AuditWriter, orgs OrganizationLookup, db common.Transactioner) *Service {
-	return &Service{repo: repo, inventory: inv, products: products, audit: auditWriter, orgs: orgs, db: db}
+func NewService(repo Repository, inv InventoryWriter, products ProductLookup, auditWriter AuditWriter, orgs OrganizationLookup, returns ReturnActivityReader, db common.Transactioner) *Service {
+	return &Service{repo: repo, inventory: inv, products: products, audit: auditWriter, orgs: orgs, returns: returns, db: db}
 }
 
 var _ Interface = (*Service)(nil)
@@ -309,6 +310,15 @@ func (s *Service) ListSales(ctx context.Context, orgID uint, branchID *uint, fro
 	if err != nil {
 		return nil, err
 	}
+	// A sale nobody returned or exchanged has no entry: its zero
+	// ReturnSummary (false, false, "0") is exactly the right answer.
+	var summaries map[uuid.UUID]ReturnSummary
+	if len(ids) > 0 {
+		summaries, err = s.returns.ReturnSummaries(ctx, ids)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	items := make([]SaleListItem, len(sales))
 	for i, sale := range sales {
@@ -316,7 +326,7 @@ func (s *Service) ListSales(ctx context.Context, orgID uint, branchID *uint, fro
 		if m == nil {
 			m = []PaymentMethod{}
 		}
-		items[i] = SaleListItem{Sale: sale, PaymentMethods: m}
+		items[i] = SaleListItem{Sale: sale, ReturnSummary: summaries[sale.ID], PaymentMethods: m}
 	}
 	return &SalesPage{Sales: items, Page: page, PageSize: pageSize, TotalCount: total}, nil
 }
@@ -338,7 +348,37 @@ func (s *Service) GetSaleReceipt(ctx context.Context, orgID uint, id uuid.UUID) 
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"sale": sale, "items": items, "payments": payments}, nil
+
+	// returned_qty counts return lines and exchange "in" lines - the same two
+	// sources the over-return guards in returns.CreateReturn/CreateExchange
+	// enforce - so returnable_qty is exactly what the backend will still
+	// accept, and the till can stop offering more before a manager's PIN.
+	itemIDs := make([]uint, len(items))
+	for i, item := range items {
+		itemIDs[i] = item.ID
+	}
+	returnedQty, err := s.returns.ReturnedQtyBySaleItems(ctx, itemIDs)
+	if err != nil {
+		return nil, err
+	}
+	summaries, err := s.returns.ReturnSummaries(ctx, []uuid.UUID{id})
+	if err != nil {
+		return nil, err
+	}
+	receiptItems := make([]ReceiptItem, len(items))
+	for i, item := range items {
+		returned := returnedQty[item.ID]
+		returnable := item.Qty - returned
+		if returnable < 0 {
+			returnable = 0
+		}
+		receiptItems[i] = ReceiptItem{SaleItem: item, ReturnedQty: returned, ReturnableQty: returnable}
+	}
+	return map[string]any{
+		"sale":     ReceiptSale{Sale: *sale, ReturnSummary: summaries[id]},
+		"items":    receiptItems,
+		"payments": payments,
+	}, nil
 }
 
 func (s *Service) ReprintSale(ctx context.Context, orgID uint, id uuid.UUID) (map[string]any, error) {

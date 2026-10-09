@@ -37,14 +37,15 @@ Seeded roles and their granted permissions (`internal/seed/seed.go`):
 |---|---|
 | `staff` | `access_pos_portal` |
 | `super_staff` | `access_pos_portal`, `open_drawer_no_sale`, `apply_manual_discount` |
-| `manager` | `access_pos_portal`, `access_backoffice`, `apply_manual_discount`, `approve_void`, `approve_return`, `approve_exchange` |
+| `manager` | `access_pos_portal`, `access_backoffice`, `open_drawer_no_sale`, `apply_manual_discount`, `approve_void`, `approve_return`, `approve_exchange` |
 
-Note `open_drawer_no_sale` is granted to `super_staff` but **not**
-`manager` by default — a manager who needs to open the drawer without a
-sale still goes through the same approval flow as anyone else lacking it
-(see Section 2's manager-approval mechanism; `VerifyManagerPIN` isn't
-restricted to role=`manager`, it's granted to whichever staff's role
-actually has the requested permission).
+Note `open_drawer_no_sale` is granted to both `super_staff` and `manager`
+(a manager closing a shift needs it to count cash). A `staff` cashier still
+needs a manager's approval for it (see Section 2's manager-approval
+mechanism; `VerifyManagerPIN` isn't restricted to role=`manager`, it's
+granted to whichever staff's role actually has the requested permission).
+The seed adds missing grants on every run, so re-running it on an existing
+database picks up the manager grant without duplicating anything.
 
 > **Role naming — deferred on purpose.** The live back-office prototype's
 > "Add Staff" form shows 4 roles (`Cashier` / `Senior Cashier` / `Supervisor`
@@ -307,7 +308,7 @@ what each grants).
    share of the discount), tagged with a shared `combo_id` purely for
    receipt/report grouping - see Section 8's design writeup for why.
 8. Opens the drawer without a sale — only if their role grants
-   `open_drawer_no_sale` (`super_staff` by default, not `manager`), **or**
+   `open_drawer_no_sale` (`super_staff` and `manager` by default), **or**
    a valid manager approval for it; otherwise 403.
 9. Void/return/exchange need the equivalent
    `approve_void`/`approve_return`/`approve_exchange` permission or a
@@ -317,7 +318,9 @@ what each grants).
     exception in the normal path. Counts the physical cash drawer; a
     mismatch from the system's expected cash total requires a `reason`.
     Only cash is physically counted — QR payments are trusted to match
-    what the system recorded.
+    what the system recorded. Expected cash is opening cash + cash sales
+    − cash refunds + cash an exchange collected − cash an exchange paid
+    out (see Section 9, "Cash drawer effect").
 11. **Rotation, not a whole-day lock**: a shift is a per-person session, not
     an all-day device lock. Multiple staff share one till across a day by
     each closing their own stretch before the next person opens a new one
@@ -362,7 +365,11 @@ what each grants).
   One open shift per device at a time; rotation happens via normal
   close/reopen, not a shared open shift.
 - **Cash reconciliation**: only cash is physically counted at close;
-  `reason` required only when counted cash differs from expected.
+  `reason` required only when counted cash differs from expected. Expected
+  cash = opening cash + cash sales − cash-method refunds of this shift's
+  Returns + cash net difference collected on its Exchanges − cash net
+  difference paid out on them. `GET /shifts/:id/summary` reports the three
+  adjustments as `cash_refunds`, `exchange_cash_in`, `exchange_cash_out`.
 - **Expenses**: creator, a Manager (`access_backoffice`), or the Owner /
   Service Center acting directly may edit/delete;
   anyone signed in may create one (always attributed to themselves).
@@ -464,22 +471,61 @@ allowed at all) are still Shagan's own call — flagged below where that's
 true.
 
 **Built (confirmed wiring, 2026-10-08):**
-- **Void** reverses the whole sale: 409 if already voided, if its shift is no
-  longer open, or if any Return/Exchange already references it; credits every
+- **Void** reverses the whole sale: 409 if already voided, if it was fully
+  returned (`refunded`), if its shift is no longer open, or if any
+  Return/Exchange already references it; credits every
   item's stock back and marks the sale voided, atomically. Needs `approve_void`
   (own or manager approval); an Owner / Service Center may also void directly
-  with no PIN (Section 2, "Owner acts as owner").
+  with no PIN (Section 2, "Owner acts as owner"). `reason` is one of
+  `customer_request`, `price_error`, `item_error`, `staff_error`, `other`
+  (owner back office) or `duplicate_transaction`, `wrong_order`,
+  `incorrect_payment`, `cashier_mistake` (the till's screen); anything else
+  is 400. `explanation` is optional (stored as `""`).
 - **Return** is a new record referencing the sale (the sale stays in history),
   full or partial per item, with `RefundTotal` computed server-side from each
-  returned line's own net price. Each item carries a condition; only
-  `sellable` ones are restocked, at the sale's own branch. Needs
+  returned line's own net price. Each item carries a condition (`sellable`,
+  `damaged`, `opened`, `defective`, `expired`, `other`; anything else is 400);
+  only `sellable` ones are restocked, at the sale's own branch. The return
+  also stores an optional free-text `explanation` (the till's typed "reason for
+  return"), next to the coarse `reason_code`. Needs
   `approve_return`. **`refund_method` is an explicit single choice per request,
   `cash` or `qr` — there is no default.**
 - **Exchange** is one combined `Exchange` record with in/out lines and a
   server-computed `NetDifference` (not a chained Return-then-Sale); stock is
   credited for "in" items and decremented for "out" items at the sale's branch.
-  Needs `approve_exchange`. *Built this way without an explicit sign-off — see
+  Each "in" item carries an optional `condition` (same values as a Return);
+  only `sellable` goes back on the shelf, and an omitted condition means
+  `sellable`. Needs `approve_exchange`. *Built this way without an explicit sign-off — see
   Section 12.*
+- **Sale status after a Return**: a Return that brings every line of the sale
+  back **through returns alone** (return qty = sold qty on every line,
+  counting earlier returns; exchange "in" qty does not count) sets the sale's
+  status to `refunded`. Partial returns and any Exchange leave it `completed`.
+  A `refunded` sale still counts its original payments in its shift's
+  sales/expected-cash totals (the cash refund is subtracted separately), and
+  reports keep counting it (they only exclude `voided`/`open`).
+- **Return/exchange footprint on history and receipts**: every row of
+  `GET /sales` and `sale` in `GET /sales/:id/receipt` (and reprint) carries
+  `has_return`, `has_exchange` and `refunded_total` (sum of the sale's return
+  refunds, `"0"` when none). Each receipt item carries `returned_qty` (return
+  lines + exchange "in" lines) and `returnable_qty` (`qty - returned_qty`,
+  never below 0) - the same quantities the over-return guards enforce, so the
+  till can cap its steppers before asking for a manager PIN.
+- **Write-offs in the Inventory Ledger**: goods that come back but are not
+  restocked (a Return line, or an Exchange "in" line, in any condition but
+  `sellable`) still get a ledger row so they don't vanish from the owner's
+  view: `type: return_writeoff`, `qty: 0` (stock did not move),
+  `balance_after` = the product's balance as it stands, same
+  `reference_type`/`reference_id` as the return/exchange. Restocked lines keep
+  their normal `return` / `exchange_in` rows.
+- **Cash drawer effect**: every Return and Exchange is stamped with the shift
+  open on the till (the paired POS account's open shift) it was rung up on;
+  none open means no stamp and it counts toward no shift. A Return's
+  `refund_method: cash` takes `refund_total` out of that shift's expected
+  cash (QR does not). An Exchange with a non-zero net difference must say how
+  it was settled with `method` (`cash`/`qr`, 400 if omitted; optional for an
+  even swap): cash `net_difference > 0` is cash in, `< 0` is cash out, QR
+  never touches the drawer.
 - Return time window: **none is enforced** (open, Section 12).
 
 ### Void

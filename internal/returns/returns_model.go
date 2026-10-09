@@ -18,6 +18,13 @@ const (
 	VoidReasonItemError       VoidReason = "item_error"
 	VoidReasonStaffError      VoidReason = "staff_error"
 	VoidReasonOther           VoidReason = "other"
+
+	// The till's own void reasons (shagan-retail void-select-step.tsx). The
+	// five above stay because the owner back office still uses them.
+	VoidReasonDuplicateTransaction VoidReason = "duplicate_transaction"
+	VoidReasonWrongOrder           VoidReason = "wrong_order"
+	VoidReasonIncorrectPayment     VoidReason = "incorrect_payment"
+	VoidReasonCashierMistake       VoidReason = "cashier_mistake"
 )
 
 // ReturnReasonCode is a best-guess enum (ERD only specified "enum"; confirm real values).
@@ -49,6 +56,22 @@ const (
 	ItemConditionDamaged   ItemCondition = "damaged"
 	ItemConditionOpened    ItemCondition = "opened"
 	ItemConditionDefective ItemCondition = "defective"
+	// The till's own Expired / Other conditions (shagan-retail
+	// return-reason-step.tsx). Like every condition but sellable, they are
+	// not restocked.
+	ItemConditionExpired ItemCondition = "expired"
+	ItemConditionOther   ItemCondition = "other"
+)
+
+// ExchangeMethod is how an Exchange's non-zero net_difference was settled
+// at the till - cash and QR only, same as RefundMethod. It's what lets
+// Close Shift tell a cash difference (touches the drawer) from a QR one
+// (doesn't).
+type ExchangeMethod string
+
+const (
+	ExchangeMethodCash ExchangeMethod = "cash"
+	ExchangeMethodQR   ExchangeMethod = "qr"
 )
 
 // Direction is a best-guess enum (ERD only specified "enum"; confirm real values).
@@ -85,8 +108,17 @@ type Return struct {
 	ReasonCode   ReturnReasonCode `gorm:"type:varchar(30);not null" json:"reason_code"`   // one of ReturnReasonCode* constants below (TODO: confirm real values)
 	RefundMethod RefundMethod     `gorm:"type:varchar(30);not null" json:"refund_method"` // one of RefundMethod* constants below (TODO: confirm real values)
 	RefundTotal  decimal.Decimal  `gorm:"type:decimal(10,2);not null" json:"refund_total"`
-	ApprovedBy   uint             `gorm:"index;not null" json:"approved_by"`
-	CreatedAt    time.Time        `gorm:"autoCreateTime;not null" json:"created_at"`
+	// Explanation is the free-text "reason for return" the cashier types at
+	// the till, kept alongside the coarse ReasonCode. "" for older rows.
+	Explanation string `gorm:"type:text;not null;default:''" json:"explanation"`
+	ApprovedBy  uint   `gorm:"index;not null" json:"approved_by"`
+	// ShiftID is the till's own open shift when the return was processed -
+	// NOT the original sale's shift (the sale may be from days ago; the
+	// refund leaves whatever drawer is open now). Nil for rows from before
+	// this column existed, or when the caller had no open shift. Close
+	// Shift's expected cash subtracts cash refunds by this.
+	ShiftID   *uint     `gorm:"index" json:"shift_id"`
+	CreatedAt time.Time `gorm:"autoCreateTime;not null" json:"created_at"`
 }
 
 // ReturnItem maps to the "Return_items" table in the ERD.
@@ -105,7 +137,13 @@ type Exchange struct {
 	SaleID        uuid.UUID       `gorm:"type:uuid;index;not null" json:"sale_id"`
 	NetDifference decimal.Decimal `gorm:"type:decimal(10,2);not null" json:"net_difference"`
 	ApprovedBy    uint            `gorm:"index;not null" json:"approved_by"`
-	CreatedAt     time.Time       `gorm:"autoCreateTime;not null" json:"created_at"`
+	// Method is how NetDifference was settled (cash/QR); nil when it was
+	// zero, and for rows from before this column existed.
+	Method *ExchangeMethod `gorm:"type:varchar(30)" json:"method"`
+	// ShiftID is the till's own open shift when the exchange was processed -
+	// same meaning as Return.ShiftID.
+	ShiftID   *uint     `gorm:"index" json:"shift_id"`
+	CreatedAt time.Time `gorm:"autoCreateTime;not null" json:"created_at"`
 }
 
 // ExchangeItem maps to the "Exchange_items" table in the ERD.
@@ -117,4 +155,8 @@ type ExchangeItem struct {
 	ProductID  *uint           `gorm:"index" json:"product_id"`
 	Qty        int             `gorm:"not null" json:"qty"`
 	UnitPrice  decimal.Decimal `gorm:"type:decimal(10,2);not null" json:"unit_price"`
+	// Condition is the state an "in" line came back in; only sellable goes
+	// back on the shelf. Nil for "out" lines and for rows from before this
+	// column existed (those were all restocked, i.e. sellable).
+	Condition *ItemCondition `gorm:"type:varchar(30)" json:"condition"`
 }

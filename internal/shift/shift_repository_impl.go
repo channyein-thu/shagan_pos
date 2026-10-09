@@ -194,7 +194,7 @@ func (r *RepositoryImpl) closeShift(ctx context.Context, scope AccessScope, id u
 		if err := tx.Model(&sales.Payment{}).
 			Select("payments.method, COALESCE(SUM(payments.amount), 0) AS total").
 			Joins("JOIN sales ON sales.id = payments.sale_id").
-			Where("sales.shift_id = ? AND sales.status = ?", closed.ID, sales.SaleStatusCompleted).
+			Where("sales.shift_id = ? AND sales.status IN ?", closed.ID, settledSaleStatuses).
 			Group("payments.method").
 			Scan(&paymentTotals).Error; err != nil {
 			return err
@@ -207,6 +207,11 @@ func (r *RepositoryImpl) closeShift(ctx context.Context, scope AccessScope, id u
 			method := reconciliationMethodForPayment(payment.Method)
 			expectedByMethod[method] = expectedByMethod[method].Add(payment.Total)
 		}
+		adjustments, err := shiftCashAdjustmentsFor(tx, closed.ID)
+		if err != nil {
+			return err
+		}
+		expectedByMethod[ReconciliationMethodCash] = expectedByMethod[ReconciliationMethodCash].Add(adjustments.net())
 
 		orderedMethods := []ReconciliationMethod{
 			ReconciliationMethodCash,
@@ -267,6 +272,56 @@ func (r *RepositoryImpl) closeShift(ctx context.Context, scope AccessScope, id u
 	return &closed, nil
 }
 
+// settledSaleStatuses are the sale statuses whose payments reached the till:
+// a fully returned ("refunded") sale was still paid for during its shift - its
+// cash going back out is the cash refund subtracted separately - so it
+// counts exactly like a completed one. Voided and open sales never do.
+var settledSaleStatuses = []sales.SaleStatus{sales.SaleStatusCompleted, sales.SaleStatusRefunded}
+
+// cashAdjustments is the cash that refunds and exchanges moved through a
+// shift's drawer on top of its sales: Refunds is what cash-method Returns
+// handed back, ExchangeIn is the extra cash customers paid on an Exchange,
+// ExchangeOut is the cash customers were handed back on one. QR refunds and
+// QR exchange differences settle electronically and never appear here.
+type cashAdjustments struct {
+	Refunds     decimal.Decimal
+	ExchangeIn  decimal.Decimal
+	ExchangeOut decimal.Decimal
+}
+
+// net is the change to the drawer's expected cash.
+func (a cashAdjustments) net() decimal.Decimal {
+	return a.ExchangeIn.Sub(a.ExchangeOut).Sub(a.Refunds)
+}
+
+// shiftCashAdjustmentsFor sums the cash refunds and cash exchange differences
+// stamped with shiftID. Shared by GetShiftSummary and closeShift so the
+// printed expected cash and the reconciliation snapshot can never disagree.
+// It reads the returns domain's tables by name rather than importing it,
+// same reason sales.RequireOpenShift does it the other way round - returns
+// already depends on sales, and shift on both would cycle.
+func shiftCashAdjustmentsFor(db *gorm.DB, shiftID uint) (cashAdjustments, error) {
+	var refunds struct{ Total decimal.Decimal }
+	if err := db.Table("returns").
+		Select("COALESCE(SUM(refund_total), 0) AS total").
+		Where("shift_id = ? AND refund_method = ?", shiftID, "cash").
+		Scan(&refunds).Error; err != nil {
+		return cashAdjustments{}, err
+	}
+	var exchanges struct {
+		CashIn  decimal.Decimal
+		CashOut decimal.Decimal
+	}
+	if err := db.Table("exchanges").
+		Select("COALESCE(SUM(CASE WHEN net_difference > 0 THEN net_difference ELSE 0 END), 0) AS cash_in, "+
+			"COALESCE(SUM(CASE WHEN net_difference < 0 THEN -net_difference ELSE 0 END), 0) AS cash_out").
+		Where("shift_id = ? AND method = ?", shiftID, "cash").
+		Scan(&exchanges).Error; err != nil {
+		return cashAdjustments{}, err
+	}
+	return cashAdjustments{Refunds: refunds.Total, ExchangeIn: exchanges.CashIn, ExchangeOut: exchanges.CashOut}, nil
+}
+
 func reconciliationMethodForPayment(method sales.PaymentMethod) ReconciliationMethod {
 	switch method {
 	case sales.PaymentMethodQR:
@@ -291,7 +346,7 @@ func (r *RepositoryImpl) GetShiftSummary(ctx context.Context, scope AccessScope,
 	var salesTotals salesSummary
 	if err := db.Model(&sales.Sale{}).
 		Select("COUNT(*) AS sales_count, COALESCE(SUM(total), 0) AS sales_total").
-		Where("shift_id = ? AND status = ?", shift.ID, sales.SaleStatusCompleted).
+		Where("shift_id = ? AND status IN ?", shift.ID, settledSaleStatuses).
 		Scan(&salesTotals).Error; err != nil {
 		return nil, err
 	}
@@ -304,7 +359,7 @@ func (r *RepositoryImpl) GetShiftSummary(ctx context.Context, scope AccessScope,
 	if err := db.Model(&sales.Payment{}).
 		Select("payments.method, COALESCE(SUM(payments.amount), 0) AS total").
 		Joins("JOIN sales ON sales.id = payments.sale_id").
-		Where("sales.shift_id = ? AND sales.status = ?", shift.ID, sales.SaleStatusCompleted).
+		Where("sales.shift_id = ? AND sales.status IN ?", shift.ID, settledSaleStatuses).
 		Group("payments.method").
 		Scan(&methodTotals).Error; err != nil {
 		return nil, err
@@ -318,17 +373,26 @@ func (r *RepositoryImpl) GetShiftSummary(ctx context.Context, scope AccessScope,
 		}
 	}
 
+	adjustments, err := shiftCashAdjustmentsFor(db, shift.ID)
+	if err != nil {
+		return nil, err
+	}
+	expectedCash = expectedCash.Add(adjustments.net())
+
 	reconciliations, err := r.ListShiftReconciliations(ctx, scope, shift.ID)
 	if err != nil {
 		return nil, err
 	}
 	return map[string]any{
-		"shift":           *shift,
-		"sales_count":     salesTotals.SalesCount,
-		"sales_total":     salesTotals.SalesTotal,
-		"payment_totals":  paymentTotals,
-		"expected_cash":   expectedCash,
-		"reconciliations": reconciliations,
+		"shift":             *shift,
+		"sales_count":       salesTotals.SalesCount,
+		"sales_total":       salesTotals.SalesTotal,
+		"payment_totals":    paymentTotals,
+		"expected_cash":     expectedCash,
+		"cash_refunds":      adjustments.Refunds,
+		"exchange_cash_in":  adjustments.ExchangeIn,
+		"exchange_cash_out": adjustments.ExchangeOut,
+		"reconciliations":   reconciliations,
 	}, nil
 }
 

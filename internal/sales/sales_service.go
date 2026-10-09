@@ -49,6 +49,23 @@ type OrganizationLookup interface {
 	GetOrganization(ctx context.Context, id uint) (*identity.Organization, error)
 }
 
+// ReturnActivityReader is what sales needs from returns: how much of each
+// sale line has already come back (so the receipt can tell the till what is
+// still returnable) and each sale's return/exchange footprint (so history
+// rows can show it). Sales can't import returns - returns already imports
+// sales - so it's this narrow interface, satisfied structurally by
+// returns.Repository's implementation (see cmd/api/sales.go).
+//
+// ReturnedQtyBySaleItems is the batch form of returns'
+// ReturnedQtyForSaleItem + ExchangedInQtyForSaleItem: per sale_item_id, the
+// qty on return lines plus the qty on exchange "in" lines. A sale item with
+// nothing returned is absent from the map. ReturnSummaries is keyed by sale
+// ID; a sale with no return or exchange is absent.
+type ReturnActivityReader interface {
+	ReturnedQtyBySaleItems(ctx context.Context, saleItemIDs []uint) (map[uint]int, error)
+	ReturnSummaries(ctx context.Context, saleIDs []uuid.UUID) (map[uuid.UUID]ReturnSummary, error)
+}
+
 // SaleActor identifies the authenticated staff member ringing up a sale
 // (derived from the verified X-Staff-Token, never client input), and
 // whether their role's granted permissions let them apply a manual
