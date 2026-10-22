@@ -9,22 +9,31 @@ import (
 
 	"shagan_pos/internal/common"
 	"shagan_pos/internal/customer"
+	"shagan_pos/internal/middleware"
 )
 
 type CustomerAPI struct {
-	service customer.Interface
+	service   customer.Interface
+	jwtSecret []byte
 }
 
-func NewCustomerAPI(db *gorm.DB) *CustomerAPI {
-	return &CustomerAPI{service: customer.NewService(customer.NewRepository(db), db)}
+func NewCustomerAPI(db *gorm.DB, jwtSecret []byte) *CustomerAPI {
+	return &CustomerAPI{service: customer.NewService(customer.NewRepository(db), db), jwtSecret: jwtSecret}
 }
 
 func (a *CustomerAPI) RegisterRoutes(rg *gin.RouterGroup) {
-	rg.GET("/customers", a.ListCustomers)
-	rg.POST("/customers", a.CreateCustomer)
-	rg.GET("/customers/:id", a.GetCustomer)
-	rg.GET("/customers/:id/consents", a.ListCustomerConsents)
-	rg.POST("/customers/:id/consents", a.CreateCustomerConsent)
+	// Adding a customer (and recording their consent as part of it) is a till
+	// action: it needs a staff token with add_customers - or manage_customers,
+	// which includes it - unless an Owner / Service Center acts directly.
+	// Reading the customer list only needs view_customers from a caller using
+	// Back Office; the till's own customer lookup is unchanged.
+	addCustomers := middleware.RequireStaffPermissionOrOrgAdmin(a.jwtSecret, "add_customers", "manage_customers")
+	viewCustomers := middleware.RequireViewPermission(a.jwtSecret, "view_customers")
+	rg.GET("/customers", viewCustomers, a.ListCustomers)
+	rg.POST("/customers", addCustomers, a.CreateCustomer)
+	rg.GET("/customers/:id", viewCustomers, a.GetCustomer)
+	rg.GET("/customers/:id/consents", viewCustomers, a.ListCustomerConsents)
+	rg.POST("/customers/:id/consents", addCustomers, a.CreateCustomerConsent)
 }
 
 // ListCustomers handles `GET /customers`. search is an optional query param

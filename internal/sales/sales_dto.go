@@ -96,6 +96,9 @@ type CreateSaleRequest struct {
 // side) and Page/PageSize are already normalized - see Service.ListSales.
 type SaleFilter struct {
 	BranchID *uint
+	// StaffID restricts to the sales one staff member rang up - set for a
+	// cashier whose role lacks view_all_receipts.
+	StaffID  *uint
 	Start    *time.Time
 	End      *time.Time
 	Page     int

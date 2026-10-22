@@ -80,7 +80,74 @@ type StaffClaims struct {
 	BranchID    uint     `json:"branch_id"`
 	RoleID      uint     `json:"role_id"`
 	Permissions []string `json:"permissions"`
+	// AccessVersion says which permission catalogue Permissions was minted
+	// from: absent (0) for a token issued before per-org roles, when only the
+	// seven original permissions existed - see EffectivePermissions.
+	AccessVersion int `json:"access_version,omitempty"`
 	jwt.RegisteredClaims
+}
+
+// CurrentAccessVersion is stamped on every staff token issued now: its
+// Permissions are the role's full grant list from the per-org catalogue and
+// are enforced exactly as written.
+const CurrentAccessVersion = 2
+
+// Permissions that did not exist before per-org roles but that the till and
+// back office routes now check. A token minted before then (AccessVersion 0)
+// has none of them, so EffectivePermissions derives them from the legacy
+// permission that used to imply the behaviour - keeping a signed-in till
+// working through the deploy until its token expires (staff tokens last 12h).
+var (
+	// everything a legacy staff token could already do at the till
+	legacyTillPermissions = []string{
+		"accept_payments", "hold_resume_sales", "manage_own_shift", "log_till_expenses",
+		"add_customers", "view_all_receipts", "reprint_receipt",
+	}
+	// what the old access_backoffice permission (the Manager's) unlocked,
+	// including the force-close override it used to gate. manage_staff is
+	// absent on purpose: staff management was Owner-only.
+	legacyBackOfficePermissions = []string{
+		"force_close_shift", "view_reports", "view_item_cost", "view_sales", "view_audit_log",
+		"manage_catalog", "view_inventory", "manage_stock", "manage_suppliers", "manage_purchase_orders",
+		"receive_stock", "view_customers", "manage_customers", "view_staff", "manage_expenses",
+		"manage_receipt_settings", "resolve_sync_conflicts",
+	}
+)
+
+// EffectivePermissions is the permission list to enforce for these claims. A
+// current token is returned as issued. A legacy one (AccessVersion 0) is
+// expanded: access_pos_portal implies the till basics every staff token could
+// use before (the old `staff` role became `cashier`), and access_backoffice
+// implies the Manager's back office reach. Nothing else is added - a legacy
+// token never gains an approval, the drawer, or discount rights it lacked.
+func (c *StaffClaims) EffectivePermissions() []string {
+	if c.AccessVersion >= CurrentAccessVersion {
+		return c.Permissions
+	}
+	out := append([]string(nil), c.Permissions...)
+	add := func(codes []string) {
+		for _, code := range codes {
+			if !contains(out, code) {
+				out = append(out, code)
+			}
+		}
+	}
+	if contains(c.Permissions, "access_pos_portal") {
+		add(legacyTillPermissions)
+	}
+	if contains(c.Permissions, "access_backoffice") {
+		add(legacyBackOfficePermissions)
+	}
+	return out
+}
+
+func contains(list []string, code string) bool {
+	for _, c := range list {
+		if c == code {
+			return true
+		}
+	}
+	return false
 }
 
 // GenerateStaffToken signs a staff-PIN session JWT identifying staffID's
@@ -88,10 +155,11 @@ type StaffClaims struct {
 func GenerateStaffToken(secret []byte, staffID, branchID, roleID uint, permissions []string, ttl time.Duration) (string, error) {
 	now := time.Now()
 	claims := StaffClaims{
-		StaffID:     staffID,
-		BranchID:    branchID,
-		RoleID:      roleID,
-		Permissions: permissions,
+		StaffID:       staffID,
+		BranchID:      branchID,
+		RoleID:        roleID,
+		Permissions:   permissions,
+		AccessVersion: CurrentAccessVersion,
 		RegisteredClaims: jwt.RegisteredClaims{
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),

@@ -60,6 +60,7 @@ func TestService_CreateAccount_HashesPasswordBeforePersisting(t *testing.T) {
 		Run(func(_ *gorm.DB, org *Organization) { org.ID = 1 }).
 		Return(nil).
 		Once()
+	repo.EXPECT().ProvisionDefaultRoles(mock.Anything, uint(1)).Return(nil).Once()
 
 	repo.EXPECT().
 		CreateUser(mock.Anything, mock.MatchedBy(func(u *User) bool {
@@ -105,6 +106,7 @@ func TestService_CreateAccount_Timezone_DefaultsToYangonAndRejectsUnknownZones(t
 		var stored string
 		repo.EXPECT().CreateOrganization(mock.Anything, mock.Anything).
 			Run(func(_ *gorm.DB, org *Organization) { org.ID = 1; stored = org.Timezone }).Return(nil).Once()
+		repo.EXPECT().ProvisionDefaultRoles(mock.Anything, uint(1)).Return(nil).Once()
 		repo.EXPECT().CreateUser(mock.Anything, mock.Anything).Run(func(_ *gorm.DB, u *User) { u.ID = 10 }).Return(nil).Twice()
 		_, err := svc.CreateAccount(context.Background(), baseIn(tz))
 		require.NoError(t, err)
@@ -154,6 +156,7 @@ func TestService_CreateAccount_OwnerCreationFails_RollsBackAndNeverCreatesServic
 		Run(func(_ *gorm.DB, org *Organization) { org.ID = 1 }).
 		Return(nil).
 		Once()
+	repo.EXPECT().ProvisionDefaultRoles(mock.Anything, uint(1)).Return(nil).Once()
 
 	wantErr := common.ConflictError("an account with this email already exists")
 	repo.EXPECT().CreateUser(mock.Anything, mock.Anything).Return(wantErr).Once()
@@ -1115,6 +1118,7 @@ func TestService_CreateStaff_HashesPinBeforePersisting(t *testing.T) {
 
 	expected := &Staff{ID: 1, BranchID: 1}
 
+	repo.EXPECT().GetRole(mock.Anything, uint(7), uint(3)).Return(&Role{ID: 3}, nil).Once()
 	repo.EXPECT().
 		CreateStaff(mock.Anything, uint(7), mock.MatchedBy(func(got CreateStaffRequest) bool {
 			if got.Pin == plaintextPin {
@@ -1140,6 +1144,7 @@ func TestService_CreateStaff_PropagatesRepositoryError(t *testing.T) {
 
 	in := CreateStaffRequest{BranchID: 999, Name: "Cashier Joe", Role: 3, Pin: "123456", Phone: "555-0000", Status: StaffStatusActive}
 	wantErr := common.NotFoundError("branch not found")
+	repo.EXPECT().GetRole(mock.Anything, uint(7), uint(3)).Return(&Role{ID: 3}, nil).Once()
 	repo.EXPECT().CreateStaff(mock.Anything, uint(7), mock.Anything).Return(nil, wantErr).Once()
 
 	_, err := svc.CreateStaff(context.Background(), 7, in)
@@ -1243,7 +1248,7 @@ func TestService_VerifyStaffPIN_HappyPath_NoBranchRestriction(t *testing.T) {
 	const plaintext = "123456"
 	staff := &Staff{ID: 5, BranchID: 3, RoleID: 2, PinHash: hashPassword(t, plaintext)}
 	repo.EXPECT().GetStaff(mock.Anything, uint(7), uint(5)).Return(staff, nil).Once()
-	repo.EXPECT().ListRolePermissions(mock.Anything, uint(2)).
+	repo.EXPECT().ListRolePermissions(mock.Anything, uint(7), uint(2)).
 		Return([]Permission{{Code: "access_pos_portal"}, {Code: "apply_manual_discount"}}, nil).Once()
 
 	result, err := svc.VerifyStaffPIN(context.Background(), 7, nil, 5, VerifyStaffPINRequest{Pin: plaintext})
@@ -1267,7 +1272,7 @@ func TestService_VerifyStaffPIN_MatchingBranch_Succeeds(t *testing.T) {
 	const plaintext = "123456"
 	staff := &Staff{ID: 5, BranchID: 3, RoleID: 2, PinHash: hashPassword(t, plaintext)}
 	repo.EXPECT().GetStaff(mock.Anything, uint(7), uint(5)).Return(staff, nil).Once()
-	repo.EXPECT().ListRolePermissions(mock.Anything, uint(2)).Return([]Permission{}, nil).Once()
+	repo.EXPECT().ListRolePermissions(mock.Anything, uint(7), uint(2)).Return([]Permission{}, nil).Once()
 
 	callerBranch := uint(3)
 	result, err := svc.VerifyStaffPIN(context.Background(), 7, &callerBranch, 5, VerifyStaffPINRequest{Pin: plaintext})
@@ -1387,7 +1392,7 @@ func TestService_VerifyStaffPIN_LockoutExpired_AllowsRetryAgain(t *testing.T) {
 	staff := &Staff{ID: 5, BranchID: 3, RoleID: 2, PinHash: hashPassword(t, plaintext), FailedPinAttempts: DefaultPinLockoutThreshold, PinLockedUntil: &expiredLock}
 	repo.EXPECT().GetStaff(mock.Anything, uint(7), uint(5)).Return(staff, nil).Once()
 	repo.EXPECT().UpdateStaffPinAttempts(mock.Anything, uint(5), 0, (*time.Time)(nil)).Return(nil).Once()
-	repo.EXPECT().ListRolePermissions(mock.Anything, uint(2)).Return([]Permission{}, nil).Once()
+	repo.EXPECT().ListRolePermissions(mock.Anything, uint(7), uint(2)).Return([]Permission{}, nil).Once()
 
 	result, err := svc.VerifyStaffPIN(context.Background(), 7, nil, 5, VerifyStaffPINRequest{Pin: plaintext})
 	require.NoError(t, err)
@@ -1402,7 +1407,7 @@ func TestService_VerifyManagerPIN_HappyPath_GrantsShortLivedToken(t *testing.T) 
 	const plaintext = "654321"
 	staff := &Staff{ID: 9, BranchID: 3, RoleID: 3, PinHash: hashPassword(t, plaintext)}
 	repo.EXPECT().GetStaff(mock.Anything, uint(7), uint(9)).Return(staff, nil).Once()
-	repo.EXPECT().ListRolePermissions(mock.Anything, uint(3)).
+	repo.EXPECT().ListRolePermissions(mock.Anything, uint(7), uint(3)).
 		Return([]Permission{{Code: "apply_manual_discount"}, {Code: "approve_void"}, {Code: "approve_return"}}, nil).Once()
 
 	result, err := svc.VerifyManagerPIN(context.Background(), 7, nil, 9, VerifyManagerPINRequest{Pin: plaintext, Permission: "approve_void"})
@@ -1426,7 +1431,7 @@ func TestService_VerifyManagerPIN_RoleLacksPermission_ReturnsGenericUnauthorized
 	// a super_staff-shaped role: has apply_manual_discount but not approve_void
 	staff := &Staff{ID: 9, BranchID: 3, RoleID: 2, PinHash: hashPassword(t, plaintext)}
 	repo.EXPECT().GetStaff(mock.Anything, uint(7), uint(9)).Return(staff, nil).Once()
-	repo.EXPECT().ListRolePermissions(mock.Anything, uint(2)).
+	repo.EXPECT().ListRolePermissions(mock.Anything, uint(7), uint(2)).
 		Return([]Permission{{Code: "apply_manual_discount"}}, nil).Once()
 
 	_, err := svc.VerifyManagerPIN(context.Background(), 7, nil, 9, VerifyManagerPINRequest{Pin: plaintext, Permission: "approve_void"})
@@ -1589,86 +1594,4 @@ func TestService_UpdateDevice_PropagatesNotFound(t *testing.T) {
 	_, err := svc.UpdateDevice(context.Background(), 7, 999, in)
 	require.Error(t, err)
 	requireRestErrorStatus(t, err, http.StatusNotFound)
-}
-
-// Roles/Permissions endpoints are pure passthroughs in the service - they're
-// global, fixed-for-v1 data (see the 09-12 permissions-model decision), so
-// there's no org-scoping logic anywhere to test, just the delegation.
-
-func TestService_ListRoles_DelegatesToRepository(t *testing.T) {
-	repo := NewMockRepository(t)
-	audW := NewMockAuditWriter(t)
-	svc := newTestService(repo, audW)
-
-	want := []Role{{ID: 1, Code: "owner", Name: "Owner"}, {ID: 2, Code: "cashier", Name: "Cashier"}}
-	repo.EXPECT().ListRoles(mock.Anything).Return(want, nil).Once()
-
-	got, err := svc.ListRoles(context.Background())
-	require.NoError(t, err)
-	require.Equal(t, want, got)
-}
-
-func TestService_ListRoles_PropagatesRepositoryError(t *testing.T) {
-	repo := NewMockRepository(t)
-	audW := NewMockAuditWriter(t)
-	svc := newTestService(repo, audW)
-
-	wantErr := common.SystemError("db read failed")
-	repo.EXPECT().ListRoles(mock.Anything).Return(nil, wantErr).Once()
-
-	_, err := svc.ListRoles(context.Background())
-	require.Error(t, err)
-	requireRestErrorStatus(t, err, http.StatusInternalServerError)
-}
-
-func TestService_ListPermissions_DelegatesToRepository(t *testing.T) {
-	repo := NewMockRepository(t)
-	audW := NewMockAuditWriter(t)
-	svc := newTestService(repo, audW)
-
-	want := []Permission{{ID: 1, Code: "products:create", Category: "catalog"}}
-	repo.EXPECT().ListPermissions(mock.Anything).Return(want, nil).Once()
-
-	got, err := svc.ListPermissions(context.Background())
-	require.NoError(t, err)
-	require.Equal(t, want, got)
-}
-
-func TestService_ListPermissions_PropagatesRepositoryError(t *testing.T) {
-	repo := NewMockRepository(t)
-	audW := NewMockAuditWriter(t)
-	svc := newTestService(repo, audW)
-
-	wantErr := common.SystemError("db read failed")
-	repo.EXPECT().ListPermissions(mock.Anything).Return(nil, wantErr).Once()
-
-	_, err := svc.ListPermissions(context.Background())
-	require.Error(t, err)
-	requireRestErrorStatus(t, err, http.StatusInternalServerError)
-}
-
-func TestService_ListRolePermissions_DelegatesToRepository(t *testing.T) {
-	repo := NewMockRepository(t)
-	audW := NewMockAuditWriter(t)
-	svc := newTestService(repo, audW)
-
-	want := []Permission{{ID: 1, Code: "products:create"}, {ID: 2, Code: "products:delete"}}
-	repo.EXPECT().ListRolePermissions(mock.Anything, uint(1)).Return(want, nil).Once()
-
-	got, err := svc.ListRolePermissions(context.Background(), 1)
-	require.NoError(t, err)
-	require.Equal(t, want, got)
-}
-
-func TestService_ListRolePermissions_PropagatesRepositoryError(t *testing.T) {
-	repo := NewMockRepository(t)
-	audW := NewMockAuditWriter(t)
-	svc := newTestService(repo, audW)
-
-	wantErr := common.SystemError("db read failed")
-	repo.EXPECT().ListRolePermissions(mock.Anything, uint(1)).Return(nil, wantErr).Once()
-
-	_, err := svc.ListRolePermissions(context.Background(), 1)
-	require.Error(t, err)
-	requireRestErrorStatus(t, err, http.StatusInternalServerError)
 }

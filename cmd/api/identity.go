@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"slices"
 	"strconv"
 	"time"
 
@@ -15,12 +16,14 @@ import (
 )
 
 type IdentityAPI struct {
-	service identity.Interface
+	service   identity.Interface
+	jwtSecret []byte
 }
 
 func NewIdentityAPI(db *gorm.DB, jwtSecret []byte, accessTokenTTL, refreshTokenTTL, staffPINTokenTTL, managerPINTokenTTL time.Duration) *IdentityAPI {
 	return &IdentityAPI{
-		service: identity.NewService(identity.NewRepository(db), audit.NewRepository(db), db, jwtSecret, accessTokenTTL, refreshTokenTTL, staffPINTokenTTL, managerPINTokenTTL),
+		service:   identity.NewService(identity.NewRepository(db), audit.NewRepository(db), db, jwtSecret, accessTokenTTL, refreshTokenTTL, staffPINTokenTTL, managerPINTokenTTL),
+		jwtSecret: jwtSecret,
 	}
 }
 
@@ -50,15 +53,27 @@ func (a *IdentityAPI) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.POST("/branches", orgAdmin, a.CreateBranch)
 	rg.GET("/branches/:id", a.GetBranch)
 	rg.PATCH("/branches/:id", orgAdmin, a.UpdateBranch)
-	rg.GET("/branches/:id/staff", a.ListBranchStaff)
+	// The staff list is read by the till's PIN pad, so view_staff only
+	// restricts a caller using Back Office. Adding and editing staff is Owner /
+	// Service Center, or a till's Back Office with manage_staff - which is
+	// confined to its own branch and to roles it could itself hold (see
+	// guardTillStaffChange).
+	viewStaff := middleware.RequireViewPermission(a.jwtSecret, "view_staff")
+	manageStaff := middleware.RequireBackOfficePermission(a.jwtSecret, "manage_staff")
+	rg.GET("/branches/:id/staff", viewStaff, a.ListBranchStaff)
 	rg.GET("/branches/:id/managers", a.ListBranchManagers)
-	rg.GET("/staff", a.ListStaff)
-	rg.POST("/staff", orgAdmin, a.CreateStaff)
-	rg.GET("/staff/:id", a.GetStaff)
-	rg.PATCH("/staff/:id", orgAdmin, a.UpdateStaff)
-	rg.GET("/roles", a.ListRoles)
-	rg.GET("/permissions", a.ListPermissions)
-	rg.GET("/roles/:id/permissions", a.ListRolePermissions)
+	rg.GET("/staff", viewStaff, a.ListStaff)
+	rg.POST("/staff", manageStaff, a.CreateStaff)
+	rg.GET("/staff/:id", viewStaff, a.GetStaff)
+	rg.PATCH("/staff/:id", manageStaff, a.UpdateStaff)
+	// Role & access management is Owner / Service Center only and never
+	// grantable. Changes reach staff at their next PIN sign-in.
+	rg.GET("/roles", orgAdmin, a.ListRoles)
+	rg.POST("/roles", orgAdmin, a.CreateRole)
+	rg.PATCH("/roles/:id", orgAdmin, a.UpdateRole)
+	rg.DELETE("/roles/:id", orgAdmin, a.DeleteRole)
+	rg.GET("/permissions", orgAdmin, a.ListPermissions)
+	rg.GET("/roles/:id/permissions", orgAdmin, a.ListRolePermissions)
 }
 
 // RegisterInternalRoutes mounts routes meant only for Shagan's own internal
@@ -464,6 +479,9 @@ func (a *IdentityAPI) CreateStaff(c *gin.Context) {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
+	if !a.guardTillStaffChange(c, orgID, in.BranchID, in.Role) {
+		return
+	}
 	result, err := a.service.CreateStaff(c.Request.Context(), orgID, in)
 	if err != nil {
 		common.HandleError(c, err)
@@ -513,6 +531,25 @@ func (a *IdentityAPI) UpdateStaff(c *gin.Context) {
 		common.HandleError(c, common.BadRequestError(err.Error()))
 		return
 	}
+	if isTillCaller(c) {
+		// a till can only touch staff of its own branch, and never someone
+		// whose role holds more than it does
+		target, err := a.service.GetStaff(c.Request.Context(), orgID, uint(idVal))
+		if err != nil {
+			common.HandleError(c, err)
+			return
+		}
+		roles := []uint{target.RoleID}
+		if in.Role != nil {
+			roles = append(roles, *in.Role)
+		}
+		if !a.guardTillStaffChange(c, orgID, target.BranchID, roles...) {
+			return
+		}
+		if in.BranchID != nil && !a.guardTillStaffChange(c, orgID, *in.BranchID) {
+			return
+		}
+	}
 	result, err := a.service.UpdateStaff(c.Request.Context(), orgID, actorUserID, uint(idVal), in)
 	if err != nil {
 		common.HandleError(c, err)
@@ -521,9 +558,66 @@ func (a *IdentityAPI) UpdateStaff(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// ListRoles handles `GET /roles`.
+// isTillCaller is true for a POS-device token (a till), false for an Owner /
+// Service Center acting directly.
+func isTillCaller(c *gin.Context) bool {
+	accountType, ok := middleware.AccountTypeFromContext(c)
+	return ok && accountType == middleware.AccountTypePos
+}
+
+// guardTillStaffChange applies the extra limits on a till (Back Office with
+// manage_staff) adding or editing staff; an Owner / Service Center is not
+// limited. A till may only act on its own branch, and may only involve roles
+// whose every permission it holds itself - otherwise manage_staff would let
+// someone mint a Manager, or reset a Manager's PIN and sign in as them. Writes
+// the error response and returns false when refused.
+func (a *IdentityAPI) guardTillStaffChange(c *gin.Context, orgID uint, branchID uint, roleIDs ...uint) bool {
+	if !isTillCaller(c) {
+		return true
+	}
+	if _, ok := scopedBranchID(c, branchID); !ok {
+		return false
+	}
+	held := middleware.StaffPermissions(c)
+	for _, roleID := range roleIDs {
+		perms, err := a.service.ListRolePermissions(c.Request.Context(), orgID, roleID)
+		if err != nil {
+			common.HandleError(c, err)
+			return false
+		}
+		for _, p := range perms {
+			if !slices.Contains(held, p.Code) {
+				common.HandleError(c, common.ForbiddenError("cannot use a role that holds permissions you do not hold"))
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// roleIDParam reads :id of a role route. The literal "owner" is the synthetic
+// Owner row of GET /roles - it has no id, so it maps to 0, which the service
+// refuses as fixed.
+func roleIDParam(c *gin.Context) (uint, bool) {
+	if c.Param("id") == identity.RoleCodeOwner {
+		return 0, true
+	}
+	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		common.HandleError(c, common.BadRequestError("invalid id"))
+		return 0, false
+	}
+	return uint(idVal), true
+}
+
+// ListRoles handles `GET /roles` (Owner / Service Center only): the org's
+// roles behind a synthetic, non-editable Owner row.
 func (a *IdentityAPI) ListRoles(c *gin.Context) {
-	result, err := a.service.ListRoles(c.Request.Context())
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	result, err := a.service.ListRoles(c.Request.Context(), orgID)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -531,7 +625,8 @@ func (a *IdentityAPI) ListRoles(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// ListPermissions handles `GET /permissions`.
+// ListPermissions handles `GET /permissions`: the catalogue grouped by
+// category (pos, backoffice).
 func (a *IdentityAPI) ListPermissions(c *gin.Context) {
 	result, err := a.service.ListPermissions(c.Request.Context())
 	if err != nil {
@@ -541,19 +636,100 @@ func (a *IdentityAPI) ListPermissions(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// ListRolePermissions handles `GET /roles/:id/permissions`. Read the matrix
+// ListRolePermissions handles `GET /roles/:id/permissions`: this org's grants
+// for one of its roles (404 for another org's).
 func (a *IdentityAPI) ListRolePermissions(c *gin.Context) {
-	idVal, err := strconv.ParseUint(c.Param("id"), 10, 64)
-	if err != nil {
-		common.HandleError(c, common.BadRequestError("invalid id"))
+	orgID, ok := requireOrgID(c)
+	if !ok {
 		return
 	}
-	result, err := a.service.ListRolePermissions(c.Request.Context(), uint(idVal))
+	idVal, ok := roleIDParam(c)
+	if !ok {
+		return
+	}
+	result, err := a.service.ListRolePermissions(c.Request.Context(), orgID, idVal)
 	if err != nil {
 		common.HandleError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
+}
+
+// CreateRole handles `POST /roles`. Audited as entity "role".
+func (a *IdentityAPI) CreateRole(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	actorUserID, ok := middleware.UserIDFromContext(c)
+	if !ok {
+		common.HandleError(c, common.UnauthorizedError("missing or malformed authorization header"))
+		return
+	}
+	var in identity.CreateRoleRequest
+	if err := c.ShouldBindJSON(&in); err != nil {
+		common.HandleError(c, common.BadRequestError(err.Error()))
+		return
+	}
+	result, err := a.service.CreateRole(c.Request.Context(), orgID, actorUserID, in)
+	if err != nil {
+		common.HandleError(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, result)
+}
+
+// UpdateRole handles `PATCH /roles/:id`: rename and/or replace the role's
+// permissions. 403 for the Owner row, 409 if it would leave nobody able to
+// use the till.
+func (a *IdentityAPI) UpdateRole(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	actorUserID, ok := middleware.UserIDFromContext(c)
+	if !ok {
+		common.HandleError(c, common.UnauthorizedError("missing or malformed authorization header"))
+		return
+	}
+	idVal, ok := roleIDParam(c)
+	if !ok {
+		return
+	}
+	var in identity.UpdateRoleRequest
+	if err := c.ShouldBindJSON(&in); err != nil {
+		common.HandleError(c, common.BadRequestError(err.Error()))
+		return
+	}
+	result, err := a.service.UpdateRole(c.Request.Context(), orgID, actorUserID, idVal, in)
+	if err != nil {
+		common.HandleError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// DeleteRole handles `DELETE /roles/:id`. 409 for a system role or one still
+// held by staff.
+func (a *IdentityAPI) DeleteRole(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	actorUserID, ok := middleware.UserIDFromContext(c)
+	if !ok {
+		common.HandleError(c, common.UnauthorizedError("missing or malformed authorization header"))
+		return
+	}
+	idVal, ok := roleIDParam(c)
+	if !ok {
+		return
+	}
+	if err := a.service.DeleteRole(c.Request.Context(), orgID, actorUserID, idVal); err != nil {
+		common.HandleError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 // CreateAccount handles `POST /internal/accounts`. Shagan-team-only: provisions

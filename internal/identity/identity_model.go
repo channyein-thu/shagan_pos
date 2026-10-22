@@ -170,13 +170,36 @@ type RolePermission struct {
 	RoleID       uint `gorm:"index;not null" json:"role_id"`
 }
 
-// Role maps to the "Roles" table in the ERD.
+// Role maps to the "Roles" table in the ERD. A role belongs to one
+// organization (OrgID set); a row with a nil OrgID is a global template, and
+// the three legacy rows (staff, super_staff, manager) are kept that way only
+// as the source MigrateAccessRights copies from - nothing reads them at
+// runtime. Code is unique within an org.
 type Role struct {
-	ID   uint   `gorm:"primaryKey;autoIncrement" json:"id"`
-	Code string `gorm:"size:50;not null;uniqueIndex" json:"code"`
-	Name string `gorm:"size:255;not null" json:"name"`
+	ID    uint   `gorm:"primaryKey;autoIncrement" json:"id"`
+	OrgID *uint  `gorm:"uniqueIndex:idx_roles_org_code" json:"org_id"`
+	Code  string `gorm:"size:50;not null;uniqueIndex:idx_roles_org_code" json:"code"`
+	Name  string `gorm:"size:255;not null" json:"name"`
+	// IsSystem marks Manager and Cashier: they can be renamed and re-granted
+	// but never deleted, so every org always has a till role and a manager.
+	IsSystem bool `gorm:"not null;default:false" json:"is_system"`
+	// default:CURRENT_TIMESTAMP so a raw INSERT (db/demo_seed.sql) that
+	// doesn't know this column still works.
+	UpdatedAt time.Time `gorm:"autoUpdateTime;not null;default:CURRENT_TIMESTAMP" json:"updated_at"`
+}
+
+// OrgRolePermission is one grant: orgID's roleID holds permissionID. Grants
+// are per org (the older global RolePermission table is only the migration
+// source), so two orgs can edit their Manager role independently.
+type OrgRolePermission struct {
+	ID           uint `gorm:"primaryKey;autoIncrement" json:"id"`
+	OrgID        uint `gorm:"not null;uniqueIndex:idx_org_role_permission" json:"org_id"`
+	RoleID       uint `gorm:"not null;uniqueIndex:idx_org_role_permission;index" json:"role_id"`
+	PermissionID uint `gorm:"not null;uniqueIndex:idx_org_role_permission" json:"permission_id"`
 }
 
 func (Staff) TableName() string { return "staffs" }
 
 func (RolePermission) TableName() string { return "role_permission" }
+
+func (OrgRolePermission) TableName() string { return "org_role_permission" }

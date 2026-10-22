@@ -22,28 +22,34 @@ func NewShiftAPI(db *gorm.DB, jwtSecret []byte) *ShiftAPI {
 }
 
 func (a *ShiftAPI) RegisterRoutes(rg *gin.RouterGroup) {
-	// RequireStaffToken proves *which staff member* is acting, for the
-	// endpoints where that identity is the point (opening/closing their own
-	// shift, attributing a drawer event/expense to themselves) - see
-	// shift.ExpenseActor and cmd/api/shift.go's handlers below.
+	// The staff token proves *which staff member* is acting, for the endpoints
+	// where that identity is the point (opening/closing their own shift,
+	// attributing a drawer event/expense to themselves) - see
+	// shift.ExpenseActor and cmd/api/shift.go's handlers below. Opening and
+	// closing one's own shift needs manage_own_shift; the force-close override
+	// has its own permission, force_close_shift (it used to ride on
+	// access_backoffice) - see ForceCloseShift.
 	requireStaff := middleware.RequireStaffToken(a.jwtSecret)
-	// access_backoffice (Manager-only) gates the force-close override - see
-	// ForceCloseShift.
-	requireManager := middleware.RequirePermission(a.jwtSecret, "access_backoffice")
-	rg.POST("/shifts", requireStaff, a.OpenShift)
+	manageOwnShift := middleware.RequireStaffPermission(a.jwtSecret, "manage_own_shift")
+	forceClose := middleware.RequireStaffPermission(a.jwtSecret, "force_close_shift")
+	rg.POST("/shifts", manageOwnShift, a.OpenShift)
 	rg.GET("/shifts/current", a.GetCurrentShift)
 	rg.GET("/shifts/:id", a.GetShift)
-	rg.POST("/shifts/:id/close", requireStaff, a.CloseShift)
-	rg.POST("/shifts/:id/force-close", requireManager, a.ForceCloseShift)
+	rg.POST("/shifts/:id/close", manageOwnShift, a.CloseShift)
+	rg.POST("/shifts/:id/force-close", forceClose, a.ForceCloseShift)
 	rg.GET("/shifts/:id/summary", a.GetShiftSummary)
 	rg.GET("/shifts/:id/reconciliations", a.ListShiftReconciliations)
 	rg.POST("/drawer-events", requireStaff, a.CreateDrawerEvent)
 	rg.GET("/drawer-events", a.ListDrawerEvents)
 	rg.GET("/expenses", a.ListExpenses)
 	// Expenses also accept an Owner / Service Center bearer token acting
-	// directly, with no staff token (the Owner has no Staff record).
+	// directly, with no staff token (the Owner has no Staff record). Logging
+	// one at the till needs log_till_expenses; editing or deleting one is open
+	// to any staff token here, and the repository then only lets a staff
+	// member change their own unless they hold manage_expenses (expenseActor).
 	staffOrOrgAdmin := middleware.RequireStaffTokenOrOrgAdmin(a.jwtSecret)
-	rg.POST("/expenses", staffOrOrgAdmin, a.CreateExpense)
+	logExpenses := middleware.RequireStaffPermissionOrOrgAdmin(a.jwtSecret, "log_till_expenses")
+	rg.POST("/expenses", logExpenses, a.CreateExpense)
 	rg.PATCH("/expenses/:id", staffOrOrgAdmin, a.UpdateExpense)
 	rg.DELETE("/expenses/:id", staffOrOrgAdmin, a.DeleteExpense)
 }
@@ -74,15 +80,16 @@ func requireStaffID(c *gin.Context) (uint, bool) {
 
 // expenseActor builds the authorization the repository checks before
 // letting UpdateExpense/DeleteExpense touch another staff member's expense.
-// A staff caller (X-Staff-Token) may manage any expense only with
-// access_backoffice, the Manager permission (see internal/seed/seed.go); an
+// A staff caller (X-Staff-Token) may manage any expense only with Back Office
+// open (access_backoffice) and manage_expenses (see
+// identity.PermissionCatalogue); an
 // org-wide Owner / Service Center caller (no staff token - see
 // middleware.RequireStaffTokenOrOrgAdmin) acts as themself and may manage
 // any expense in their org. Writes a 401 itself and returns ok=false if
 // neither identity is present.
 func expenseActor(c *gin.Context) (shift.ExpenseActor, bool) {
 	if staffID, ok := middleware.StaffIDFromContext(c); ok {
-		return shift.ExpenseActor{StaffID: staffID, CanManageAny: middleware.StaffHasPermission(c, "access_backoffice")}, true
+		return shift.ExpenseActor{StaffID: staffID, CanManageAny: middleware.StaffHasPermission(c, "access_backoffice") && middleware.StaffHasPermission(c, "manage_expenses")}, true
 	}
 	userID, ok := middleware.UserIDFromContext(c)
 	if !ok {
@@ -194,8 +201,9 @@ func (a *ShiftAPI) CloseShift(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// ForceCloseShift handles `POST /shifts/:id/force-close`. Manager-only
-// (access_backoffice) override of CloseShift's "same staff who opened it"
+// ForceCloseShift handles `POST /shifts/:id/force-close`. Needs the
+// force_close_shift permission (a Manager's by default; it used to ride on
+// access_backoffice) - an override of CloseShift's "same staff who opened it"
 // rule - for when that staff is genuinely unavailable (e.g. called in sick)
 // and the till would otherwise stay locked open indefinitely. reason is
 // always required here, not just on a cash mismatch.
@@ -355,8 +363,8 @@ func (a *ShiftAPI) CreateExpense(c *gin.Context) {
 }
 
 // UpdateExpense handles `PATCH /expenses/:id`. Only the staff member who
-// logged the expense, a Manager (access_backoffice), or an Owner / Service
-// Center acting directly may modify it - see shift.ExpenseActor.
+// logged the expense, a staff member with Back Office open and manage_expenses,
+// or an Owner / Service Center acting directly may modify it - see shift.ExpenseActor.
 func (a *ShiftAPI) UpdateExpense(c *gin.Context) {
 	scope, ok := shiftAccessScope(c)
 	if !ok {

@@ -24,16 +24,20 @@ func NewPlatformAPI(db *gorm.DB, store storage.Storage, jwtSecret []byte) *Platf
 }
 
 func (a *PlatformAPI) RegisterRoutes(rg *gin.RouterGroup) {
-	// Settings/QR writes need Back Office (owner/service_center, or a
-	// manager's staff token at the till); reads stay open - the till prints
-	// receipts and shows payment QRs to customers.
-	backOffice := middleware.RequireBackOffice(a.jwtSecret)
+	// Receipt settings need Back Office with manage_receipt_settings (a till
+	// can only ever edit its own branch's override - the org-wide default is
+	// forced to the caller's branch, see UpdateReceiptSettings). Payment QR
+	// codes are the shop's money destination, so only an Owner / Service
+	// Center may change them - never grantable to staff. Reads stay open: the
+	// till prints receipts and shows payment QRs to customers.
+	receiptSettings := middleware.RequireBackOfficePermission(a.jwtSecret, "manage_receipt_settings")
+	orgAdmin := middleware.RequireOrgAdmin()
 	rg.GET("/receipt-settings", a.GetReceiptSettings)
-	rg.PUT("/receipt-settings", backOffice, a.UpdateReceiptSettings)
+	rg.PUT("/receipt-settings", receiptSettings, a.UpdateReceiptSettings)
 	rg.POST("/printers/test", a.TestPrinter)
-	rg.POST("/branches/:id/payment-qr-codes", backOffice, a.UploadPaymentQRCode)
+	rg.POST("/branches/:id/payment-qr-codes", orgAdmin, a.UploadPaymentQRCode)
 	rg.GET("/branches/:id/payment-qr-codes", a.ListPaymentQRCodes)
-	rg.DELETE("/branches/:id/payment-qr-codes/:qrId", backOffice, a.DeletePaymentQRCode)
+	rg.DELETE("/branches/:id/payment-qr-codes/:qrId", orgAdmin, a.DeletePaymentQRCode)
 }
 
 // scopedBranchID resolves the branch a request targets: a pos-device/manager

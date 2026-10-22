@@ -279,8 +279,8 @@ func (r *RepositoryImpl) ListBranchManagers(ctx context.Context, orgID uint, id 
 		return nil, err
 	}
 
-	grantedRoleIDs := r.db.WithContext(ctx).Model(&RolePermission{}).
-		Where("permission_id = (?)", r.db.WithContext(ctx).Model(&Permission{}).Where("code = ?", permissionCode).Select("id")).
+	grantedRoleIDs := r.db.WithContext(ctx).Model(&OrgRolePermission{}).
+		Where("org_id = ? AND permission_id IN (?)", orgID, r.db.WithContext(ctx).Model(&Permission{}).Where("code = ?", permissionCode).Select("id")).
 		Select("role_id")
 
 	var staff []Staff
@@ -402,18 +402,32 @@ func (r *RepositoryImpl) UpdateStaffPinAttempts(ctx context.Context, staffID uin
 		}).Error
 }
 
-// ListRoles backs `GET /roles`. Roles are global and fixed for v1 (not
-// per-org customizable - see the 09-12 permissions-model decision), so
-// there's no org scoping here, unlike Branches/Staff/Devices.
-func (r *RepositoryImpl) ListRoles(ctx context.Context) ([]Role, error) {
+// ListRoles backs `GET /roles`. Roles are per organization: only orgID's own
+// rows (never the global templates), system roles first, then by name.
+func (r *RepositoryImpl) ListRoles(ctx context.Context, orgID uint) ([]Role, error) {
 	var roles []Role
-	if err := r.db.WithContext(ctx).Find(&roles).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where("org_id = ?", orgID).
+		Order("is_system DESC, name ASC, id ASC").Find(&roles).Error; err != nil {
 		return nil, err
 	}
 	return roles, nil
 }
 
-// ListPermissions backs `GET /permissions`. Global, same reasoning as ListRoles.
+// GetRole returns common.NotFoundError for a role that exists but belongs to
+// another org, same not-found-not-forbidden reasoning as GetBranch.
+func (r *RepositoryImpl) GetRole(ctx context.Context, orgID uint, id uint) (*Role, error) {
+	var role Role
+	if err := r.db.WithContext(ctx).Where("id = ? AND org_id = ?", id, orgID).First(&role).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, common.NotFoundError("role not found")
+		}
+		return nil, err
+	}
+	return &role, nil
+}
+
+// ListPermissions backs `GET /permissions`. The catalogue is global - every
+// org picks from the same list - so there's no org scoping.
 func (r *RepositoryImpl) ListPermissions(ctx context.Context) ([]Permission, error) {
 	var permissions []Permission
 	if err := r.db.WithContext(ctx).Find(&permissions).Error; err != nil {
@@ -422,16 +436,126 @@ func (r *RepositoryImpl) ListPermissions(ctx context.Context) ([]Permission, err
 	return permissions, nil
 }
 
-// ListRolePermissions backs `GET /roles/:id/permissions`. Read the matrix
-func (r *RepositoryImpl) ListRolePermissions(ctx context.Context, id uint) ([]Permission, error) {
+// ListRolePermissions backs `GET /roles/:id/permissions` and the permissions
+// claim of a PIN token. Filtering the grants by orgID as well as roleID means
+// a role id from another org (or none) yields no permissions, never theirs.
+func (r *RepositoryImpl) ListRolePermissions(ctx context.Context, orgID uint, roleID uint) ([]Permission, error) {
 	var permissions []Permission
 	err := r.db.WithContext(ctx).
-		Where("id IN (?)", r.db.WithContext(ctx).Model(&RolePermission{}).Where("role_id = ?", id).Select("permission_id")).
+		Where("id IN (?)", r.db.WithContext(ctx).Model(&OrgRolePermission{}).
+			Where("org_id = ? AND role_id = ?", orgID, roleID).Select("permission_id")).
+		Order("id").
 		Find(&permissions).Error
 	if err != nil {
 		return nil, err
 	}
 	return permissions, nil
+}
+
+// ListRoleGrantCodes backs the roles screen's POS / Back office switches in a
+// single query instead of one per role.
+func (r *RepositoryImpl) ListRoleGrantCodes(ctx context.Context, orgID uint) (map[uint][]string, error) {
+	var rows []struct {
+		RoleID uint
+		Code   string
+	}
+	err := r.db.WithContext(ctx).Table("org_role_permission").
+		Select("org_role_permission.role_id AS role_id, permissions.code AS code").
+		Joins("JOIN permissions ON permissions.id = org_role_permission.permission_id").
+		Where("org_role_permission.org_id = ?", orgID).
+		Order("permissions.id").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[uint][]string)
+	for _, row := range rows {
+		out[row.RoleID] = append(out[row.RoleID], row.Code)
+	}
+	return out, nil
+}
+
+// CountStaffByRole backs the staff_count on each row of `GET /roles` (and the
+// "in use" check before a delete). Staff have no org column, so they're scoped
+// through their branch.
+func (r *RepositoryImpl) CountStaffByRole(ctx context.Context, orgID uint) (map[uint]int, error) {
+	var rows []struct {
+		Role  uint
+		Count int
+	}
+	err := r.db.WithContext(ctx).Model(&Staff{}).
+		Select("role AS role, COUNT(*) AS count").
+		Where("branch_id IN (?)", r.orgBranchIDs(ctx, orgID)).
+		Group("role").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[uint]int, len(rows))
+	for _, row := range rows {
+		out[row.Role] = row.Count
+	}
+	return out, nil
+}
+
+// CreateRole backs `POST /roles`. db is the caller's transaction.
+func (r *RepositoryImpl) CreateRole(db *gorm.DB, role *Role) error {
+	if err := db.Create(role).Error; err != nil {
+		if common.IsDuplicateError(err) {
+			return common.ConflictError("a role with this name already exists")
+		}
+		return err
+	}
+	return nil
+}
+
+// UpdateRoleName backs `PATCH /roles/:id`'s rename. The code is deliberately
+// never touched: staff and tokens refer to roles by id, and the code is what
+// the migration and defaults key on.
+func (r *RepositoryImpl) UpdateRoleName(db *gorm.DB, orgID uint, id uint, name string) error {
+	res := db.Model(&Role{}).Where("id = ? AND org_id = ?", id, orgID).Update("name", name)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return common.NotFoundError("role not found")
+	}
+	return nil
+}
+
+// ReplaceRoleGrants backs `PATCH /roles/:id`'s permission edit: the role ends
+// up with exactly permissionIDs. Delete-then-insert inside the caller's
+// transaction, so a failed insert never leaves the role half-stripped.
+func (r *RepositoryImpl) ReplaceRoleGrants(db *gorm.DB, orgID uint, roleID uint, permissionIDs []uint) error {
+	if err := db.Where("org_id = ? AND role_id = ?", orgID, roleID).Delete(&OrgRolePermission{}).Error; err != nil {
+		return err
+	}
+	if len(permissionIDs) == 0 {
+		return nil
+	}
+	grants := make([]OrgRolePermission, len(permissionIDs))
+	for i, pid := range permissionIDs {
+		grants[i] = OrgRolePermission{OrgID: orgID, RoleID: roleID, PermissionID: pid}
+	}
+	return db.Create(&grants).Error
+}
+
+// DeleteRole backs `DELETE /roles/:id`.
+func (r *RepositoryImpl) DeleteRole(db *gorm.DB, orgID uint, id uint) error {
+	res := db.Where("id = ? AND org_id = ?", id, orgID).Delete(&Role{})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return common.NotFoundError("role not found")
+	}
+	return db.Where("org_id = ? AND role_id = ?", orgID, id).Delete(&OrgRolePermission{}).Error
+}
+
+// ProvisionDefaultRoles backs Service.CreateAccount - see the package-level
+// ProvisionDefaultRoles.
+func (r *RepositoryImpl) ProvisionDefaultRoles(db *gorm.DB, orgID uint) error {
+	return ProvisionDefaultRoles(db, orgID)
 }
 
 // CreateOrganization backs Service.CreateAccount's first step. Plain insert -

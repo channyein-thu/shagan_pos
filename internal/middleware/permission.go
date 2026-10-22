@@ -51,7 +51,7 @@ func RequirePermission(jwtSecret []byte, permission string) gin.HandlerFunc {
 			return
 		}
 
-		if !slices.Contains(claims.Permissions, permission) {
+		if !slices.Contains(claims.EffectivePermissions(), permission) {
 			common.HandleError(c, common.ForbiddenError("insufficient permission"))
 			c.Abort()
 			return
@@ -99,7 +99,9 @@ func parseStaffToken(c *gin.Context, jwtSecret []byte) (*authtoken.StaffClaims, 
 func setStaffContext(c *gin.Context, claims *authtoken.StaffClaims) {
 	c.Set(ContextStaffID, claims.StaffID)
 	c.Set(ContextRoleID, claims.RoleID)
-	c.Set(ContextStaffPermissions, claims.Permissions)
+	// EffectivePermissions, not Permissions: a token minted before per-org
+	// roles is expanded so it keeps working until it expires.
+	c.Set(ContextStaffPermissions, claims.EffectivePermissions())
 }
 
 // StaffIDFromContext returns the authorized caller's staff ID, as set by
@@ -111,6 +113,18 @@ func StaffIDFromContext(c *gin.Context) (uint, bool) {
 	}
 	id, ok := v.(uint)
 	return id, ok
+}
+
+// StaffPermissions returns the effective permission codes of the staff token
+// recorded in the request context (nil when there is none) - what a handler
+// compares against to stop a caller handing out more than they hold.
+func StaffPermissions(c *gin.Context) []string {
+	v, ok := c.Get(ContextStaffPermissions)
+	if !ok {
+		return nil
+	}
+	perms, _ := v.([]string)
+	return perms
 }
 
 // RoleIDFromContext returns the authorized caller's role ID, as set by
@@ -155,5 +169,5 @@ func ManagerApproved(c *gin.Context, jwtSecret []byte, permission string) bool {
 	if err != nil {
 		return false
 	}
-	return slices.Contains(claims.Permissions, permission)
+	return slices.Contains(claims.EffectivePermissions(), permission)
 }

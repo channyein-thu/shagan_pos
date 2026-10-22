@@ -31,27 +31,112 @@ separate account type, just a Staff record whose role grants more
 permissions. They are told apart only by which PIN is entered at the same
 POS device/session.
 
-Seeded roles and their granted permissions (`internal/seed/seed.go`):
+### Roles & access rights (per organization — built 2026-10-22)
 
-| Role code | Permissions granted |
-|---|---|
-| `staff` | `access_pos_portal` |
-| `super_staff` | `access_pos_portal`, `open_drawer_no_sale`, `apply_manual_discount` |
-| `manager` | `access_pos_portal`, `access_backoffice`, `open_drawer_no_sale`, `apply_manual_discount`, `approve_void`, `approve_return`, `approve_exchange` |
+Modelled on Loyverse's "Access rights". **Roles and their grants belong to an
+organization** (`roles.org_id`, `org_role_permission`): the Owner creates,
+renames, re-grants and deletes roles in the Back Office, and two orgs' roles
+never affect each other. Every org starts with two built-in roles
+(`is_system`, can be renamed and re-granted but never deleted):
 
-Note `open_drawer_no_sale` is granted to both `super_staff` and `manager`
-(a manager closing a shift needs it to count cash). A `staff` cashier still
-needs a manager's approval for it (see Section 2's manager-approval
-mechanism; `VerifyManagerPIN` isn't restricted to role=`manager`, it's
-granted to whichever staff's role actually has the requested permission).
-The seed adds missing grants on every run, so re-running it on an existing
-database picks up the manager grant without duplicating anything.
+- **Manager** (`manager`) — everything in the catalogue below **except**
+  `manage_staff`.
+- **Cashier** (`cashier`; this is the old global `staff` role) — the till
+  basics: `access_pos_portal`, `accept_payments`, `hold_resume_sales`,
+  `manage_own_shift`, `log_till_expenses`, `add_customers`,
+  `view_all_receipts`, `reprint_receipt`.
 
-> **Role naming — deferred on purpose.** The live back-office prototype's
-> "Add Staff" form shows 4 roles (`Cashier` / `Senior Cashier` / `Supervisor`
-> / `Manager`) that don't match these 3 seeded role codes in name or count.
-> Confirmed decision: leave as-is for now, revisit in a future version. Do
-> not build a mapping between them without asking first.
+An org that was already using the old global `super_staff` role got a custom
+**Super Staff** role with its old grants (`open_drawer_no_sale`,
+`apply_manual_discount`) plus the till basics and `approve_manual_discount`.
+Anything else is a custom role the Owner builds. The **Owner** is not a staff
+role (it's the org's own login), but `GET /roles` shows it as a fixed,
+non-editable first row.
+
+Each role has two switches, like Loyverse: **POS** (`access_pos_portal`: PIN
+sign-in at the till) and **Back office** (`access_backoffice`: open the Back
+Office at the till with that PIN), and a checklist under each. A permission
+under a switch that is off is accepted but has no effect — the API says so in
+a `warnings` list.
+
+**POS** permissions (category `pos`)
+
+| code | what it allows | Manager | Cashier | enforced on |
+|---|---|---|---|---|
+| `access_pos_portal` | **POS switch** — sign in to the till with a PIN | ✔ | ✔ | PIN verify |
+| `accept_payments` | ring up sales and take payment | ✔ | ✔ | `POST /sales` |
+| `hold_resume_sales` | hold and resume sales | ✔ | ✔ | `POST /held-sales`, `DELETE /held-sales/:id` |
+| `manage_own_shift` | open and close their own shift | ✔ | ✔ | `POST /shifts`, `POST /shifts/:id/close` |
+| `force_close_shift` | force-close another staff's shift | ✔ | | `POST /shifts/:id/force-close` |
+| `log_till_expenses` | log an expense at the till | ✔ | ✔ | `POST /expenses` |
+| `add_customers` | add customers at the till | ✔ | ✔ | `POST /customers`, `POST /customers/:id/consents` |
+| `view_all_receipts` | see every receipt at the till (off = only their own) | ✔ | ✔ | `GET /sales` |
+| `reprint_receipt` | reprint receipts | ✔ | ✔ | `POST /sales/:id/reprint` |
+| `apply_manual_discount` | give a manual discount without approval (**Part B** will make this "request a discount") | ✔ | | `POST /sales` |
+| `approve_manual_discount` | approve discounts with their PIN (Part B) | ✔ | | — |
+| `approve_own_discount` | approve a discount on their own sale (Part B) | ✔ | | — |
+| `approve_void` | cancel (void) receipts | ✔ | | `POST /sales/:id/void` |
+| `approve_return` | refunds | ✔ | | `POST /returns` |
+| `approve_exchange` | exchanges | ✔ | | `POST /exchanges` |
+| `open_drawer_no_sale` | open the drawer without a sale | ✔ | | `POST /drawer-events` |
+
+**Back office** permissions (category `backoffice`; only meaningful with `access_backoffice` on)
+
+| code | what it allows | Manager | enforced on |
+|---|---|---|---|
+| `access_backoffice` | **Back office switch** | ✔ | every back office route below |
+| `view_reports` | dashboard and reports | ✔ | `GET /reports/*` |
+| `view_item_cost` | see cost and profit | ✔ | `cogs`, `gross_profit`, `net_profit` of `GET /reports/profit-loss` |
+| `view_sales` | sales history and receipts | ✔ | `GET /sales`, `/sales/:id`, `/sales/:id/receipt` |
+| `view_audit_log` | audit log | ✔ | `GET /audit-log` |
+| `manage_catalog` | products, categories, combos | ✔ | catalog writes |
+| `view_inventory` | stock levels, ledger, transfers | ✔ | `GET /stock-levels`, `/inventory/*`, `/stock-transfers` |
+| `manage_stock` | adjustments and transfers | ✔ | `POST /inventory/adjustments`, `POST/PATCH /stock-transfers` |
+| `manage_suppliers` | suppliers | ✔ | supplier writes |
+| `manage_purchase_orders` | create and edit purchase orders | ✔ | `POST/PATCH /purchase-orders` |
+| `receive_stock` | receive purchase orders | ✔ | `POST /purchase-orders/:id/receipts` |
+| `view_customers` | customer list | ✔ | `GET /customers*` |
+| `manage_customers` | edit customers and consents | ✔ | `POST /customers*` (also satisfies `add_customers`) |
+| `view_staff` | staff list (read only) | ✔ | `GET /staff*`, `GET /branches/:id/staff` |
+| `manage_staff` | add and edit staff, PINs, statuses (own branch) | | `POST /staff`, `PATCH /staff/:id` |
+| `manage_expenses` | edit or delete any expense at the branch | ✔ | `PATCH/DELETE /expenses/:id` |
+| `manage_receipt_settings` | receipt settings (own branch) | ✔ | `PUT /receipt-settings` |
+| `resolve_sync_conflicts` | resolve offline sync conflicts | ✔ | `PATCH /sync/conflicts/:id/resolve` |
+
+**Owner-only, never grantable** (`RequireOrgAdmin`; no permission rows exist for
+them): roles and access rights, branches, devices and POS accounts, **payment
+QR codes** (upload/delete), the org-wide receipt default, other branches'
+data, organization settings and timezone.
+
+Rules worth knowing:
+- **Changes reach staff at their next PIN sign-in.** A staff token already
+  issued keeps the permissions it was minted with (up to its 12-hour life).
+- **Tokens issued before the 2026-10-22 migration keep working until they
+  expire**: a token with no `access_version` claim lists only the seven legacy
+  codes and is expanded (`authtoken.StaffClaims.EffectivePermissions`) —
+  `access_pos_portal` implies the till basics, `access_backoffice` implies the
+  Manager's back office reach and `force_close_shift`. It never gains an
+  approval, the drawer, discounts or `manage_staff`.
+- **At least one role must keep the POS switch on** (409 otherwise).
+- **A till that holds `manage_staff` is confined**: its own branch only, and
+  only roles whose every permission it holds itself (no minting a Manager, no
+  resetting a Manager's PIN from a lesser role).
+- **Roles in staff requests must be the org's own** — another org's role id is
+  a 404.
+- **`apply_manual_discount` for Cashier is deliberately off** (the catalogue
+  table in the V1 spec marked it on): today a cashier needs a manager's PIN to
+  discount, and `POST /sales` still reads this permission as "may discount
+  without approval". It flips to on when Part B redefines it as "may request".
+
+**Migration** (`identity.MigrateAccessRights`, run on every start by
+`migrate.Run` and by `go run ./cmd/seed`; idempotent): for each org with no
+roles of its own it creates Manager + Cashier (+ Super Staff if used), copies
+each legacy role's grants **verbatim** for the seven legacy permissions and
+gives the new permissions their defaults, then repoints every `staffs.role`
+at the org's own role. A legacy role that isn't one of the three seeded ones
+is cloned as a custom role. The legacy global rows stay as the migration
+source and are never read at runtime. An org that already has roles is left
+alone, so an Owner's edits survive restarts.
 
 ---
 
@@ -84,17 +169,33 @@ Three distinct tokens exist, often needed together on one request:
    approval for it instead.
 
 ### Which middleware/helper, when
-- `middleware.RequireStaffToken(jwtSecret)` — used on: `OpenShift`,
-  `CloseShift`, `CreateDrawerEvent`, `CreateSale`. (`CreateExpense`,
-  `UpdateExpense`, `DeleteExpense` and `VoidSale` use
+- `middleware.RequireStaffToken(jwtSecret)` — used on: `CreateDrawerEvent`,
+  `CreateReturn`, `CreateExchange`. (`UpdateExpense`,
+  `DeleteExpense` and `VoidSale` use
   `RequireStaffTokenOrOrgAdmin` instead — same, but an Owner / Service Center
   bearer token may pass with no staff token; see "Owner acts as owner" below.)
   These need to know who's acting, but don't
   hard-gate on one fixed permission via middleware — the handler makes its
   own permission decision inline (see below).
-- `middleware.RequirePermission(jwtSecret, "access_backoffice")` — used on:
-  `ForceCloseShift` (Manager-only, hard gate, no exceptions below it, and
-  no manager-approval escape hatch either - this one has no fallback).
+- `middleware.RequireStaffPermission(jwtSecret, code)` (= `RequirePermission`)
+  — the staff token must carry `code`; no manager-approval escape hatch.
+  Used on: `POST /sales` (`accept_payments`), held sales (`hold_resume_sales`),
+  `POST /shifts` and `/shifts/:id/close` (`manage_own_shift`),
+  `ForceCloseShift` (`force_close_shift`).
+- `middleware.RequireStaffPermissionOrOrgAdmin(jwtSecret, codes...)` — same,
+  but an Owner / Service Center passes with no staff token, and any one of
+  several codes is enough. Used on: `POST /expenses` (`log_till_expenses`),
+  `POST /customers` + consents (`add_customers` or `manage_customers`),
+  `POST /sales/:id/reprint` (`reprint_receipt`).
+- `middleware.RequireBackOfficePermission(jwtSecret, code)` — Owner / Service
+  Center always pass; a till needs a staff token carrying **both**
+  `access_backoffice` and `code`. Used on every back office write (table below).
+- `middleware.RequireViewPermission(jwtSecret, code)` — for reads the till also
+  uses. Restricts **only a caller using Back Office** (a staff token with
+  `access_backoffice`), who then needs `code`; a plain till read (no staff
+  token, or a cashier's) is unchanged, and an Owner always passes.
+  `middleware.CallerHasPermission(c, code)` is the inline check for fields
+  (e.g. `view_item_cost`).
 - `middleware.ManagerApproved(c, jwtSecret, permission)` — an
   **OR-fallback**, not a gate: a handler checks
   `StaffHasPermission(c, X) || ManagerApproved(c, jwtSecret, X)` wherever a
@@ -118,11 +219,13 @@ The access JWT carries an `account_type` claim (`owner` / `pos` /
 `expires_at` is still the *refresh* token's). A token issued before the claim
 existed gets **401** on any gated route (re-login / refresh), never 403.
 
-| Gate (`internal/middleware/access.go`) | Who passes | Routes |
+| Gate (`internal/middleware`) | Who passes | Routes |
 |---|---|---|
-| `RequireOrgAdmin` | Owner, Service Center (never a till, manager PIN or not) | `POST /staff`, `PATCH /staff/:id`, `POST/PATCH /branches`, `POST/PATCH /devices` |
-| `RequireBackOffice` | Owner, Service Center, **or** a POS-device token + `X-Staff-Token` whose role has `access_backoffice` (a manager who unlocked Back Office at the till) | catalog writes (products/categories/combos), supplier writes, `PUT /receipt-settings`, payment-QR upload/delete, `POST /inventory/adjustments`, `POST/PATCH /stock-transfers`, `POST/PATCH /purchase-orders`, `POST /purchase-orders/:id/receipts` |
-| (none beyond `Auth`) | any authenticated caller | all reads the till needs to sell (products, stock levels, receipt settings, QR codes, ...), plus the staff-token routes in the list above |
+| `RequireOrgAdmin` | Owner, Service Center (never a till, manager PIN or not) | `POST/PATCH /branches`, `POST/PATCH /devices`, **all role routes** (`GET/POST /roles`, `PATCH/DELETE /roles/:id`, `GET /roles/:id/permissions`, `GET /permissions`), **payment-QR upload/delete** |
+| `RequireBackOfficePermission(code)` | Owner, Service Center, **or** a POS token + `X-Staff-Token` carrying `access_backoffice` **and** `code` | catalog writes (`manage_catalog`), supplier writes (`manage_suppliers`), `POST/PATCH /purchase-orders` (`manage_purchase_orders`), `POST /purchase-orders/:id/receipts` (`receive_stock`), `POST /inventory/adjustments` + `POST/PATCH /stock-transfers` (`manage_stock`), `PUT /receipt-settings` (`manage_receipt_settings`), `PATCH /sync/conflicts/:id/resolve` (`resolve_sync_conflicts`), `POST /staff` + `PATCH /staff/:id` (`manage_staff`) |
+| `RequireViewPermission(code)` | everyone, except a staff token with `access_backoffice` lacking `code` | `GET /reports/*` (`view_reports`), `GET /audit-log` (`view_audit_log`), `GET /sales*` (`view_sales`), `GET /stock-levels`, `/inventory/*`, `/stock-transfers` (`view_inventory`), `GET /customers*` (`view_customers`), `GET /staff*`, `GET /branches/:id/staff` (`view_staff`) |
+| `RequireStaffPermission` / `...OrOrgAdmin` | see "Which middleware/helper, when" | the till actions listed there |
+| (none beyond `Auth`) | any authenticated caller | the reads the till needs to sell (products, receipt settings, QR codes, held sales, current shift, ...), `GET /branches*`, `GET /devices`, own-account routes, PIN verify |
 
 - **Service Center = same as Owner** on every admin route (decision, 2026-10-08).
 
@@ -157,9 +260,14 @@ still needs a staff token exactly as before. For the owner:
 - `GET /branches/:id/staff` and `/managers` are limited to the till's own
   branch for a POS-device token (403 otherwise).
 - `credential_hash` / `pin_hash` are never serialized in any response.
-- **Not yet gated (flagged, not decided):** reads of reports, audit log,
-  org-wide `GET /staff`, `/sync/conflicts` resolve, `POST /printers/test`
-  - a POS token can still call them.
+- **Still open to a POS token with no staff token** (flagged, not decided):
+  the *reads* above (reports, audit log, sales, inventory, customers, staff) —
+  they're what the till itself reads, so a till that never presents a Back
+  Office staff token is not restricted — and `GET /suppliers`,
+  `GET /purchase-orders`, `GET /sync/conflicts`, `POST /printers/test`.
+  Cost fields: `cost_price` is never serialized on any product response, and
+  P&L `cogs`/`gross_profit`/`net_profit` are dropped unless the caller has
+  `view_item_cost` (or is the Owner).
 
 **Rule of thumb:** if a client-supplied `staff_id`/`created_by` field still
 exists on a request DTO, it's for wire compatibility only — the server
@@ -223,9 +331,11 @@ provisioning (`POST /internal/accounts`, `/branches`, `/devices`,
 
 ## 4. Manager Journey
 
-A Manager is a Staff record with role `manager` (see Section 1) — not a
-separate account. Everything below is **branch-scoped** to wherever that
-Staff record belongs.
+A Manager is a Staff record whose role carries the Back office switch (by
+default the built-in `manager` role; an Owner can build others - see Section 1's
+"Roles & access rights") — not a separate account. Everything below is
+**branch-scoped** to wherever that Staff record belongs, and **every Back Office
+action needs its own permission** on top of `access_backoffice`.
 
 **Getting into Back Office at a terminal** (confirmed): there are two
 frontend routes — POS and Back Office. Entering the Back Office route at a
@@ -238,16 +348,20 @@ dedicated web login, which has no such gate (Section 3).
 Office screens, scoped to the till's own branch — not a separate, smaller UI.
 What the manager can actually *do* there is decided server-side: see "Route
 authorization by account type" in Section 2 (catalog/supplier/settings/stock/PO
-writes allowed; staff, branch and device management owner-only).
+writes allowed with their permission; branch, device, role and payment-QR
+management owner-only; staff management only with `manage_staff`, off by
+default).
 
 Confirmed capabilities:
-- **Staff**: view-only (cannot edit roles/PINs, hire/fire).
+- **Staff**: view-only by default (`view_staff`); adding/editing staff needs
+  `manage_staff`, which no built-in role has (own branch, and only roles the
+  caller itself holds).
 - **Sales / Inventory (stock) / Reports**: view, scoped to their own branch.
   (Stock visibility is already schema-supported: `StockLevel` is keyed by
   `{ProductID, BranchID}`.)
 - **Expenses**: can log new ones for their branch, and can edit/delete
-  **any** staff's expense at their branch (gated by `access_backoffice` —
-  see `shift.ExpenseActor.CanManageAny`).
+  **any** staff's expense at their branch (gated by `access_backoffice` +
+  `manage_expenses` — see `shift.ExpenseActor.CanManageAny`).
 - **Suppliers / Purchase Orders**: suppliers are shared org-wide (not
   branch-owned); Manager creates/manages Purchase Orders and receiving *for
   their own branch* against that shared supplier list. **Built:** a
@@ -266,7 +380,7 @@ Confirmed capabilities:
   whether the counted cash matches. Recorded distinctly
   (`Shift.ClosedByStaffID` differs from `Shift.StaffID`) from a normal
   close. This one has no manager-approval fallback of its own - it *is*
-  the escape hatch, gated by `access_backoffice` directly.
+  the escape hatch, gated by the `force_close_shift` permission directly.
 - **Manual discounts**: `apply_manual_discount` permission lets them apply
   an item discount on `CreateSale` directly, without needing anyone else's
   approval.
@@ -275,15 +389,21 @@ Confirmed capabilities:
 
 ## 5. Staff (Cashier) Journey
 
-Role `staff` or `super_staff` (see Section 1's permission table for exactly
-what each grants).
+A Staff record whose role has the POS switch — by default the built-in
+`cashier` role (or a custom role such as the migrated `Super Staff`); see
+Section 1's permission tables for exactly what each grants. Each step below is
+enforced by its own permission: a role the Owner has stripped of, say,
+`accept_payments` gets 403 at that step.
 
 1. PIN sign-in at a POS device (`VerifyStaffPIN`, scoped to that device's
    branch) — issues the `X-Staff-Token` used for everything below.
 2. **Opens their own shift** with an opening cash float
    (`POST /shifts`) — the shift always belongs to whichever staff the
    token identifies, never a client-supplied id.
-3. Rings sales (`POST /sales`): add items (optional per-item discount,
+3. Rings sales (`POST /sales`, needs `accept_payments`; holding/resuming a cart
+   needs `hold_resume_sales`; reprinting needs `reprint_receipt`; the receipt
+   list shows every sale only with `view_all_receipts`, otherwise just their
+   own): add items (optional per-item discount,
    optional combo grouping — see below), optional customer lookup/create,
    one or more payments (split payment supported across cash/QR — the only
    2 methods accepted in this version; QR codes are managed per-branch via
@@ -296,8 +416,8 @@ what each grants).
    1).
 5. **Manual discount rule**: any item discount `> 0` requires the calling
    staff's role to grant `apply_manual_discount`, **or** a valid
-   `X-Manager-Approval-Token` granting it instead (a Manager/super_staff
-   PIN-approves it at the terminal - see Section 2). Item discounts and
+   `X-Manager-Approval-Token` granting it instead (a Manager PIN-approves it at
+   the terminal - see Section 2). Item discounts and
    item tax must both be `>= 0` (400 on negative).
 6. **Per-item tax**: each line item snapshots its own tax amount (from
    `Product.Tax`, same offline-first client-caching reasoning as
@@ -308,7 +428,7 @@ what each grants).
    share of the discount), tagged with a shared `combo_id` purely for
    receipt/report grouping - see Section 8's design writeup for why.
 8. Opens the drawer without a sale — only if their role grants
-   `open_drawer_no_sale` (`super_staff` and `manager` by default), **or**
+   `open_drawer_no_sale` (Manager and the migrated Super Staff by default), **or**
    a valid manager approval for it; otherwise 403.
 9. Void/return/exchange need the equivalent
    `approve_void`/`approve_return`/`approve_exchange` permission or a
@@ -360,8 +480,9 @@ what each grants).
 
 ## 7. Confirmed Business Rules (Quick Reference)
 
-- **Shift**: opener == closer, no exception, except a Manager's
-  `ForceCloseShift` (mandatory `reason` always, even on a cash match).
+- **Shift**: opener == closer, no exception, except a force-close by someone
+  with `force_close_shift` (a Manager by default; mandatory `reason` always,
+  even on a cash match).
   One open shift per device at a time; rotation happens via normal
   close/reopen, not a shared open shift.
 - **Cash reconciliation**: only cash is physically counted at close;
@@ -370,7 +491,8 @@ what each grants).
   Returns + cash net difference collected on its Exchanges − cash net
   difference paid out on them. `GET /shifts/:id/summary` reports the three
   adjustments as `cash_refunds`, `exchange_cash_in`, `exchange_cash_out`.
-- **Expenses**: creator, a Manager (`access_backoffice`), or the Owner /
+- **Expenses**: creator, a staff member with Back Office open and
+  `manage_expenses` (a Manager by default), or the Owner /
   Service Center acting directly may edit/delete;
   anyone signed in may create one (always attributed to themselves).
 - **Sales discount**: any item discount requires `apply_manual_discount`
@@ -576,8 +698,9 @@ till needs to keep working (and selling) through a spotty or dropped
 connection, and catch up once it's back online. The `datasync` domain is
 built: `GET /sync/catalog` (ETag; products, categories and combos with their
 items), `POST /sync/sales` (idempotent batch upload), `GET /sync/status`,
-`GET /sync/conflicts` and `PATCH /sync/conflicts/:id/resolve`. The shape below
-is the design it follows, reusing what was already in place.
+`GET /sync/conflicts` and `PATCH /sync/conflicts/:id/resolve` (the latter needs
+`resolve_sync_conflicts` with Back Office open, or an Owner / Service Center).
+The shape below is the design it follows, reusing what was already in place.
 
 ### What's already compatible
 - `Sale.ID` is a **client-generated UUID** — the device can create a sale's
@@ -720,11 +843,20 @@ distinct methods used on the sale, sorted (`["cash"]`, `["qr"]`,
 5. **Return/Exchange by the Owner** — Void is open to an Owner acting directly
    (no PIN); Return and Exchange still need a staff token. Should the owner be
    able to do those too?
-6. **Reads still open to a POS-device token** — reports, audit log, the
-   org-wide `GET /staff`, `PATCH /sync/conflicts/:id/resolve` and
-   `POST /printers/test` are not gated beyond a valid bearer token (Section 2's
-   "Not yet gated" list). Decide who should see/do each.
-7. **Per-branch timezone** — an org has one timezone (Section 11); a branch in
+6. **Reads still open to a POS-device token with no staff token** — reports,
+   audit log, sales, inventory, customers and staff reads only restrict a caller
+   who presents a Back Office staff token (Section 2); a till that sends none is
+   not restricted, because the till reads the same endpoints. Also still open:
+   `GET /suppliers`, `GET /purchase-orders`, `GET /sync/conflicts` and
+   `POST /printers/test`. Decide whether the Back Office should require its
+   staff token on every read (it would break the till's own reads unless those
+   move to separate endpoints), and whether suppliers/purchase orders get
+   `view_*` permissions.
+7. **Part B discounts** — `apply_manual_discount` is still "may discount without
+   approval" and is off for Cashier; Part B redefines it as "may request"
+   (with `approve_manual_discount` / `approve_own_discount`), at which point it
+   should be switched on for Cashier. Until then Cashier holds neither.
+8. **Per-branch timezone** — an org has one timezone (Section 11); a branch in
    another zone isn't supported.
 
 ---

@@ -27,16 +27,19 @@ func NewInventoryAPI(db *gorm.DB, jwtSecret []byte) *InventoryAPI {
 }
 
 func (a *InventoryAPI) RegisterRoutes(rg *gin.RouterGroup) {
-	// Stock writes need Back Office. A manager at the till is further
-	// restricted to their own branch inside each handler (scopedBranchID).
-	backOffice := middleware.RequireBackOffice(a.jwtSecret)
-	rg.GET("/stock-levels", a.ListStockLevels)
-	rg.GET("/inventory/low-stock", a.ListLowStock)
-	rg.GET("/inventory/ledger", a.ListInventoryLedger)
-	rg.POST("/inventory/adjustments", backOffice, a.CreateStockAdjustment)
-	rg.GET("/stock-transfers", a.ListStockTransfers)
-	rg.POST("/stock-transfers", backOffice, a.CreateStockTransfer)
-	rg.PATCH("/stock-transfers/:id", backOffice, a.UpdateStockTransfer)
+	// Stock writes need Back Office with manage_stock. A manager at the till
+	// is further restricted to their own branch inside each handler
+	// (scopedBranchID). Reads need view_inventory only from a caller using
+	// Back Office - the till's own stock checks are unchanged.
+	manageStock := middleware.RequireBackOfficePermission(a.jwtSecret, "manage_stock")
+	viewInventory := middleware.RequireViewPermission(a.jwtSecret, "view_inventory")
+	rg.GET("/stock-levels", viewInventory, a.ListStockLevels)
+	rg.GET("/inventory/low-stock", viewInventory, a.ListLowStock)
+	rg.GET("/inventory/ledger", viewInventory, a.ListInventoryLedger)
+	rg.POST("/inventory/adjustments", manageStock, a.CreateStockAdjustment)
+	rg.GET("/stock-transfers", viewInventory, a.ListStockTransfers)
+	rg.POST("/stock-transfers", manageStock, a.CreateStockTransfer)
+	rg.PATCH("/stock-transfers/:id", manageStock, a.UpdateStockTransfer)
 }
 
 // ListStockLevels handles `GET /stock-levels`. Restricted to the caller's

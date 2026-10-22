@@ -39,14 +39,24 @@ func requireBranchID(c *gin.Context) (uint, bool) {
 }
 
 func (a *SalesAPI) RegisterRoutes(rg *gin.RouterGroup) {
-	rg.POST("/sales", middleware.RequireStaffToken(a.jwtSecret), a.CreateSale)
-	rg.GET("/sales", a.ListSales)
-	rg.GET("/sales/:id", a.GetSale)
-	rg.GET("/sales/:id/receipt", a.GetSaleReceipt)
-	rg.POST("/sales/:id/reprint", a.ReprintSale)
-	rg.POST("/held-sales", middleware.RequireStaffToken(a.jwtSecret), a.CreateHeldSale)
+	// Till actions need their own permission on the X-Staff-Token: ringing up
+	// a sale (accept_payments), holding/resuming (hold_resume_sales),
+	// reprinting (reprint_receipt - an Owner / Service Center may too). The
+	// sales history is read by the till as well, so view_sales only restricts
+	// a caller using Back Office; a cashier without view_all_receipts is shown
+	// only their own sales in the list (see ListSales).
+	acceptPayments := middleware.RequireStaffPermission(a.jwtSecret, "accept_payments")
+	holdResume := middleware.RequireStaffPermission(a.jwtSecret, "hold_resume_sales")
+	reprint := middleware.RequireStaffPermissionOrOrgAdmin(a.jwtSecret, "reprint_receipt")
+	viewSales := middleware.RequireViewPermission(a.jwtSecret, "view_sales")
+	rg.POST("/sales", acceptPayments, a.CreateSale)
+	rg.GET("/sales", viewSales, a.ListSales)
+	rg.GET("/sales/:id", viewSales, a.GetSale)
+	rg.GET("/sales/:id/receipt", viewSales, a.GetSaleReceipt)
+	rg.POST("/sales/:id/reprint", reprint, a.ReprintSale)
+	rg.POST("/held-sales", holdResume, a.CreateHeldSale)
 	rg.GET("/held-sales", a.ListHeldSales)
-	rg.DELETE("/held-sales/:id", a.ResumeHeldSale)
+	rg.DELETE("/held-sales/:id", holdResume, a.ResumeHeldSale)
 }
 
 // CreateSale handles `POST /sales`. Idempotent by the client-generated ID: a
@@ -115,7 +125,17 @@ func (a *SalesAPI) ListSales(c *gin.Context) {
 	}
 	page, _ := strconv.Atoi(c.Query("page"))
 	pageSize, _ := strconv.Atoi(c.Query("page_size"))
-	result, err := a.service.ListSales(c.Request.Context(), orgID, branchID, from, to, page, pageSize)
+	// A cashier whose role lacks view_all_receipts sees only their own sales.
+	// This is a till rule: a caller using Back Office (access_backoffice) is
+	// governed by view_sales instead and sees them all, and an Owner has no
+	// staff token at all.
+	var staffID *uint
+	if id, ok := middleware.StaffIDFromContext(c); ok &&
+		!middleware.StaffHasPermission(c, "access_backoffice") &&
+		!middleware.StaffHasPermission(c, "view_all_receipts") {
+		staffID = &id
+	}
+	result, err := a.service.ListSales(c.Request.Context(), orgID, branchID, staffID, from, to, page, pageSize)
 	if err != nil {
 		common.HandleError(c, err)
 		return

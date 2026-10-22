@@ -46,9 +46,9 @@ type Repository interface {
 	UpdateBranch(ctx context.Context, orgID uint, id uint, in UpdateBranchRequest) (*Branch, error)
 	ListBranchStaff(ctx context.Context, orgID uint, id uint) ([]Staff, error)
 	// ListBranchManagers is ListBranchStaff further filtered to staff whose
-	// role grants permissionCode - "manager" isn't one role, since e.g.
-	// apply_manual_discount is granted to both super_staff and manager (see
-	// the v1 role/permission grant table and VerifyManagerPIN). An unknown
+	// role (in this org) grants permissionCode - "manager" isn't one role,
+	// since an Owner can grant e.g. apply_manual_discount to any role they
+	// create (see VerifyManagerPIN). An unknown
 	// permissionCode just yields zero rows, not an error - no permission
 	// grants it, same as any other empty filter.
 	ListBranchManagers(ctx context.Context, orgID uint, id uint, permissionCode string) ([]Staff, error)
@@ -67,9 +67,39 @@ type Repository interface {
 	// the service (see VerifyStaffPIN/VerifyManagerPIN's threshold/duration
 	// constants); this method has no opinion on either.
 	UpdateStaffPinAttempts(ctx context.Context, staffID uint, attempts int, lockedUntil *time.Time) error
-	ListRoles(ctx context.Context) ([]Role, error)
+	// Roles and their grants are per organization. Every read/write below is
+	// scoped to orgID; a role that exists but belongs to another org is
+	// common.NotFoundError, same not-found-not-forbidden reasoning as
+	// branches and staff.
+	//
+	// ListRoles returns orgID's own roles (never the global templates),
+	// system roles first, then by name.
+	ListRoles(ctx context.Context, orgID uint) ([]Role, error)
+	GetRole(ctx context.Context, orgID uint, id uint) (*Role, error)
 	ListPermissions(ctx context.Context) ([]Permission, error)
-	ListRolePermissions(ctx context.Context, id uint) ([]Permission, error)
+	// ListRolePermissions returns the permissions granted to roleID within
+	// orgID - what a PIN token's `permissions` claim is built from. An
+	// unknown role, or one of another org, yields none.
+	ListRolePermissions(ctx context.Context, orgID uint, roleID uint) ([]Permission, error)
+	// ListRoleGrantCodes returns, per role id, the permission codes granted
+	// to every role of orgID - one query for the whole roles screen.
+	ListRoleGrantCodes(ctx context.Context, orgID uint) (map[uint][]string, error)
+	// CountStaffByRole returns, per role id, how many of orgID's staff hold it.
+	CountStaffByRole(ctx context.Context, orgID uint) (map[uint]int, error)
+	// CreateRole, UpdateRoleName, ReplaceRoleGrants and DeleteRole are the
+	// plain writes Service.CreateRole/UpdateRole/DeleteRole compose in one
+	// transaction (db is that transaction), same reasoning as CreateOrganization.
+	// CreateRole returns common.ConflictError if the org already has that code.
+	CreateRole(db *gorm.DB, role *Role) error
+	UpdateRoleName(db *gorm.DB, orgID uint, id uint, name string) error
+	// ReplaceRoleGrants makes roleID's grants exactly permissionIDs.
+	ReplaceRoleGrants(db *gorm.DB, orgID uint, roleID uint, permissionIDs []uint) error
+	// DeleteRole removes the role and its grants. The service has already
+	// checked it is unused and not a system role.
+	DeleteRole(db *gorm.DB, orgID uint, id uint) error
+	// ProvisionDefaultRoles gives a new org its Manager and Cashier roles -
+	// see identity.ProvisionDefaultRoles.
+	ProvisionDefaultRoles(db *gorm.DB, orgID uint) error
 	// CreateOrganization and CreateUser are the two plain inserts
 	// Service.CreateAccount composes inside one db.Transaction call to
 	// provision a new tenant. Each just persists what it's given via db and

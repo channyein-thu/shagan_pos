@@ -27,6 +27,9 @@ func Run(db *gorm.DB) error {
 		fn   func(*gorm.DB) error
 	}{
 		{"identity", identity.AutoMigrate},
+		// moves global roles to per-org roles and keeps the permission
+		// catalogue complete - idempotent, and needs the identity tables
+		{"identity access rights", identity.MigrateAccessRights},
 		{"customer", customer.AutoMigrate},
 		{"platform", platform.AutoMigrate},
 		{"catalog", catalog.AutoMigrate},

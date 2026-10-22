@@ -2741,7 +2741,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "staff"]
             },
-            "description": "ListStaff"
+            "description": "ListStaff. Needs view_staff only when called with a Back Office staff token (X-Staff-Token carrying access_backoffice); an Owner always passes and plain till reads are unchanged."
           },
           "response": []
         },
@@ -2775,7 +2775,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "staff"]
             },
-            "description": "Ends in PIN set step"
+            "description": "Ends in PIN set step. role must be the id of one of THIS organization's roles (GET /roles) - another org's role id is 404. Owner / Service Center, or a till's Back Office staff token (X-Staff-Token) carrying access_backoffice + manage_staff, confined to its own branch and to roles whose every permission it holds itself."
           },
           "response": []
         },
@@ -2801,7 +2801,7 @@
                 }
               ]
             },
-            "description": "GetStaff"
+            "description": "GetStaff. Needs view_staff only when called with a Back Office staff token (X-Staff-Token carrying access_backoffice); an Owner always passes and plain till reads are unchanged."
           },
           "response": []
         },
@@ -2841,7 +2841,7 @@
                 }
               ]
             },
-            "description": "Never a hard delete - deactivate only"
+            "description": "Never a hard delete - deactivate only. A role change must be one of this organization's roles (404 otherwise). Owner / Service Center, or a till's Back Office staff token carrying access_backoffice + manage_staff (own branch only, and never a staff member whose role holds more than the caller does). A changed role reaches the staff member at their NEXT PIN sign-in."
           },
           "response": []
         },
@@ -2861,7 +2861,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "roles"]
             },
-            "description": "ListRoles"
+            "description": "Owner / Service Center only (a till gets 403). This organization's roles, behind a synthetic fixed Owner row (id 0, editable false). Each row: id, code, name, is_system (Manager/Cashier can't be deleted), editable, staff_count, pos (holds access_pos_portal), backoffice (holds access_backoffice). Role ids are per organization."
           },
           "response": []
         },
@@ -2881,7 +2881,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "permissions"]
             },
-            "description": "ListPermissions"
+            "description": "Owner / Service Center only. The permission catalogue grouped by category - [{category: pos, label: POS, permissions: [...]}, {category: backoffice, label: Back office, permissions: [...]}] - in the order the roles screen shows them. Each permission: id, code, name, category."
           },
           "response": []
         },
@@ -2907,7 +2907,107 @@
                 }
               ]
             },
-            "description": "Read the matrix"
+            "description": "Owner / Service Center only. The permissions granted to one of this organization's roles (404 for another org's role id). \"owner\" is not a real id - the Owner row has nothing to list."
+          },
+          "response": []
+        },
+        {
+          "name": "CreateRole - POST /roles",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Stock Clerk\",\n  \"permission_codes\": [\"access_pos_portal\", \"accept_payments\", \"access_backoffice\", \"view_inventory\", \"manage_stock\"]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/roles",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "roles"]
+            },
+            "description": "Owner / Service Center only; audited as entity role. Creates a custom role. code is a slug of name (unique per org, e.g. stock_clerk) and never changes after. name is required, at most 50 characters. permission_codes are catalogue codes (GET /permissions). Responses: 201 with the role (summary fields + permission_codes + warnings). A permission under a switch that is off (e.g. view_reports without access_backoffice) is accepted but listed in warnings. 400 unknown permission code or bad name; 409 a role with that name already exists; 403 for a till token."
+          },
+          "response": []
+        },
+        {
+          "name": "UpdateRole - PATCH /roles/:id",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Stockroom\",\n  \"permission_codes\": [\"access_pos_portal\", \"accept_payments\", \"view_all_receipts\"]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/roles/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "roles", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "3"
+                }
+              ]
+            },
+            "description": "Owner / Service Center only; audited as entity role. Renames and/or REPLACES the role's permissions (both fields optional; an empty permission_codes clears them, omitting it leaves them). Staff get the change at their next PIN sign-in - tokens already issued keep what they were minted with. 400 unknown permission code; 403 for the Owner row (use id owner or 0) or a till token; 404 another org's role; 409 name already used, or the change would leave NO role with access_pos_portal (nobody could use the till)."
+          },
+          "response": []
+        },
+        {
+          "name": "DeleteRole - DELETE /roles/:id",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/roles/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "roles", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "3"
+                }
+              ]
+            },
+            "description": "Owner / Service Center only; audited as entity role. 204 on success. 409 for a built-in role (Manager, Cashier) or a role any staff member still holds (move them first); 403 for the Owner row or a till token; 404 another org's role."
           },
           "response": []
         }
@@ -2951,7 +3051,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "shifts"]
             },
-            "description": "Open shift with opening float. Requires X-Staff-Token (run VerifyStaffPIN first - it auto-saves into {{staffToken}}). The shift always belongs to whichever staff that token identifies - staff_id in the body is ignored even if sent. That same staff member is the only one who can later close it."
+            "description": "Open shift with opening float. Requires X-Staff-Token (run VerifyStaffPIN first - it auto-saves into {{staffToken}}). The shift always belongs to whichever staff that token identifies - staff_id in the body is ignored even if sent. That same staff member is the only one who can later close it. Needs manage_own_shift on the X-Staff-Token."
           },
           "response": []
         },
@@ -3042,7 +3142,7 @@
                 }
               ]
             },
-            "description": "closing_cash is what the person closing the shift actually counted in the drawer - only cash is physically counted, card/QR/mobile-wallet payments are trusted to match what the system recorded. reason is required only when closing_cash doesn't match the system's expected cash total (opening_cash + cash sales this shift); otherwise 400. Writes one ShiftReconciliation row per payment method as a side effect. Requires X-Staff-Token, and returns 403 unless it identifies the same staff member who opened this shift - run VerifyStaffPIN as that staff first."
+            "description": "closing_cash is what the person closing the shift actually counted in the drawer - only cash is physically counted, card/QR/mobile-wallet payments are trusted to match what the system recorded. reason is required only when closing_cash doesn't match the system's expected cash total (opening_cash + cash sales this shift); otherwise 400. Writes one ShiftReconciliation row per payment method as a side effect. Requires X-Staff-Token, and returns 403 unless it identifies the same staff member who opened this shift - run VerifyStaffPIN as that staff first. Needs manage_own_shift on the X-Staff-Token."
           },
           "response": []
         },
@@ -3087,7 +3187,7 @@
                 }
               ]
             },
-            "description": "Manager-only override of CloseShift's \"same staff who opened it\" rule - for when that staff is genuinely unavailable (e.g. called in sick) and the till would otherwise stay locked open indefinitely. Requires an X-Staff-Token whose role grants access_backoffice (a Manager), or 403. Unlike a normal close, reason is ALWAYS required here, even if closing_cash matches exactly - the override itself needs justification. The closed shift keeps its original staff_id (whoever opened it) but records closed_by_staff_id as whoever performed this override, so the two can be told apart afterward."
+            "description": "Manager-only override of CloseShift's \"same staff who opened it\" rule - for when that staff is genuinely unavailable (e.g. called in sick) and the till would otherwise stay locked open indefinitely. Requires an X-Staff-Token whose role grants access_backoffice (a Manager), or 403. Unlike a normal close, reason is ALWAYS required here, even if closing_cash matches exactly - the override itself needs justification. The closed shift keeps its original staff_id (whoever opened it) but records closed_by_staff_id as whoever performed this override, so the two can be told apart afterward. Needs force_close_shift (a Manager's by default) - it no longer rides on access_backoffice."
           },
           "response": []
         },
@@ -3263,7 +3363,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "expenses"]
             },
-            "description": "A POS-device token requires X-Staff-Token - always logged as created by whichever staff that token identifies, not a client-supplied created_by. An Owner / Service Center bearer token may instead log it directly with NO staff token: created_by is then null and created_by_user_id is the account (branch_id is then required in the body - an org-wide account has no branch of its own)."
+            "description": "A POS-device token requires X-Staff-Token - always logged as created by whichever staff that token identifies, not a client-supplied created_by. An Owner / Service Center bearer token may instead log it directly with NO staff token: created_by is then null and created_by_user_id is the account (branch_id is then required in the body - an org-wide account has no branch of its own). At the till: needs log_till_expenses on the X-Staff-Token. An Owner / Service Center needs no staff token."
           },
           "response": []
         },
@@ -3308,7 +3408,7 @@
                 }
               ]
             },
-            "description": "A POS-device token requires X-Staff-Token. Returns 403 unless that token identifies either the staff member who originally logged this expense, or someone with access_backoffice (a Manager). An Owner / Service Center bearer token needs no staff token and may edit any expense in its org."
+            "description": "A POS-device token requires X-Staff-Token. Returns 403 unless that token identifies either the staff member who originally logged this expense, or someone with access_backoffice (a Manager). An Owner / Service Center bearer token needs no staff token and may edit any expense in its org. Changing ANOTHER staff member's expense needs access_backoffice AND manage_expenses on the X-Staff-Token."
           },
           "response": []
         },
@@ -3339,7 +3439,7 @@
                 }
               ]
             },
-            "description": "Same authorization as UpdateExpense - the original creator, a Manager (access_backoffice), or an Owner / Service Center bearer token (no staff token needed) may delete it."
+            "description": "Same authorization as UpdateExpense - the original creator, a Manager (access_backoffice), or an Owner / Service Center bearer token (no staff token needed) may delete it. Deleting ANOTHER staff member's expense needs access_backoffice AND manage_expenses on the X-Staff-Token."
           },
           "response": []
         }
@@ -3494,7 +3594,7 @@
                   "host": ["{{baseUrl}}"],
                   "path": ["api", "v1", "products"]
                 },
-                "description": "Multipart upload: every product field as a form field, plus \"image\" (required product photo - attach it yourself, no default file is set). Products are org-wide - no branch_id. category_id must belong to your own org. modifier is optional - leave blank for null."
+                "description": "Multipart upload: every product field as a form field, plus \"image\" (required product photo - attach it yourself, no default file is set). Products are org-wide - no branch_id. category_id must belong to your own org. modifier is optional - leave blank for null. Back Office write: an Owner / Service Center, or a till's X-Staff-Token carrying access_backoffice AND manage_catalog (403 with only one of them, 401 with no staff token)."
               },
               "response": []
             },
@@ -3545,7 +3645,7 @@
                     }
                   ]
                 },
-                "description": "Multipart upload, scoped to the caller's org (org_id can never be reassigned via this endpoint). Every field is optional - only send what you want to change, remove any row you don't need (an unselected \"image\" file row causes a Postman bug - EISDIR - so delete it entirely rather than leaving it empty). Products are org-wide - no branch_id. category_id, if sent, must belong to your own org. price/discount/tax are validated against the resulting combined state (existing values fill in for anything not sent), not just the fields in this request. image, if attached, entirely replaces the product's existing photo. modifier can't be cleared back to null via PATCH yet - omitting it just leaves it unchanged. cost_price lets you set the cost basis directly (e.g. for stock never received through a real Procurement goods receipt) - it never appears in GET /products or GET /products/:id (business-sensitive, only readable via GET /reports/profit-loss)."
+                "description": "Multipart upload, scoped to the caller's org (org_id can never be reassigned via this endpoint). Every field is optional - only send what you want to change, remove any row you don't need (an unselected \"image\" file row causes a Postman bug - EISDIR - so delete it entirely rather than leaving it empty). Products are org-wide - no branch_id. category_id, if sent, must belong to your own org. price/discount/tax are validated against the resulting combined state (existing values fill in for anything not sent), not just the fields in this request. image, if attached, entirely replaces the product's existing photo. modifier can't be cleared back to null via PATCH yet - omitting it just leaves it unchanged. cost_price lets you set the cost basis directly (e.g. for stock never received through a real Procurement goods receipt) - it never appears in GET /products or GET /products/:id (business-sensitive, only readable via GET /reports/profit-loss). Back Office write: an Owner / Service Center, or a till's X-Staff-Token carrying access_backoffice AND manage_catalog (403 with only one of them, 401 with no staff token)."
               },
               "response": []
             },
@@ -3571,7 +3671,7 @@
                     }
                   ]
                 },
-                "description": "Hard delete, scoped to the caller's org. Blocked with 409 if any combo still bundles this product (create a combo referencing it via CreateCombo to test that path), and with 409 if the product has ANY history - a sale line, an exchange line, stock (even if now zero), a stock adjustment/transfer, an inventory-ledger entry or a purchase-order line - because those records would be orphaned and history screens would lose the product's name. To retire such a product use UpdateProduct with is_active=false instead. Only a product that was never used (e.g. created by mistake) can be deleted: it also removes the product's own image and its storage object - 204 No Content, no body."
+                "description": "Hard delete, scoped to the caller's org. Blocked with 409 if any combo still bundles this product (create a combo referencing it via CreateCombo to test that path), and with 409 if the product has ANY history - a sale line, an exchange line, stock (even if now zero), a stock adjustment/transfer, an inventory-ledger entry or a purchase-order line - because those records would be orphaned and history screens would lose the product's name. To retire such a product use UpdateProduct with is_active=false instead. Only a product that was never used (e.g. created by mistake) can be deleted: it also removes the product's own image and its storage object - 204 No Content, no body. Back Office write: an Owner / Service Center, or a till's X-Staff-Token carrying access_backoffice AND manage_catalog (403 with only one of them, 401 with no staff token)."
               },
               "response": []
             }
@@ -3626,7 +3726,7 @@
                   "host": ["{{baseUrl}}"],
                   "path": ["api", "v1", "combos"]
                 },
-                "description": "Multipart upload: name, price, expires_at (RFC3339), and items (a JSON-encoded array of {\"product_id\",\"qty\"} objects) as form fields, plus an optional \"image\" file - unlike CreateProduct, a combo can be created without one (leave the file field empty to skip it). price must be > 0, expires_at must be in the future, and items must have at least one entry with no duplicate product_id - each product_id must already exist in your org (create products first via CreateProduct)."
+                "description": "Multipart upload: name, price, expires_at (RFC3339), and items (a JSON-encoded array of {\"product_id\",\"qty\"} objects) as form fields, plus an optional \"image\" file - unlike CreateProduct, a combo can be created without one (leave the file field empty to skip it). price must be > 0, expires_at must be in the future, and items must have at least one entry with no duplicate product_id - each product_id must already exist in your org (create products first via CreateProduct). Back Office write: an Owner / Service Center, or a till's X-Staff-Token carrying access_backoffice AND manage_catalog (403 with only one of them, 401 with no staff token)."
               },
               "response": []
             },
@@ -3667,7 +3767,7 @@
                     }
                   ]
                 },
-                "description": "Multipart upload, scoped to the caller's org (org_id can never be reassigned via this endpoint). Every field is optional - only send what you want to change. price/expires_at are validated against the resulting combined state (existing values fill in for anything not sent). To also replace the image, add an \"image\" file field yourself and attach a real file - do NOT add an empty/unselected file field, since Postman has a bug (EISDIR) where a present-but-empty file field breaks the request; only add the row when you're attaching an actual file. Doesn't support editing items yet - only the combo's own fields and its image."
+                "description": "Multipart upload, scoped to the caller's org (org_id can never be reassigned via this endpoint). Every field is optional - only send what you want to change. price/expires_at are validated against the resulting combined state (existing values fill in for anything not sent). To also replace the image, add an \"image\" file field yourself and attach a real file - do NOT add an empty/unselected file field, since Postman has a bug (EISDIR) where a present-but-empty file field breaks the request; only add the row when you're attaching an actual file. Doesn't support editing items yet - only the combo's own fields and its image. Back Office write: an Owner / Service Center, or a till's X-Staff-Token carrying access_backoffice AND manage_catalog (403 with only one of them, 401 with no staff token)."
               },
               "response": []
             },
@@ -3693,7 +3793,7 @@
                     }
                   ]
                 },
-                "description": "Hard delete, scoped to the caller's org. Nothing currently blocks this (no Sales/order-history domain yet referencing combos) - also removes the combo's own items and image. 204 No Content, no body."
+                "description": "Hard delete, scoped to the caller's org. Nothing currently blocks this (no Sales/order-history domain yet referencing combos) - also removes the combo's own items and image. 204 No Content, no body. Back Office write: an Owner / Service Center, or a till's X-Staff-Token carrying access_backoffice AND manage_catalog (403 with only one of them, 401 with no staff token)."
               },
               "response": []
             },
@@ -3770,7 +3870,7 @@
                   "host": ["{{baseUrl}}"],
                   "path": ["api", "v1", "categories"]
                 },
-                "description": "CreateCategory"
+                "description": "CreateCategory. Back Office write: an Owner / Service Center, or a till's X-Staff-Token carrying access_backoffice AND manage_catalog (403 with only one of them, 401 with no staff token)."
               },
               "response": []
             },
@@ -3808,7 +3908,7 @@
                     }
                   ]
                 },
-                "description": "UpdateCategory"
+                "description": "UpdateCategory. Back Office write: an Owner / Service Center, or a till's X-Staff-Token carrying access_backoffice AND manage_catalog (403 with only one of them, 401 with no staff token)."
               },
               "response": []
             },
@@ -3834,7 +3934,7 @@
                     }
                   ]
                 },
-                "description": "DeleteCategory"
+                "description": "DeleteCategory. Back Office write: an Owner / Service Center, or a till's X-Staff-Token carrying access_backoffice AND manage_catalog (403 with only one of them, 401 with no staff token)."
               },
               "response": []
             }
@@ -3873,7 +3973,7 @@
                 }
               ]
             },
-            "description": "Lists stock levels in the caller's org. Restricted to the caller's own branch when the token carries one (a pos device) - org-wide otherwise, same reasoning as ListProducts. Both query params are optional - omit either to leave that dimension unfiltered."
+            "description": "Lists stock levels in the caller's org. Restricted to the caller's own branch when the token carries one (a pos device) - org-wide otherwise, same reasoning as ListProducts. Both query params are optional - omit either to leave that dimension unfiltered. Needs view_inventory only when called with a Back Office staff token (X-Staff-Token carrying access_backoffice); an Owner always passes and plain till reads are unchanged."
           },
           "response": []
         },
@@ -3900,7 +4000,7 @@
                 }
               ]
             },
-            "description": "Lists stock levels that have fallen to or below their product's own reorder threshold. Same scoping as ListStockLevels - restricted to the caller's own branch when the token carries one, org-wide otherwise. branch_id is optional."
+            "description": "Lists stock levels that have fallen to or below their product's own reorder threshold. Same scoping as ListStockLevels - restricted to the caller's own branch when the token carries one, org-wide otherwise. branch_id is optional. Needs view_inventory only when called with a Back Office staff token (X-Staff-Token carrying access_backoffice); an Owner always passes and plain till reads are unchanged."
           },
           "response": []
         },
@@ -3932,7 +4032,7 @@
                 }
               ]
             },
-            "description": "Read-only audit trail - never written directly by a client. Org-scoped, both query params optional. Ordered oldest-first, since each row's balance_after only reads as a running balance in chronological order."
+            "description": "Read-only audit trail - never written directly by a client. Org-scoped, both query params optional. Ordered oldest-first, since each row's balance_after only reads as a running balance in chronological order. Needs view_inventory only when called with a Back Office staff token (X-Staff-Token carrying access_backoffice); an Owner always passes and plain till reads are unchanged."
           },
           "response": []
         },
@@ -3966,7 +4066,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "inventory", "adjustments"]
             },
-            "description": "Applies delta to product_id's stock at branch_id (products are org-wide, so branch_id is a required client choice, verified against your own org) and writes one inventory_ledger row, atomically. delta can be positive (e.g. a manual recount finding more stock) or negative (e.g. shrinkage/damage). Returns 409 Conflict if delta would take quantity below zero - stock can never go negative from a movement this domain controls. actor_id is never client input - it's the authenticated caller's own user ID. unit_cost is optional and only meaningful alongside a positive delta (you're adding stock, so you can say what it's worth) - when given, it blends into the product's cost basis by weighted average, same method a Procurement goods receipt uses. Rejected (400) if given alongside a zero-or-negative delta, or if negative itself."
+            "description": "Applies delta to product_id's stock at branch_id (products are org-wide, so branch_id is a required client choice, verified against your own org) and writes one inventory_ledger row, atomically. delta can be positive (e.g. a manual recount finding more stock) or negative (e.g. shrinkage/damage). Returns 409 Conflict if delta would take quantity below zero - stock can never go negative from a movement this domain controls. actor_id is never client input - it's the authenticated caller's own user ID. unit_cost is optional and only meaningful alongside a positive delta (you're adding stock, so you can say what it's worth) - when given, it blends into the product's cost basis by weighted average, same method a Procurement goods receipt uses. Rejected (400) if given alongside a zero-or-negative delta, or if negative itself. Back Office write: an Owner / Service Center, or a till's X-Staff-Token carrying access_backoffice AND manage_stock (403 with only one of them, 401 with no staff token)."
           },
           "response": []
         },
@@ -3993,7 +4093,7 @@
                 }
               ]
             },
-            "description": "Lists stock transfers in the caller's org, each with its note and its lines: items is [{product_id, qty}] in creation order, never empty. Same scoping as ListStockLevels. branch_id is optional and matches a transfer where the branch is either from_branch or to_branch."
+            "description": "Lists stock transfers in the caller's org, each with its note and its lines: items is [{product_id, qty}] in creation order, never empty. Same scoping as ListStockLevels. branch_id is optional and matches a transfer where the branch is either from_branch or to_branch. Needs view_inventory only when called with a Back Office staff token (X-Staff-Token carrying access_backoffice); an Owner always passes and plain till reads are unchanged."
           },
           "response": []
         },
@@ -4027,7 +4127,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "stock-transfers"]
             },
-            "description": "Creates a new stock transfer at status pending - no stock moves yet. from_branch/to_branch must both belong to your org and differ. Every item's product must belong to your org, and from_branch's current stock must cover each item's qty (products are org-wide, so this is a stock-sufficiency check, not a product-ownership one) - 409 Conflict otherwise. note is optional free text (why the stock is moving; trimmed, at most 500 characters - 400 beyond that), returned as \"\" when omitted. The response carries the transfer plus items [{product_id, qty}]. actor_id is never client input - it's the authenticated caller's own user ID. Advance it with UpdateStockTransfer - moving it to completed is what actually decrements from_branch's stock and credits to_branch's."
+            "description": "Creates a new stock transfer at status pending - no stock moves yet. from_branch/to_branch must both belong to your org and differ. Every item's product must belong to your org, and from_branch's current stock must cover each item's qty (products are org-wide, so this is a stock-sufficiency check, not a product-ownership one) - 409 Conflict otherwise. note is optional free text (why the stock is moving; trimmed, at most 500 characters - 400 beyond that), returned as \"\" when omitted. The response carries the transfer plus items [{product_id, qty}]. actor_id is never client input - it's the authenticated caller's own user ID. Advance it with UpdateStockTransfer - moving it to completed is what actually decrements from_branch's stock and credits to_branch's. Back Office write: an Owner / Service Center, or a till's X-Staff-Token carrying access_backoffice AND manage_stock (403 with only one of them, 401 with no staff token)."
           },
           "response": []
         },
@@ -4067,7 +4167,7 @@
                 }
               ]
             },
-            "description": "Advances a stock transfer's status: pending -> in_transit -> completed, or -> cancelled from either pending or in_transit. Rejects with 409 Conflict if the transfer is already completed or cancelled. Moving to completed is the one transition with a real stock effect - decrements every item's qty from from_branch and credits it to to_branch, atomically, writing one transfer_out and one transfer_in inventory_ledger row per item. Rejects with 409 Conflict if from_branch doesn't have enough stock for any item - nothing moves for any item in that case. status must be one of: in_transit, completed, cancelled. The response is the transfer with its note and items, whichever transition it was."
+            "description": "Advances a stock transfer's status: pending -> in_transit -> completed, or -> cancelled from either pending or in_transit. Rejects with 409 Conflict if the transfer is already completed or cancelled. Moving to completed is the one transition with a real stock effect - decrements every item's qty from from_branch and credits it to to_branch, atomically, writing one transfer_out and one transfer_in inventory_ledger row per item. Rejects with 409 Conflict if from_branch doesn't have enough stock for any item - nothing moves for any item in that case. status must be one of: in_transit, completed, cancelled. The response is the transfer with its note and items, whichever transition it was. Back Office write: an Owner / Service Center, or a till's X-Staff-Token carrying access_backoffice AND manage_stock (403 with only one of them, 401 with no staff token)."
           },
           "response": []
         }
@@ -4117,7 +4217,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "sales"]
             },
-            "description": "Requires a branch-bound pos-device token (org_id and branch_id both come from it, never the body) AND X-Staff-Token (run VerifyStaffPIN first - it auto-saves into {{staffToken}}). id is a client-generated UUID and the idempotency key: re-sending a sale this same device already recorded (e.g. after a lost response) returns the original sale with 200 instead of 201, creates nothing and decrements no stock again, and needs no fresh manager approval; the same id from a different branch/device is 409. Subtotal/Discount/Tax/Total are NOT accepted at the sale level - each item snapshots its own tax (from Product.Tax, same offline-first reasoning as unit_price/name_snapshot); the server sums Subtotal/Discount/Tax from items and derives Total = Subtotal - Discount + Tax, then rejects the request (400) if payments don't add up to that Total. combo_id is optional - set it to tag several line items as components of the same Combo rung up together (purely a grouping label for receipts/reporting; each component is still priced/taxed/discounted as its own normal line item). shift_id must be a currently-open shift belonging to this branch, else 404. Status/completed_at are always server-set to completed/now(). Any item's discount or tax must be zero or greater (400 otherwise). A positive item discount requires the calling staff's role to grant apply_manual_discount (only super_staff/manager have it by default) OR a valid X-Manager-Approval-Token granting it (enable that header and run VerifyManagerPIN with permission=apply_manual_discount first, as the target staff) - 403 without either. Stock decrement/inventory-ledger writes are deliberately deferred until the Inventory domain exists."
+            "description": "Requires a branch-bound pos-device token (org_id and branch_id both come from it, never the body) AND X-Staff-Token (run VerifyStaffPIN first - it auto-saves into {{staffToken}}). id is a client-generated UUID and the idempotency key: re-sending a sale this same device already recorded (e.g. after a lost response) returns the original sale with 200 instead of 201, creates nothing and decrements no stock again, and needs no fresh manager approval; the same id from a different branch/device is 409. Subtotal/Discount/Tax/Total are NOT accepted at the sale level - each item snapshots its own tax (from Product.Tax, same offline-first reasoning as unit_price/name_snapshot); the server sums Subtotal/Discount/Tax from items and derives Total = Subtotal - Discount + Tax, then rejects the request (400) if payments don't add up to that Total. combo_id is optional - set it to tag several line items as components of the same Combo rung up together (purely a grouping label for receipts/reporting; each component is still priced/taxed/discounted as its own normal line item). shift_id must be a currently-open shift belonging to this branch, else 404. Status/completed_at are always server-set to completed/now(). Any item's discount or tax must be zero or greater (400 otherwise). A positive item discount requires the calling staff's role to grant apply_manual_discount (only super_staff/manager have it by default) OR a valid X-Manager-Approval-Token granting it (enable that header and run VerifyManagerPIN with permission=apply_manual_discount first, as the target staff) - 403 without either. Stock decrement/inventory-ledger writes are deliberately deferred until the Inventory domain exists. Needs accept_payments on the X-Staff-Token (403 without it)."
           },
           "response": []
         },
@@ -4144,7 +4244,7 @@
                 {"key": "page_size", "value": "20", "description": "Optional, defaults to 20, capped at 100."}
               ]
             },
-            "description": "Org-scoped, newest-completed-first, paginated. Response is an envelope {sales, page, page_size, total_count} (NOT a bare array - changed 2026-10-08). Each row is the sale plus payment_methods: the distinct methods used, sorted, e.g. [\"cash\"], [\"qr\"] or [\"cash\",\"qr\"] for a split payment. Each row also carries has_return and has_exchange (bool) and refunded_total (decimal string, the sum of the sale's return refunds, \"0\" when none) so a history screen can badge a sale without loading /returns and /exchanges. A sale whose lines have all been returned (returns only) has status \"refunded\". A branch-bound (pos-device) token only ever sees its own branch."
+            "description": "Org-scoped, newest-completed-first, paginated. Response is an envelope {sales, page, page_size, total_count} (NOT a bare array - changed 2026-10-08). Each row is the sale plus payment_methods: the distinct methods used, sorted, e.g. [\"cash\"], [\"qr\"] or [\"cash\",\"qr\"] for a split payment. Each row also carries has_return and has_exchange (bool) and refunded_total (decimal string, the sum of the sale's return refunds, \"0\" when none) so a history screen can badge a sale without loading /returns and /exchanges. A sale whose lines have all been returned (returns only) has status \"refunded\". A branch-bound (pos-device) token only ever sees its own branch. Needs view_sales only when called with a Back Office staff token (X-Staff-Token carrying access_backoffice); an Owner always passes and plain till reads are unchanged. A staff token WITHOUT view_all_receipts (and without Back Office open) is shown only the sales that staff member rang up; total_count counts only those."
           },
           "response": []
         },
@@ -4170,7 +4270,7 @@
                 }
               ]
             },
-            "description": "Org-scoped - returns 404 for a sale that exists but belongs to a different org, same as one that doesn't exist at all."
+            "description": "Org-scoped - returns 404 for a sale that exists but belongs to a different org, same as one that doesn't exist at all. Needs view_sales only when called with a Back Office staff token (X-Staff-Token carrying access_backoffice); an Owner always passes and plain till reads are unchanged."
           },
           "response": []
         },
@@ -4196,7 +4296,7 @@
                 }
               ]
             },
-            "description": "Structured receipt data (sale + items + payments) - not printer-specific ESC/POS byte formatting, which belongs to Platform's printer integration, not here. sale also carries has_return, has_exchange and refunded_total (decimal string); every item also carries returned_qty (qty on return lines plus exchange 'in' lines) and returnable_qty (qty - returned_qty, never below 0) so the till can cap its Return/Exchange steppers before asking for a manager PIN."
+            "description": "Structured receipt data (sale + items + payments) - not printer-specific ESC/POS byte formatting, which belongs to Platform's printer integration, not here. sale also carries has_return, has_exchange and refunded_total (decimal string); every item also carries returned_qty (qty on return lines plus exchange 'in' lines) and returnable_qty (qty - returned_qty, never below 0) so the till can cap its Return/Exchange steppers before asking for a manager PIN. Needs view_sales only when called with a Back Office staff token (X-Staff-Token carrying access_backoffice); an Owner always passes and plain till reads are unchanged."
           },
           "response": []
         },
@@ -4222,7 +4322,7 @@
                 }
               ]
             },
-            "description": "Returns the same bundle as GetSaleReceipt (including has_return/has_exchange/refunded_total on sale and returned_qty/returnable_qty on each item, which reflect returns made up to now)."
+            "description": "Returns the same bundle as GetSaleReceipt (including has_return/has_exchange/refunded_total on sale and returned_qty/returnable_qty on each item, which reflect returns made up to now). Needs reprint_receipt on the X-Staff-Token (an Owner / Service Center may reprint with no staff token); a till with no staff token gets 401."
           },
           "response": []
         },
@@ -4256,7 +4356,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "held-sales"]
             },
-            "description": "CreateHeldSale"
+            "description": "CreateHeldSale. Needs hold_resume_sales on the X-Staff-Token."
           },
           "response": []
         },
@@ -4302,7 +4402,7 @@
                 }
               ]
             },
-            "description": "Resume - atomic delete-and-restore"
+            "description": "Resume - atomic delete-and-restore. Now needs an X-Staff-Token carrying hold_resume_sales (401 without a staff token, 403 without the permission)."
           },
           "response": []
         }
@@ -4613,7 +4713,7 @@
                 }
               ]
             },
-            "description": "Org-scoped. search is optional - a case-insensitive partial match against name OR phone in one field, matching a POS lookup screen's single search box. Omit it to list every customer in the caller's org."
+            "description": "Org-scoped. search is optional - a case-insensitive partial match against name OR phone in one field, matching a POS lookup screen's single search box. Omit it to list every customer in the caller's org. Needs view_customers only when called with a Back Office staff token (X-Staff-Token carrying access_backoffice); an Owner always passes and plain till reads are unchanged."
           },
           "response": []
         },
@@ -4647,7 +4747,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "customers"]
             },
-            "description": "Inline creation from the POS cart. org_id is never accepted here - it's taken from the caller's own token. tags is optional. consent_status isn't client-settable either - every new customer starts at \"pending\"; it only changes via POST /customers/:id/consents, which writes a real CustomerConsent audit row (see that endpoint's description). phone is unique per-org, not globally - the same phone number can exist in two different orgs."
+            "description": "Inline creation from the POS cart. org_id is never accepted here - it's taken from the caller's own token. tags is optional. consent_status isn't client-settable either - every new customer starts at \"pending\"; it only changes via POST /customers/:id/consents, which writes a real CustomerConsent audit row (see that endpoint's description). phone is unique per-org, not globally - the same phone number can exist in two different orgs. Now needs a staff token: X-Staff-Token carrying add_customers or manage_customers (401 with none, 403 without the permission). An Owner / Service Center needs none."
           },
           "response": []
         },
@@ -4673,7 +4773,7 @@
                 }
               ]
             },
-            "description": "Org-scoped - returns 404 for a customer that exists but belongs to a different org, same as one that doesn't exist at all. Detail only for now - purchase history needs Sales, which doesn't exist yet."
+            "description": "Org-scoped - returns 404 for a customer that exists but belongs to a different org, same as one that doesn't exist at all. Detail only for now - purchase history needs Sales, which doesn't exist yet. Needs view_customers only when called with a Back Office staff token (X-Staff-Token carrying access_backoffice); an Owner always passes and plain till reads are unchanged."
           },
           "response": []
         },
@@ -4699,7 +4799,7 @@
                 }
               ]
             },
-            "description": "Org-scoped via the customer - returns 404 if :id doesn't belong to the caller's org. The full consent audit trail for this customer, oldest first."
+            "description": "Org-scoped via the customer - returns 404 if :id doesn't belong to the caller's org. The full consent audit trail for this customer, oldest first. Needs view_customers only when called with a Back Office staff token (X-Staff-Token carrying access_backoffice); an Owner always passes and plain till reads are unchanged."
           },
           "response": []
         },
@@ -4739,7 +4839,7 @@
                 }
               ]
             },
-            "description": "customer_id isn't in the body - it's the :id path param. changed_at isn't client-settable either - the server stamps it at creation, same as Device.LastSeenAt. Writes a real CustomerConsent audit row AND updates the cached customers.consent_status in one atomic transaction - a failure partway through never leaves the cache out of sync with the actual consent history. status is one of: granted, revoked, pending. source is one of: pos, online, sms, email."
+            "description": "customer_id isn't in the body - it's the :id path param. changed_at isn't client-settable either - the server stamps it at creation, same as Device.LastSeenAt. Writes a real CustomerConsent audit row AND updates the cached customers.consent_status in one atomic transaction - a failure partway through never leaves the cache out of sync with the actual consent history. status is one of: granted, revoked, pending. source is one of: pos, online, sms, email. Same as CreateCustomer: X-Staff-Token with add_customers or manage_customers; an Owner / Service Center needs none."
           },
           "response": []
         }
@@ -4798,7 +4898,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "suppliers"]
             },
-            "description": "Creates a supplier in the caller's org (org_id comes from the token, never the body). last_order_at isn't client-settable - it's stamped at creation, then later updated whenever a real purchase order is placed with this supplier."
+            "description": "Creates a supplier in the caller's org (org_id comes from the token, never the body). last_order_at isn't client-settable - it's stamped at creation, then later updated whenever a real purchase order is placed with this supplier. Back Office write: an Owner / Service Center, or a till's X-Staff-Token carrying access_backoffice AND manage_suppliers (403 with only one of them, 401 with no staff token)."
           },
           "response": []
         },
@@ -4838,7 +4938,7 @@
                 }
               ]
             },
-            "description": "Partial update, scoped to the caller's org. Every field is optional - only send what you want to change. last_order_at can't be changed via this endpoint - it's system-managed."
+            "description": "Partial update, scoped to the caller's org. Every field is optional - only send what you want to change. last_order_at can't be changed via this endpoint - it's system-managed. Back Office write: an Owner / Service Center, or a till's X-Staff-Token carrying access_backoffice AND manage_suppliers (403 with only one of them, 401 with no staff token)."
           },
           "response": []
         },
@@ -4864,7 +4964,7 @@
                 }
               ]
             },
-            "description": "Hard delete, scoped to the caller's org. Blocked with 409 if any purchase order still references this supplier. 204 No Content, no body."
+            "description": "Hard delete, scoped to the caller's org. Blocked with 409 if any purchase order still references this supplier. 204 No Content, no body. Back Office write: an Owner / Service Center, or a till's X-Staff-Token carrying access_backoffice AND manage_suppliers (403 with only one of them, 401 with no staff token)."
           },
           "response": []
         },
@@ -4918,7 +5018,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "purchase-orders"]
             },
-            "description": "Also writes purchase_order_items. branch_id is the branch placing the order (products are org-wide, so this is also the branch CreateGoodsReceipt later credits stock to). supplier_id and every item's product_id must belong to your own org. po_number is server-generated (\"PO-0001\", \"PO-0002\", ... sequential per org) - don't send one, and it can't be changed later via PATCH either. total is computed from items (sum of ordered_qty*unit_cost) - don't send it. status/created_by aren't accepted either - a new order always starts at \"submitted\"; created_by is the authenticated caller's own user ID."
+            "description": "Also writes purchase_order_items. branch_id is the branch placing the order (products are org-wide, so this is also the branch CreateGoodsReceipt later credits stock to). supplier_id and every item's product_id must belong to your own org. po_number is server-generated (\"PO-0001\", \"PO-0002\", ... sequential per org) - don't send one, and it can't be changed later via PATCH either. total is computed from items (sum of ordered_qty*unit_cost) - don't send it. status/created_by aren't accepted either - a new order always starts at \"submitted\"; created_by is the authenticated caller's own user ID. Back Office write: an Owner / Service Center, or a till's X-Staff-Token carrying access_backoffice AND manage_purchase_orders (403 with only one of them, 401 with no staff token)."
           },
           "response": []
         },
@@ -4984,7 +5084,7 @@
                 }
               ]
             },
-            "description": "Status transitions: one of draft, submitted, approved, cancelled - NOT received (409). Marking an order received only happens via CreateGoodsReceipt, which requires an actual reconciled receipt. Blocked with 409 once the order is already received or cancelled (terminal states). supplier_id, if sent, must belong to your own org. po_number/total/created_by aren't editable here - po_number is server-generated at creation and permanent."
+            "description": "Status transitions: one of draft, submitted, approved, cancelled - NOT received (409). Marking an order received only happens via CreateGoodsReceipt, which requires an actual reconciled receipt. Blocked with 409 once the order is already received or cancelled (terminal states). supplier_id, if sent, must belong to your own org. po_number/total/created_by aren't editable here - po_number is server-generated at creation and permanent. Back Office write: an Owner / Service Center, or a till's X-Staff-Token carrying access_backoffice AND manage_purchase_orders (403 with only one of them, 401 with no staff token)."
           },
           "response": []
         },
@@ -5024,7 +5124,7 @@
                 }
               ]
             },
-            "description": "Posting increases stock (by received_qty only - never ordered_qty) + writes one inventory ledger entry per item, then marks the purchase order received. po_item_id must belong to this order. variance_note is required whenever received_qty differs from that item's ordered_qty (the lost/extra amount is recorded there, traceable from the ledger entry - not written as a second phantom ledger row). received_qty of 0 is valid (total loss). Blocked with 409 if this order is already received or cancelled. received_by isn't accepted - it's the authenticated caller's own user ID. total_amount/variance_count aren't accepted either - both are computed from items."
+            "description": "Posting increases stock (by received_qty only - never ordered_qty) + writes one inventory ledger entry per item, then marks the purchase order received. po_item_id must belong to this order. variance_note is required whenever received_qty differs from that item's ordered_qty (the lost/extra amount is recorded there, traceable from the ledger entry - not written as a second phantom ledger row). received_qty of 0 is valid (total loss). Blocked with 409 if this order is already received or cancelled. received_by isn't accepted - it's the authenticated caller's own user ID. total_amount/variance_count aren't accepted either - both are computed from items. Back Office write: an Owner / Service Center, or a till's X-Staff-Token carrying access_backoffice AND receive_stock (403 with only one of them, 401 with no staff token)."
           },
           "response": []
         }
@@ -5090,7 +5190,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "receipt-settings"]
             },
-            "description": "Upserts the org-wide default (omit branch_id) or a branch-specific override (set branch_id). OrgID always comes from the token."
+            "description": "Upserts the org-wide default (omit branch_id) or a branch-specific override (set branch_id). OrgID always comes from the token. Back Office write: an Owner / Service Center, or a till's X-Staff-Token carrying access_backoffice AND manage_receipt_settings (403 with only one of them, 401 with no staff token). A till can only edit its own branch's override; the org-wide default is Owner-only."
           },
           "response": []
         },
@@ -5158,7 +5258,7 @@
                 }
               ]
             },
-            "description": "Multipart upload: \"file\" (the QR image) + \"bank_name\". At most 5 active QR codes per branch, one per bank - delete an existing one to free a slot."
+            "description": "Multipart upload: \"file\" (the QR image) + \"bank_name\". At most 5 active QR codes per branch, one per bank - delete an existing one to free a slot. Owner / Service Center ONLY (never grantable to staff): a till gets 403 even with a manager's staff token."
           },
           "response": []
         },
@@ -5221,7 +5321,7 @@
                 }
               ]
             },
-            "description": "Soft-deletes - sets is_active false and removes the image from storage, freeing a cap slot while keeping the row for history."
+            "description": "Soft-deletes - sets is_active false and removes the image from storage, freeing a cap slot while keeping the row for history. Owner / Service Center ONLY (never grantable to staff): a till gets 403 even with a manager's staff token."
           },
           "response": []
         }
@@ -5253,7 +5353,7 @@
                 }
               ]
             },
-            "description": "Read-only; written via mutation hooks in other domains' own service methods, not a public POST. Curated v1 scope (not every mutation everywhere): Void/Return/Exchange approvals, manual discount applications, and staff record changes (role/PIN/status). Each entry's before/after are full JSON snapshots (before is null for a Create-shaped action like a Return/Exchange/discount, since nothing existed beforehand). Ordered newest-first."
+            "description": "Read-only; written via mutation hooks in other domains' own service methods, not a public POST. Curated v1 scope (not every mutation everywhere): Void/Return/Exchange approvals, manual discount applications, and staff record changes (role/PIN/status). Each entry's before/after are full JSON snapshots (before is null for a Create-shaped action like a Return/Exchange/discount, since nothing existed beforehand). Ordered newest-first. Needs view_audit_log only when called with a Back Office staff token (X-Staff-Token carrying access_backoffice); an Owner always passes and plain till reads are unchanged."
           },
           "response": []
         }
@@ -5399,7 +5499,7 @@
                 }
               ]
             },
-            "description": "Sets resolved_by/resolved_at (resolved_by is the authenticated caller's own user id, never client input). Rejects (409) if already resolved. Only records that a human has seen and dealt with it - it doesn't itself change any stock."
+            "description": "Sets resolved_by/resolved_at (resolved_by is the authenticated caller's own user id, never client input). Rejects (409) if already resolved. Only records that a human has seen and dealt with it - it doesn't itself change any stock. Back Office write: an Owner / Service Center, or a till's X-Staff-Token carrying access_backoffice AND resolve_sync_conflicts (403 with only one of them, 401 with no staff token)."
           },
           "response": []
         }
@@ -5431,7 +5531,7 @@
                 }
               ]
             },
-            "description": "Dashboard header cards for today only (no date range). net_sales = gross_sales - discounts - returns, tax excluded, and a voided sale never counts at all (erased, not counted-then-subtracted). low_stock_count mirrors StockOverview's own figure as a convenience."
+            "description": "Dashboard header cards for today only (no date range). net_sales = gross_sales - discounts - returns, tax excluded, and a voided sale never counts at all (erased, not counted-then-subtracted). low_stock_count mirrors StockOverview's own figure as a convenience. Needs view_reports only when called with a Back Office staff token (X-Staff-Token carrying access_backoffice); an Owner always passes and plain till reads are unchanged."
           },
           "response": []
         },
@@ -5458,7 +5558,7 @@
                 }
               ]
             },
-            "description": "Dashboard widget - always current, no date range (stock levels have no historical dimension). low_stock_count and out_of_stock_count are counted per stock_levels row, so a product with stock at more than one branch (via a completed transfer) can contribute to both counts once per branch."
+            "description": "Dashboard widget - always current, no date range (stock levels have no historical dimension). low_stock_count and out_of_stock_count are counted per stock_levels row, so a product with stock at more than one branch (via a completed transfer) can contribute to both counts once per branch. Needs view_reports only when called with a Back Office staff token (X-Staff-Token carrying access_backoffice); an Owner always passes and plain till reads are unchanged."
           },
           "response": []
         },
@@ -5485,7 +5585,7 @@
                 }
               ]
             },
-            "description": "Bundles a full \"Today\" tab in one call - headline totals (same gross/discounts/returns/net formula as SalesSummary), an hourly Net Sales trend, a payment-method split (amount actually collected, tax-inclusive), and the top 5 products by revenue - so the frontend's default Reports view doesn't need four separate round trips."
+            "description": "Bundles a full \"Today\" tab in one call - headline totals (same gross/discounts/returns/net formula as SalesSummary), an hourly Net Sales trend, a payment-method split (amount actually collected, tax-inclusive), and the top 5 products by revenue - so the frontend's default Reports view doesn't need four separate round trips. Needs view_reports only when called with a Back Office staff token (X-Staff-Token carrying access_backoffice); an Owner always passes and plain till reads are unchanged."
           },
           "response": []
         },
@@ -5511,7 +5611,7 @@
                 {"key": "granularity", "value": "daily", "description": "Optional - one of: daily, weekly, monthly. Defaults to daily."}
               ]
             },
-            "description": "Net Sales bucketed by granularity (default daily) over from/to (default: the last 30 days). Does not net out Returns per-bucket - only the aggregate endpoints (HomeSummary/TodayReport/SalesSummary) do that; every real bucket has zero returns today regardless, since Returns isn't built yet."
+            "description": "Net Sales bucketed by granularity (default daily) over from/to (default: the last 30 days). Does not net out Returns per-bucket - only the aggregate endpoints (HomeSummary/TodayReport/SalesSummary) do that; every real bucket has zero returns today regardless, since Returns isn't built yet. Needs view_reports only when called with a Back Office staff token (X-Staff-Token carrying access_backoffice); an Owner always passes and plain till reads are unchanged."
           },
           "response": []
         },
@@ -5536,7 +5636,7 @@
                 {"key": "to", "value": "2026-09-27", "description": "Optional, YYYY-MM-DD, inclusive."}
               ]
             },
-            "description": "The confirmed spec's core breakdown: headline net_sales = gross_sales - discounts - returns (tax excluded, a voided sale never counted at all), plus by_branch/by_payment_method/by_category views, over from/to (default: the last 30 days)."
+            "description": "The confirmed spec's core breakdown: headline net_sales = gross_sales - discounts - returns (tax excluded, a voided sale never counted at all), plus by_branch/by_payment_method/by_category views, over from/to (default: the last 30 days). Needs view_reports only when called with a Back Office staff token (X-Staff-Token carrying access_backoffice); an Owner always passes and plain till reads are unchanged."
           },
           "response": []
         },
@@ -5562,7 +5662,7 @@
                 {"key": "granularity", "value": "daily", "description": "Optional - one of: daily, weekly, monthly. Defaults to daily."}
               ]
             },
-            "description": "Transaction count plus Net Sales bucketed by granularity (default daily) over from/to (default: the last 30 days) - same not-netting-Returns-per-bucket reasoning as RevenueTrend."
+            "description": "Transaction count plus Net Sales bucketed by granularity (default daily) over from/to (default: the last 30 days) - same not-netting-Returns-per-bucket reasoning as RevenueTrend. Needs view_reports only when called with a Back Office staff token (X-Staff-Token carrying access_backoffice); an Owner always passes and plain till reads are unchanged."
           },
           "response": []
         },
@@ -5587,7 +5687,7 @@
                 {"key": "to", "value": "2026-09-27", "description": "Optional, YYYY-MM-DD, inclusive."}
               ]
             },
-            "description": "Each payment method's share of the amount actually collected (Payment.Amount, tax-inclusive - a different question from the tax-excluded Net Sales revenue figure used elsewhere), over from/to (default: the last 30 days)."
+            "description": "Each payment method's share of the amount actually collected (Payment.Amount, tax-inclusive - a different question from the tax-excluded Net Sales revenue figure used elsewhere), over from/to (default: the last 30 days). Needs view_reports only when called with a Back Office staff token (X-Staff-Token carrying access_backoffice); an Owner always passes and plain till reads are unchanged."
           },
           "response": []
         },
@@ -5614,7 +5714,7 @@
                 {"key": "page_size", "value": "20", "description": "Optional, defaults to 20, capped at 100."}
               ]
             },
-            "description": "A paginated raw sale list (newest-first) over from/to (default: the last 30 days). Each row carries payment_methods: the distinct methods used, sorted (e.g. [\"cash\",\"qr\"] for a split payment)."
+            "description": "A paginated raw sale list (newest-first) over from/to (default: the last 30 days). Each row carries payment_methods: the distinct methods used, sorted (e.g. [\"cash\",\"qr\"] for a split payment). Needs view_reports only when called with a Back Office staff token (X-Staff-Token carrying access_backoffice); an Owner always passes and plain till reads are unchanged."
           },
           "response": []
         },
@@ -5640,7 +5740,7 @@
                 {"key": "category_id", "value": "1", "description": "Optional - narrows to one category."}
               ]
             },
-            "description": "Every product's qty/revenue over from/to (default: the last 30 days), ranked by revenue descending, optionally narrowed to one category. Revenue is SUM(SaleItem.LineTotal) - not netted against Returns (Returns isn't built yet, and ReturnItem carries no per-line dollar amount to attribute cleanly)."
+            "description": "Every product's qty/revenue over from/to (default: the last 30 days), ranked by revenue descending, optionally narrowed to one category. Revenue is SUM(SaleItem.LineTotal) - not netted against Returns (Returns isn't built yet, and ReturnItem carries no per-line dollar amount to attribute cleanly). Needs view_reports only when called with a Back Office staff token (X-Staff-Token carrying access_backoffice); an Owner always passes and plain till reads are unchanged."
           },
           "response": []
         },
@@ -5666,7 +5766,7 @@
                 {"key": "limit", "value": "10", "description": "Optional, defaults to 10, capped at 100."}
               ]
             },
-            "description": "The top N products ranked by revenue (default limit 10) over from/to (default: the last 30 days) - same not-netted-against-Returns reasoning as ProductSalesReport."
+            "description": "The top N products ranked by revenue (default limit 10) over from/to (default: the last 30 days) - same not-netted-against-Returns reasoning as ProductSalesReport. Needs view_reports only when called with a Back Office staff token (X-Staff-Token carrying access_backoffice); an Owner always passes and plain till reads are unchanged."
           },
           "response": []
         },
@@ -5691,7 +5791,7 @@
                 {"key": "to", "value": "2026-09-27", "description": "Optional, YYYY-MM-DD, inclusive."}
               ]
             },
-            "description": "A real P&L statement over from/to (default: the last 30 days): Net Sales (same Gross-Discounts-Returns formula as SalesSummary) minus COGS (SUM(SaleItem.UnitCost * Qty), a per-sale snapshot of Product.CostPrice taken at sale time - never client-supplied) equals Gross Profit; minus Expenses (shift.Expense, already real per-branch data) equals Net Profit. COGS is only as reliable as the product's own cost basis - a product that's never been through a real Procurement goods receipt or a manual cost_price edit (see UpdateProduct) reads as cost 0, overstating margin until one happens. Returns naturally reduce COGS too (via ReturnItem's own link back to the original SaleItem), no separate tracking needed."
+            "description": "A real P&L statement over from/to (default: the last 30 days): Net Sales (same Gross-Discounts-Returns formula as SalesSummary) minus COGS (SUM(SaleItem.UnitCost * Qty), a per-sale snapshot of Product.CostPrice taken at sale time - never client-supplied) equals Gross Profit; minus Expenses (shift.Expense, already real per-branch data) equals Net Profit. COGS is only as reliable as the product's own cost basis - a product that's never been through a real Procurement goods receipt or a manual cost_price edit (see UpdateProduct) reads as cost 0, overstating margin until one happens. Returns naturally reduce COGS too (via ReturnItem's own link back to the original SaleItem), no separate tracking needed. Needs view_reports only when called with a Back Office staff token (X-Staff-Token carrying access_backoffice); an Owner always passes and plain till reads are unchanged. cogs, gross_profit and net_profit are OMITTED from the response unless the caller is an Owner / Service Center or holds view_item_cost."
           },
           "response": []
         },
@@ -5711,7 +5811,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "reports", "export"]
             },
-            "description": "Deferred - out of the confirmed v1 Reports spec (docs/WORKFLOWS.md Section 11 has no export requirement). Stays 501 Not Implemented until Shagan schedules it."
+            "description": "Deferred - out of the confirmed v1 Reports spec (docs/WORKFLOWS.md Section 11 has no export requirement). Stays 501 Not Implemented until Shagan schedules it. Needs view_reports only when called with a Back Office staff token (X-Staff-Token carrying access_backoffice); an Owner always passes and plain till reads are unchanged."
           },
           "response": []
         }

@@ -28,19 +28,24 @@ func NewProcurementAPI(db *gorm.DB, jwtSecret []byte) *ProcurementAPI {
 }
 
 func (a *ProcurementAPI) RegisterRoutes(rg *gin.RouterGroup) {
-	// Supplier and purchase-order writes need Back Office. Suppliers are
-	// org-wide and shared; purchase orders are branch-scoped, so a manager
-	// at the till is restricted to their own branch's orders in the handlers.
-	backOffice := middleware.RequireBackOffice(a.jwtSecret)
+	// Supplier and purchase-order writes need Back Office plus their own
+	// permission: manage_suppliers, manage_purchase_orders, and receive_stock
+	// for goods receipts (so receiving can be given to someone who can't edit
+	// orders). Suppliers are org-wide and shared; purchase orders are
+	// branch-scoped, so a manager at the till is restricted to their own
+	// branch's orders in the handlers.
+	manageSuppliers := middleware.RequireBackOfficePermission(a.jwtSecret, "manage_suppliers")
+	managePurchaseOrders := middleware.RequireBackOfficePermission(a.jwtSecret, "manage_purchase_orders")
+	receiveStock := middleware.RequireBackOfficePermission(a.jwtSecret, "receive_stock")
 	rg.GET("/suppliers", a.ListSuppliers)
-	rg.POST("/suppliers", backOffice, a.CreateSupplier)
-	rg.PATCH("/suppliers/:id", backOffice, a.UpdateSupplier)
-	rg.DELETE("/suppliers/:id", backOffice, a.DeleteSupplier)
+	rg.POST("/suppliers", manageSuppliers, a.CreateSupplier)
+	rg.PATCH("/suppliers/:id", manageSuppliers, a.UpdateSupplier)
+	rg.DELETE("/suppliers/:id", manageSuppliers, a.DeleteSupplier)
 	rg.GET("/purchase-orders", a.ListPurchaseOrders)
-	rg.POST("/purchase-orders", backOffice, a.CreatePurchaseOrder)
+	rg.POST("/purchase-orders", managePurchaseOrders, a.CreatePurchaseOrder)
 	rg.GET("/purchase-orders/:id", a.GetPurchaseOrder)
-	rg.PATCH("/purchase-orders/:id", backOffice, a.UpdatePurchaseOrder)
-	rg.POST("/purchase-orders/:id/receipts", backOffice, a.CreateGoodsReceipt)
+	rg.PATCH("/purchase-orders/:id", managePurchaseOrders, a.UpdatePurchaseOrder)
+	rg.POST("/purchase-orders/:id/receipts", receiveStock, a.CreateGoodsReceipt)
 }
 
 // ListSuppliers handles `GET /suppliers`.

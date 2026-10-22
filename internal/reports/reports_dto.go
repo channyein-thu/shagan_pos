@@ -1,6 +1,7 @@
 package reports
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -179,6 +180,25 @@ type ProfitAndLoss struct {
 	GrossProfit decimal.Decimal `json:"gross_profit"`
 	Expenses    decimal.Decimal `json:"expenses"`
 	NetProfit   decimal.Decimal `json:"net_profit"`
+}
+
+// WithoutCost is the statement as JSON fields minus everything that reveals
+// what goods cost: COGS, and gross and net profit (either would give COGS away
+// by subtraction). It is what a caller without view_item_cost gets back from
+// `GET /reports/profit-loss`; Net Sales, discounts, returns and expenses stay.
+func (p ProfitAndLoss) WithoutCost() map[string]any {
+	raw, err := json.Marshal(p)
+	if err != nil {
+		return map[string]any{}
+	}
+	var out map[string]any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return map[string]any{}
+	}
+	delete(out, "cogs")
+	delete(out, "gross_profit")
+	delete(out, "net_profit")
+	return out
 }
 
 // PaymentMethodsReport backs `GET /reports/payment-methods`.

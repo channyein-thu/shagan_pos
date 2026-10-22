@@ -15,26 +15,30 @@ import (
 )
 
 type ReportsAPI struct {
-	service reports.Interface
+	service   reports.Interface
+	jwtSecret []byte
 }
 
-func NewReportsAPI(db *gorm.DB) *ReportsAPI {
-	return &ReportsAPI{service: reports.NewService(reports.NewRepository(db), identity.NewRepository(db))}
+func NewReportsAPI(db *gorm.DB, jwtSecret []byte) *ReportsAPI {
+	return &ReportsAPI{service: reports.NewService(reports.NewRepository(db), identity.NewRepository(db)), jwtSecret: jwtSecret}
 }
 
 func (a *ReportsAPI) RegisterRoutes(rg *gin.RouterGroup) {
-	rg.GET("/reports/home-summary", a.GetHomeSummary)
-	rg.GET("/reports/stock-overview", a.GetStockOverview)
-	rg.GET("/reports/today", a.GetTodayReport)
-	rg.GET("/reports/revenue-trend", a.GetRevenueTrend)
-	rg.GET("/reports/sales-summary", a.GetSalesSummary)
-	rg.GET("/reports/sales-trend", a.GetSalesTrend)
-	rg.GET("/reports/payment-methods", a.GetPaymentMethodsReport)
-	rg.GET("/reports/transactions", a.GetTransactionsReport)
-	rg.GET("/reports/product-sales", a.GetProductSalesReport)
-	rg.GET("/reports/top-products", a.GetTopProducts)
-	rg.GET("/reports/profit-loss", a.GetProfitAndLoss)
-	rg.POST("/reports/export", a.ExportReport)
+	// view_reports only restricts a caller using Back Office (a staff token
+	// with access_backoffice); an Owner / Service Center always passes.
+	viewReports := middleware.RequireViewPermission(a.jwtSecret, "view_reports")
+	rg.GET("/reports/home-summary", viewReports, a.GetHomeSummary)
+	rg.GET("/reports/stock-overview", viewReports, a.GetStockOverview)
+	rg.GET("/reports/today", viewReports, a.GetTodayReport)
+	rg.GET("/reports/revenue-trend", viewReports, a.GetRevenueTrend)
+	rg.GET("/reports/sales-summary", viewReports, a.GetSalesSummary)
+	rg.GET("/reports/sales-trend", viewReports, a.GetSalesTrend)
+	rg.GET("/reports/payment-methods", viewReports, a.GetPaymentMethodsReport)
+	rg.GET("/reports/transactions", viewReports, a.GetTransactionsReport)
+	rg.GET("/reports/product-sales", viewReports, a.GetProductSalesReport)
+	rg.GET("/reports/top-products", viewReports, a.GetTopProducts)
+	rg.GET("/reports/profit-loss", viewReports, a.GetProfitAndLoss)
+	rg.POST("/reports/export", viewReports, a.ExportReport)
 }
 
 // reportBranchID reads the shared ?branch_id= query param - a
@@ -326,6 +330,11 @@ func (a *ReportsAPI) GetProfitAndLoss(c *gin.Context) {
 	result, err := a.service.GetProfitAndLoss(c.Request.Context(), orgID, branchID, from, to)
 	if err != nil {
 		common.HandleError(c, err)
+		return
+	}
+	// COGS and profit are what view_item_cost protects.
+	if !middleware.CallerHasPermission(c, "view_item_cost") {
+		c.JSON(http.StatusOK, result.WithoutCost())
 		return
 	}
 	c.JSON(http.StatusOK, result)

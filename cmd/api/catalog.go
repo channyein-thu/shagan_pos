@@ -27,10 +27,11 @@ func NewCatalogAPI(db *gorm.DB, store storage.Storage, jwtSecret []byte) *Catalo
 }
 
 func (a *CatalogAPI) RegisterRoutes(rg *gin.RouterGroup) {
-	// Writes need Back Office: an owner/service_center token, or a till's
-	// POS token plus a manager's X-Staff-Token (access_backoffice). Reads
-	// stay open to any authenticated caller - the till needs them to sell.
-	backOffice := middleware.RequireBackOffice(a.jwtSecret)
+	// Writes need Back Office with the manage_catalog permission: an
+	// owner/service_center token, or a till's POS token plus an X-Staff-Token
+	// carrying access_backoffice and manage_catalog. Reads stay open to any
+	// authenticated caller - the till needs them to sell.
+	backOffice := middleware.RequireBackOfficePermission(a.jwtSecret, "manage_catalog")
 	rg.GET("/products", a.ListProducts)
 	rg.GET("/products/:id", a.GetProduct)
 	rg.GET("/products/barcode/:code", a.GetProductByBarcode)

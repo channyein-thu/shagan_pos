@@ -8,8 +8,11 @@
 -- inventory ledger, audit log, held sales, sync conflicts, receipt settings).
 --
 -- PREREQUISITE: the tables must exist - run the API once (`go run ./cmd`) so
--- it migrates. Roles/permissions are created here if missing, so
--- `go run ./cmd/seed` is not required first.
+-- it migrates. This file still creates the OLD global roles (staff, super_staff,
+-- manager) as the staff's roles; roles are per organization now, so AFTER
+-- loading it run `go run ./cmd/seed` (or just restart `go run ./cmd`): the
+-- start-up migration gives the demo org its own Manager / Cashier / Super Staff
+-- roles with exactly the permissions the staff had, and repoints the staff.
 --
 -- SAFE TO RUN ON A NON-EMPTY DATABASE: ids are allocated after the current
 -- maximum, sequences are advanced afterwards, and the whole file is one
@@ -78,7 +81,7 @@ BEGIN
 
   -- baseline reference data (same content as `go run ./cmd/seed`; idempotent)
   INSERT INTO roles (code, name) SELECT v.c, v.n FROM (VALUES ('staff','Staff'),('super_staff','Super Staff'),('manager','Manager')) v(c,n)
-    WHERE NOT EXISTS (SELECT 1 FROM roles r WHERE r.code = v.c);
+    WHERE NOT EXISTS (SELECT 1 FROM roles r WHERE r.code = v.c AND r.org_id IS NULL);
   INSERT INTO permissions (code, name, category) SELECT v.c, v.n, v.g FROM (VALUES
     ('access_pos_portal','Access the POS selling portal','portal'),
     ('access_backoffice','Access the backoffice (own branch only)','portal'),
@@ -93,11 +96,11 @@ BEGIN
       ('super_staff','access_pos_portal'),('super_staff','open_drawer_no_sale'),('super_staff','apply_manual_discount'),
       ('manager','access_pos_portal'),('manager','access_backoffice'),('manager','open_drawer_no_sale'),('manager','apply_manual_discount'),
       ('manager','approve_void'),('manager','approve_return'),('manager','approve_exchange')) g(rc,pc)
-    JOIN roles r ON r.code = g.rc JOIN permissions p ON p.code = g.pc
+    JOIN roles r ON r.code = g.rc AND r.org_id IS NULL JOIN permissions p ON p.code = g.pc
     WHERE NOT EXISTS (SELECT 1 FROM role_permission x WHERE x.role_id = r.id AND x.permission_id = p.id);
-  SELECT id INTO r_staff FROM roles WHERE code = 'staff';
-  SELECT id INTO r_super FROM roles WHERE code = 'super_staff';
-  SELECT id INTO r_manager FROM roles WHERE code = 'manager';
+  SELECT id INTO r_staff FROM roles WHERE code = 'staff' AND org_id IS NULL;
+  SELECT id INTO r_super FROM roles WHERE code = 'super_staff' AND org_id IS NULL;
+  SELECT id INTO r_manager FROM roles WHERE code = 'manager' AND org_id IS NULL;
 
   SELECT COALESCE(MAX(id), 0) INTO o_branches FROM branches;
   SELECT COALESCE(MAX(id), 0) INTO o_devices FROM devices;

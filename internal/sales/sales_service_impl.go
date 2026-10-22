@@ -268,7 +268,7 @@ func (s *Service) applyStockDelta(tx *gorm.DB, productID uint, branchID uint, de
 	return newQty, nil
 }
 
-func (s *Service) ListSales(ctx context.Context, orgID uint, branchID *uint, from, to *time.Time, page, pageSize int) (*SalesPage, error) {
+func (s *Service) ListSales(ctx context.Context, orgID uint, branchID *uint, staffID *uint, from, to *time.Time, page, pageSize int) (*SalesPage, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -278,7 +278,7 @@ func (s *Service) ListSales(ctx context.Context, orgID uint, branchID *uint, fro
 	if pageSize > 100 {
 		pageSize = 100
 	}
-	f := SaleFilter{BranchID: branchID, Page: page, PageSize: pageSize}
+	f := SaleFilter{BranchID: branchID, StaffID: staffID, Page: page, PageSize: pageSize}
 	if from != nil || to != nil {
 		// The dates are days of the org's own calendar, not UTC's.
 		org, err := s.orgs.GetOrganization(ctx, orgID)

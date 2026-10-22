@@ -53,9 +53,31 @@ type Interface interface {
 	// actorUserID is the authenticated caller's own user ID, never client
 	// input.
 	UpdateStaff(ctx context.Context, orgID uint, actorUserID uint, id uint, in UpdateStaffRequest) (*Staff, error)
-	ListRoles(ctx context.Context) ([]Role, error)
-	ListPermissions(ctx context.Context) ([]Permission, error)
-	ListRolePermissions(ctx context.Context, id uint) ([]Permission, error)
+	// ListRoles is `GET /roles`: the org's roles with their staff counts and
+	// POS / Back office switches, behind a synthetic, non-editable Owner row.
+	ListRoles(ctx context.Context, orgID uint) ([]RoleSummary, error)
+	// ListPermissions is `GET /permissions`: the catalogue grouped by
+	// category (pos, then backoffice), in catalogue order.
+	ListPermissions(ctx context.Context) ([]PermissionGroup, error)
+	// ListRolePermissions is `GET /roles/:id/permissions` - the grants of one
+	// of the org's roles (404 for another org's).
+	ListRolePermissions(ctx context.Context, orgID uint, id uint) ([]Permission, error)
+	// CreateRole, UpdateRole and DeleteRole are Owner-only (the handlers sit
+	// behind RequireOrgAdmin) and audited as entity "role". actorUserID is the
+	// authenticated org-wide account, never client input. Changes reach staff
+	// at their next PIN sign-in - a token already issued keeps the permissions
+	// it was minted with.
+	//
+	// CreateRole: 400 for a bad name or unknown permission code, 409 if the
+	// org already has a role with that name.
+	CreateRole(ctx context.Context, orgID uint, actorUserID uint, in CreateRoleRequest) (*RoleDetail, error)
+	// UpdateRole: 403 for the synthetic Owner row (id 0), 404 for another
+	// org's role, 400 for an unknown code, 409 if it would leave the org with
+	// no role holding access_pos_portal or the new name is taken.
+	UpdateRole(ctx context.Context, orgID uint, actorUserID uint, id uint, in UpdateRoleRequest) (*RoleDetail, error)
+	// DeleteRole: 403 for the Owner row, 404 for another org's role, 409 for a
+	// system role (Manager, Cashier) or one any staff member still holds.
+	DeleteRole(ctx context.Context, orgID uint, actorUserID uint, id uint) error
 	CreateAccount(ctx context.Context, in CreateAccountInput) (*CreateAccountResult, error)
 	CreatePosAccount(ctx context.Context, in CreatePosAccountInput) (*User, error)
 	ListOrganizations(ctx context.Context) ([]Organization, error)

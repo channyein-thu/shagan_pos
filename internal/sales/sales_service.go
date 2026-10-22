@@ -120,7 +120,7 @@ type Interface interface {
 	// unlike the reports, no default window, so an unfiltered call is the
 	// whole history, paged. page/pageSize follow reports' convention
 	// (default 20, max 100).
-	ListSales(ctx context.Context, orgID uint, branchID *uint, from, to *time.Time, page, pageSize int) (*SalesPage, error)
+	ListSales(ctx context.Context, orgID uint, branchID *uint, staffID *uint, from, to *time.Time, page, pageSize int) (*SalesPage, error)
 	GetSale(ctx context.Context, orgID uint, id uuid.UUID) (*Sale, error)
 	// GetSaleReceipt and ReprintSale return the same bundle - a receipt's
 	// content never changes between its first print and a reprint.

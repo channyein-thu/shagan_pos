@@ -20,11 +20,13 @@ import (
 )
 
 type SyncAPI struct {
-	service datasync.Interface
+	service   datasync.Interface
+	jwtSecret []byte
 }
 
-func NewSyncAPI(db *gorm.DB, store storage.Storage) *SyncAPI {
+func NewSyncAPI(db *gorm.DB, store storage.Storage, jwtSecret []byte) *SyncAPI {
 	return &SyncAPI{
+		jwtSecret: jwtSecret,
 		service: datasync.NewService(
 			datasync.NewRepository(db),
 			identity.NewRepository(db),
@@ -41,7 +43,9 @@ func (a *SyncAPI) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.POST("/sync/sales", a.IngestQueuedSales)
 	rg.GET("/sync/status", a.GetSyncStatus)
 	rg.GET("/sync/conflicts", a.ListSyncConflicts)
-	rg.PATCH("/sync/conflicts/:id/resolve", a.ResolveSyncConflict)
+	// Resolving a conflict (accepting an oversold offline sale) is a Back
+	// Office decision: resolve_sync_conflicts, or an Owner / Service Center.
+	rg.PATCH("/sync/conflicts/:id/resolve", middleware.RequireBackOfficePermission(a.jwtSecret, "resolve_sync_conflicts"), a.ResolveSyncConflict)
 }
 
 // GetCatalogSnapshot handles `GET /sync/catalog`. Snapshot + ETag for

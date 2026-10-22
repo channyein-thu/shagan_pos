@@ -267,3 +267,51 @@ type VerifyManagerPINResult struct {
 	Token     string    `json:"token"`
 	ExpiresAt time.Time `json:"expires_at"`
 }
+
+// CreateRoleRequest is the request body for `POST /roles`. The role's code is
+// derived from Name server-side (a slug, unique per org), never client input.
+// PermissionCodes are catalogue codes (GET /permissions); an unknown one is a
+// 400. Omitted or empty means a role with no permissions yet.
+type CreateRoleRequest struct {
+	Name            string   `json:"name" binding:"required,max=50"`
+	PermissionCodes []string `json:"permission_codes"`
+}
+
+// UpdateRoleRequest is the request body for `PATCH /roles/:id`. Every field
+// is optional. PermissionCodes REPLACES the role's grants (so the checklist
+// can be sent whole); an empty list clears them, omitting it leaves them be.
+type UpdateRoleRequest struct {
+	Name            *string   `json:"name" binding:"omitempty,max=50"`
+	PermissionCodes *[]string `json:"permission_codes"`
+}
+
+// RoleSummary is one row of `GET /roles`: the role plus what the roles screen
+// shows beside it. POS and Backoffice are the two Loyverse-style switches,
+// i.e. whether the role holds access_pos_portal / access_backoffice.
+type RoleSummary struct {
+	ID         uint   `json:"id"`
+	Code       string `json:"code"`
+	Name       string `json:"name"`
+	IsSystem   bool   `json:"is_system"`
+	Editable   bool   `json:"editable"`
+	StaffCount int    `json:"staff_count"`
+	POS        bool   `json:"pos"`
+	Backoffice bool   `json:"backoffice"`
+}
+
+// RoleDetail is the response of `POST /roles` and `PATCH /roles/:id`: the
+// summary, the role's full permission list, and any warnings - permissions
+// that were accepted but won't take effect (e.g. a back office permission on
+// a role without the Back office switch). Warnings is never null.
+type RoleDetail struct {
+	RoleSummary
+	PermissionCodes []string `json:"permission_codes"`
+	Warnings        []string `json:"warnings"`
+}
+
+// PermissionGroup is one category of `GET /permissions`.
+type PermissionGroup struct {
+	Category    string       `json:"category"`
+	Label       string       `json:"label"`
+	Permissions []Permission `json:"permissions"`
+}

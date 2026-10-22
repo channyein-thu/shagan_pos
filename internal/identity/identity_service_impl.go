@@ -291,7 +291,7 @@ func (s *Service) VerifyManagerPIN(ctx context.Context, orgID uint, branchID *ui
 		return nil, err
 	}
 
-	permissions, err := s.repo.ListRolePermissions(ctx, staff.RoleID)
+	permissions, err := s.repo.ListRolePermissions(ctx, orgID, staff.RoleID)
 	if err != nil {
 		return nil, err
 	}
@@ -344,7 +344,7 @@ func (s *Service) VerifyStaffPIN(ctx context.Context, orgID uint, branchID *uint
 		return nil, err
 	}
 
-	permissions, err := s.repo.ListRolePermissions(ctx, staff.RoleID)
+	permissions, err := s.repo.ListRolePermissions(ctx, orgID, staff.RoleID)
 	if err != nil {
 		return nil, err
 	}
@@ -454,6 +454,11 @@ func (s *Service) ListStaff(ctx context.Context, orgID uint, branchID *uint) ([]
 // CreateStaff hashes the plaintext PIN before it ever reaches the repository
 // - same reasoning as CreateAccount's password hashing.
 func (s *Service) CreateStaff(ctx context.Context, orgID uint, in CreateStaffRequest) (*Staff, error) {
+	// roles are per org: the role must be one of this org's own, or a caller
+	// could attach staff to another tenant's role by guessing its id
+	if _, err := s.repo.GetRole(ctx, orgID, in.Role); err != nil {
+		return nil, err
+	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(in.Pin), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, common.SystemError("failed to hash PIN")
@@ -474,6 +479,11 @@ func (s *Service) UpdateStaff(ctx context.Context, orgID uint, actorUserID uint,
 	before, err := s.repo.GetStaff(ctx, orgID, id)
 	if err != nil {
 		return nil, err
+	}
+	if in.Role != nil {
+		if _, err := s.repo.GetRole(ctx, orgID, *in.Role); err != nil {
+			return nil, err
+		}
 	}
 
 	if in.Pin != nil {
@@ -501,18 +511,6 @@ func (s *Service) UpdateStaff(ctx context.Context, orgID uint, actorUserID uint,
 		return nil, auditErr
 	}
 	return after, nil
-}
-
-func (s *Service) ListRoles(ctx context.Context) ([]Role, error) {
-	return s.repo.ListRoles(ctx)
-}
-
-func (s *Service) ListPermissions(ctx context.Context) ([]Permission, error) {
-	return s.repo.ListPermissions(ctx)
-}
-
-func (s *Service) ListRolePermissions(ctx context.Context, id uint) ([]Permission, error) {
-	return s.repo.ListRolePermissions(ctx, id)
 }
 
 // CreateAccount hashes both the owner's and service_center's plaintext
@@ -543,6 +541,12 @@ func (s *Service) CreateAccount(ctx context.Context, in CreateAccountInput) (*Cr
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		org := Organization{Name: in.OrganizationName, Timezone: timezone}
 		if err := s.repo.CreateOrganization(tx, &org); err != nil {
+			return err
+		}
+		// every org starts with a Manager and a Cashier role, so staff can be
+		// given a PIN-able role from day one - in this transaction, so a
+		// failure leaves no org without roles behind
+		if err := s.repo.ProvisionDefaultRoles(tx, org.ID); err != nil {
 			return err
 		}
 

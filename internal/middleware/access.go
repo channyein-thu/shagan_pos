@@ -53,6 +53,11 @@ func RequireOrgAdmin() gin.HandlerFunc {
 	return RequireAccountType(AccountTypeOwner, AccountTypeServiceCenter)
 }
 
+// RequireBackOffice is the any-permission form of Back Office access: it only
+// checks the Back office switch (access_backoffice). Every Back Office route now
+// uses RequireBackOfficePermission instead, which also checks the specific
+// permission; this remains for callers that really mean "any Back Office user".
+//
 // RequireBackOffice allows an org-wide account (Owner / Service Center)
 // outright, or a POS-device token that also carries a valid X-Staff-Token
 // whose role grants access_backoffice - a manager who has unlocked Back

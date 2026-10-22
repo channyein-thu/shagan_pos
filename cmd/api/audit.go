@@ -8,18 +8,22 @@ import (
 
 	"shagan_pos/internal/audit"
 	"shagan_pos/internal/common"
+	"shagan_pos/internal/middleware"
 )
 
 type AuditAPI struct {
-	service audit.Interface
+	service   audit.Interface
+	jwtSecret []byte
 }
 
-func NewAuditAPI(db *gorm.DB) *AuditAPI {
-	return &AuditAPI{service: audit.NewService(audit.NewRepository(db))}
+func NewAuditAPI(db *gorm.DB, jwtSecret []byte) *AuditAPI {
+	return &AuditAPI{service: audit.NewService(audit.NewRepository(db)), jwtSecret: jwtSecret}
 }
 
 func (a *AuditAPI) RegisterRoutes(rg *gin.RouterGroup) {
-	rg.GET("/audit-log", a.ListAuditLog)
+	// view_audit_log only restricts a caller using Back Office; an Owner /
+	// Service Center always sees it.
+	rg.GET("/audit-log", middleware.RequireViewPermission(a.jwtSecret, "view_audit_log"), a.ListAuditLog)
 }
 
 // ListAuditLog handles `GET /audit-log`. Read-only; written via mutation
