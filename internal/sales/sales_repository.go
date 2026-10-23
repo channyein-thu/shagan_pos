@@ -56,6 +56,29 @@ type Repository interface {
 	// ListSaleItemsTx is ListSaleItems's transaction-participating
 	// counterpart, same reasoning as GetSaleWithLock.
 	ListSaleItemsTx(db *gorm.DB, saleID uuid.UUID) ([]SaleItem, error)
+	// CreateDiscountApproval is the plain insert behind a new approval.
+	CreateDiscountApproval(db *gorm.DB, approval *DiscountApproval) error
+	// ListDiscountApprovals returns the approvals among ids that belong to
+	// orgID (any status) - read before a sale's transaction to validate its
+	// lines. Missing and foreign ids are simply absent.
+	ListDiscountApprovals(ctx context.Context, orgID uint, ids []uuid.UUID) ([]DiscountApproval, error)
+	// GetDiscountApproval returns common.NotFoundError for an approval of
+	// another org, same not-found-not-forbidden reasoning as GetSale.
+	GetDiscountApproval(ctx context.Context, orgID uint, id uuid.UUID) (*DiscountApproval, error)
+	// MarkDiscountApprovalUsed spends an approval on saleID inside the sale's
+	// transaction. It is conditional on the approval still being `approved`, and
+	// reports whether it won - a false means another sale spent it first (or it
+	// was cancelled in between), which is what makes "once" hold under races.
+	MarkDiscountApprovalUsed(db *gorm.DB, id uuid.UUID, saleID uuid.UUID) (bool, error)
+	// CancelDiscountApproval is conditional the same way: true only if the
+	// approval was still `approved`.
+	CancelDiscountApproval(db *gorm.DB, id uuid.UUID) (bool, error)
+	// FindOpenShift finds the open shift of the till behind posUserID (a paired
+	// POS account): its own device's most recent open shift, or nil when
+	// there is none - nil is a normal answer, not an error. Same lookup as
+	// returns.CurrentShiftID, by table name for the same cycle reason as
+	// RequireOpenShift.
+	FindOpenShift(ctx context.Context, orgID uint, posUserID uint) (*OpenShift, error)
 	// UpdateSaleStatus backs returns.Service.VoidSale - the only way a
 	// Sale's Status ever changes after creation.
 	UpdateSaleStatus(db *gorm.DB, id uuid.UUID, status SaleStatus) error

@@ -7,15 +7,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
-	"shagan_pos/internal/audit"
 	"shagan_pos/internal/catalog"
 	"shagan_pos/internal/common"
 	"shagan_pos/internal/datasync"
 	"shagan_pos/internal/identity"
-	"shagan_pos/internal/inventory"
 	"shagan_pos/internal/middleware"
-	"shagan_pos/internal/returns"
-	"shagan_pos/internal/sales"
 	"shagan_pos/internal/storage"
 )
 
@@ -32,7 +28,7 @@ func NewSyncAPI(db *gorm.DB, store storage.Storage, jwtSecret []byte) *SyncAPI {
 			identity.NewRepository(db),
 			identity.NewRepository(db),
 			catalog.NewService(catalog.NewRepository(db), db, store),
-			sales.NewService(sales.NewRepository(db), inventory.NewRepository(db), catalog.NewRepository(db), audit.NewRepository(db), identity.NewRepository(db), returns.NewRepository(db), db),
+			newSalesService(db, jwtSecret),
 			db,
 		),
 	}

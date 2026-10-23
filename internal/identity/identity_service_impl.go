@@ -264,30 +264,8 @@ func (s *Service) UpdateMe(ctx context.Context, userID uint, in UpdateMeRequest)
 // On success, issues a short elevation token (DefaultManagerPINTokenTTL) -
 // not a shift session.
 func (s *Service) VerifyManagerPIN(ctx context.Context, orgID uint, branchID *uint, id uint, in VerifyManagerPINRequest) (*VerifyManagerPINResult, error) {
-	staff, err := s.repo.GetStaff(ctx, orgID, id)
+	staff, err := s.authenticateStaffPIN(ctx, orgID, branchID, id, in.Pin, invalidManagerPINMessage)
 	if err != nil {
-		var restErr common.RestError
-		if errors.As(err, &restErr) && restErr.Status == http.StatusNotFound {
-			return nil, common.UnauthorizedError(invalidManagerPINMessage)
-		}
-		return nil, err
-	}
-
-	if branchID != nil && staff.BranchID != *branchID {
-		return nil, common.UnauthorizedError(invalidManagerPINMessage)
-	}
-
-	if err := checkPinLockout(staff); err != nil {
-		return nil, err
-	}
-
-	if bcrypt.CompareHashAndPassword([]byte(staff.PinHash), []byte(in.Pin)) != nil {
-		if err := s.recordFailedPinAttempt(ctx, staff); err != nil {
-			return nil, err
-		}
-		return nil, common.UnauthorizedError(invalidManagerPINMessage)
-	}
-	if err := s.resetPinAttempts(ctx, staff); err != nil {
 		return nil, err
 	}
 
@@ -317,30 +295,8 @@ func (s *Service) VerifyManagerPIN(ctx context.Context, orgID uint, branchID *ui
 // and PIN itself - same layering as Login, which fetches the user then does
 // its own bcrypt compare rather than pushing that into the repository.
 func (s *Service) VerifyStaffPIN(ctx context.Context, orgID uint, branchID *uint, id uint, in VerifyStaffPINRequest) (*VerifyStaffPINResult, error) {
-	staff, err := s.repo.GetStaff(ctx, orgID, id)
+	staff, err := s.authenticateStaffPIN(ctx, orgID, branchID, id, in.Pin, invalidStaffPINMessage)
 	if err != nil {
-		var restErr common.RestError
-		if errors.As(err, &restErr) && restErr.Status == http.StatusNotFound {
-			return nil, common.UnauthorizedError(invalidStaffPINMessage)
-		}
-		return nil, err
-	}
-
-	if branchID != nil && staff.BranchID != *branchID {
-		return nil, common.UnauthorizedError(invalidStaffPINMessage)
-	}
-
-	if err := checkPinLockout(staff); err != nil {
-		return nil, err
-	}
-
-	if bcrypt.CompareHashAndPassword([]byte(staff.PinHash), []byte(in.Pin)) != nil {
-		if err := s.recordFailedPinAttempt(ctx, staff); err != nil {
-			return nil, err
-		}
-		return nil, common.UnauthorizedError(invalidStaffPINMessage)
-	}
-	if err := s.resetPinAttempts(ctx, staff); err != nil {
 		return nil, err
 	}
 
@@ -359,6 +315,55 @@ func (s *Service) VerifyStaffPIN(ctx context.Context, orgID uint, branchID *uint
 		Token:     token,
 		ExpiresAt: time.Now().Add(s.staffPINTokenTTL),
 	}, nil
+}
+
+// authenticateStaffPIN is the credential check every PIN endpoint shares: the
+// staff must exist in orgID and (when branchID is set) belong to that branch,
+// must not be locked out, and must have entered the right PIN. Unknown staff,
+// wrong branch and wrong PIN are all the same generic 401 carrying
+// genericMessage, so a terminal can't enumerate staff ids by probing;
+// lockout is the one distinct answer (see checkPinLockout). A wrong PIN is
+// recorded toward the shared lockout counter, a right one clears it.
+func (s *Service) authenticateStaffPIN(ctx context.Context, orgID uint, branchID *uint, id uint, pin string, genericMessage string) (*Staff, error) {
+	staff, err := s.repo.GetStaff(ctx, orgID, id)
+	if err != nil {
+		var restErr common.RestError
+		if errors.As(err, &restErr) && restErr.Status == http.StatusNotFound {
+			return nil, common.UnauthorizedError(genericMessage)
+		}
+		return nil, err
+	}
+
+	if branchID != nil && staff.BranchID != *branchID {
+		return nil, common.UnauthorizedError(genericMessage)
+	}
+
+	if err := checkPinLockout(staff); err != nil {
+		return nil, err
+	}
+
+	if bcrypt.CompareHashAndPassword([]byte(staff.PinHash), []byte(pin)) != nil {
+		if err := s.recordFailedPinAttempt(ctx, staff); err != nil {
+			return nil, err
+		}
+		return nil, common.UnauthorizedError(genericMessage)
+	}
+	if err := s.resetPinAttempts(ctx, staff); err != nil {
+		return nil, err
+	}
+	return staff, nil
+}
+
+func (s *Service) VerifyApprover(ctx context.Context, orgID uint, branchID uint, staffID uint, pin string) (*Staff, []string, error) {
+	staff, err := s.authenticateStaffPIN(ctx, orgID, &branchID, staffID, pin, invalidStaffPINMessage)
+	if err != nil {
+		return nil, nil, err
+	}
+	permissions, err := s.repo.ListRolePermissions(ctx, orgID, staff.RoleID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return staff, permissionCodes(permissions), nil
 }
 
 // checkPinLockout returns common.TooManyRequestsError if staff is currently

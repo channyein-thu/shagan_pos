@@ -15,6 +15,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&Permission{},
 		&RolePermission{},
 		&OrgRolePermission{},
+		&DataMigration{},
 		&Role{},
 	)
 }

@@ -44,7 +44,8 @@ never affect each other. Every org starts with two built-in roles
 - **Cashier** (`cashier`; this is the old global `staff` role) — the till
   basics: `access_pos_portal`, `accept_payments`, `hold_resume_sales`,
   `manage_own_shift`, `log_till_expenses`, `add_customers`,
-  `view_all_receipts`, `reprint_receipt`.
+  `view_all_receipts`, `reprint_receipt`, `apply_manual_discount` (may *ask* for
+  a custom discount - needs a manager's approval to get one).
 
 An org that was already using the old global `super_staff` role got a custom
 **Super Staff** role with its old grants (`open_drawer_no_sale`,
@@ -72,9 +73,9 @@ a `warnings` list.
 | `add_customers` | add customers at the till | ✔ | ✔ | `POST /customers`, `POST /customers/:id/consents` |
 | `view_all_receipts` | see every receipt at the till (off = only their own) | ✔ | ✔ | `GET /sales` |
 | `reprint_receipt` | reprint receipts | ✔ | ✔ | `POST /sales/:id/reprint` |
-| `apply_manual_discount` | give a manual discount without approval (**Part B** will make this "request a discount") | ✔ | | `POST /sales` |
-| `approve_manual_discount` | approve discounts with their PIN (Part B) | ✔ | | — |
-| `approve_own_discount` | approve a discount on their own sale (Part B) | ✔ | | — |
+| `apply_manual_discount` | **ask** for a custom discount (opens the dialog; needs an approval to get one) | ✔ | ✔ | `POST /sales/discount-approvals` |
+| `approve_manual_discount` | approve another staff member's custom discount with their PIN | ✔ | | PIN check in `POST /sales/discount-approvals` |
+| `approve_own_discount` | approve a custom discount they asked for themselves (with `approve_manual_discount`) | ✔ | | same |
 | `approve_void` | cancel (void) receipts | ✔ | | `POST /sales/:id/void` |
 | `approve_return` | refunds | ✔ | | `POST /returns` |
 | `approve_exchange` | exchanges | ✔ | | `POST /exchanges` |
@@ -123,10 +124,14 @@ Rules worth knowing:
   resetting a Manager's PIN from a lesser role).
 - **Roles in staff requests must be the org's own** — another org's role id is
   a 404.
-- **`apply_manual_discount` for Cashier is deliberately off** (the catalogue
-  table in the V1 spec marked it on): today a cashier needs a manager's PIN to
-  discount, and `POST /sales` still reads this permission as "may discount
-  without approval". It flips to on when Part B redefines it as "may request".
+- **`apply_manual_discount` means "may ask for a custom discount"** (Discount
+  V1, 2026-10-23) and is on for Cashier: it opens the dialog, it never gives a
+  discount by itself - the approval needs someone holding
+  `approve_manual_discount`, which Cashier doesn't. An Owner can take it off a
+  role to stop that role from even asking. Existing orgs' built-in Cashier got
+  it once, by a one-time data migration (`data_migrations` table), so an Owner
+  who later removes it is not overridden on the next restart. See "Discounts"
+  in Section 8.
 
 **Migration** (`identity.MigrateAccessRights`, run on every start by
 `migrate.Run` and by `go run ./cmd/seed`; idempotent): for each org with no
@@ -201,7 +206,6 @@ Three distinct tokens exist, often needed together on one request:
   `StaffHasPermission(c, X) || ManagerApproved(c, jwtSecret, X)` wherever a
   staff member without their own permission should still be able to proceed
   with someone else's approval. Currently wired into:
-  - `CreateSale` → `apply_manual_discount` (any item discount)
   - `CreateDrawerEvent` → `open_drawer_no_sale` (only when `sale_id` is
     omitted - a drawer event tied to a real sale needs no such check)
   - `VoidSale` → `approve_void`, `CreateReturn` → `approve_return`,
@@ -210,6 +214,9 @@ Three distinct tokens exist, often needed together on one request:
     approval-gated action must reuse it, not invent a different one. (`VoidSale`
     alone also accepts an Owner / Service Center acting directly - see
     "Owner acts as owner" below; Return/Exchange do not.)
+  - **Not discounts any more.** A custom discount is approved when it is
+    *added* (`POST /sales/discount-approvals`), so `POST /sales` no longer
+    reads `apply_manual_discount` or `X-Manager-Approval-Token` at all.
 
 ### Route authorization by account type (confirmed 2026-10-08)
 
@@ -381,9 +388,11 @@ Confirmed capabilities:
   (`Shift.ClosedByStaffID` differs from `Shift.StaffID`) from a normal
   close. This one has no manager-approval fallback of its own - it *is*
   the escape hatch, gated by the `force_close_shift` permission directly.
-- **Manual discounts**: `apply_manual_discount` permission lets them apply
-  an item discount on `CreateSale` directly, without needing anyone else's
-  approval.
+- **Custom discounts**: approves another staff member's discount by typing
+  their PIN on the till when the discount is added (needs
+  `approve_manual_discount`); can approve their own with
+  `approve_own_discount` too, no PIN pad. See "Discounts" in Section 8. A
+  manager never enters a PIN at payment.
 
 ---
 
@@ -414,11 +423,11 @@ enforced by its own permission: a role the Owner has stripped of, say,
 4. Can see current stock for their branch while ringing up a sale (same
    login/UI as Manager, just gated by which PIN was entered — see Section
    1).
-5. **Manual discount rule**: any item discount `> 0` requires the calling
-   staff's role to grant `apply_manual_discount`, **or** a valid
-   `X-Manager-Approval-Token` granting it instead (a Manager PIN-approves it at
-   the terminal - see Section 2). Item discounts and
-   item tax must both be `>= 0` (400 on negative).
+5. **Discounts**: a product's catalog % is automatic (no permission, no
+   approval). A custom % on a line needs an approval obtained *when it is added*
+   (`POST /sales/discount-approvals`: a manager's PIN, or self-approval for a
+   seller who holds both approve permissions) - payment never asks for a PIN.
+   See "Discounts" in Section 8. Item tax must be `>= 0` (400 on negative).
 6. **Per-item tax**: each line item snapshots its own tax amount (from
    `Product.Tax`, same offline-first client-caching reasoning as
    `unit_price`/`name_snapshot`) - there's no separate sale-level tax
@@ -495,9 +504,9 @@ enforced by its own permission: a role the Owner has stripped of, say,
   `manage_expenses` (a Manager by default), or the Owner /
   Service Center acting directly may edit/delete;
   anyone signed in may create one (always attributed to themselves).
-- **Sales discount**: any item discount requires `apply_manual_discount`
-  (own, or via manager approval); item discounts and item tax must both be
-  `>= 0`.
+- **Sales discount**: catalog % automatic; custom % only with a discount
+  approval got at add time (Section 8, "Discounts"); `price_override` is
+  rejected; item tax must be `>= 0`.
 - **Per-item tax**: snapshotted per line item, summed into `Sale.Tax` - no
   sale-level tax input.
 - **Combos**: expanded client-side into normal per-product line items
@@ -582,6 +591,75 @@ Why this shape, not a dedicated combo-aware code path:
   mechanism.
 
 ---
+
+### Discounts — catalog and custom (built 2026-10-23)
+
+Two kinds, never mixed on a line. Every computed unit price is rounded the same
+way: **truncate to 2 decimals, then round UP to the next K 100** (an exact
+multiple stays) - `common.RoundUpKyat100`, applied through
+`common.DiscountedUnitPrice(original, percent)`, which also never lets the
+result exceed the original (a K 150 item at 10% stays K 150, not K 200).
+
+**1. Catalog discount** - a % the Owner sets on the product (`discount_percent`,
+0-100). The server computes and stores `sale_price` and the per-unit `discount`
+(`price - sale_price`) and recomputes them whenever price or % changes; a client
+`discount` amount is ignored. It is **automatic: no approval, no permission,
+online or offline.** Existing products were backfilled exactly
+(`sale_price = price - discount`, `discount_percent = discount / price`, not
+re-rounded), so no price changed.
+
+**2. Custom (manual) discount** - a % the till adds to one sale **line**
+(percent only; no fixed amount; `price_override` is rejected). It comes off the
+**original** price and **replaces** the catalog % (smaller than the catalog % is
+allowed; the till only warns). It is **approved the moment it is added, one
+approval per discount - payment never asks for a PIN:**
+
+- The till calls `POST /sales/discount-approvals {product_id, percent, qty,
+  reason?, approver_staff_id?, pin?}` with the seller's `X-Staff-Token`.
+- The seller needs `apply_manual_discount` (403 otherwise) and an open shift on
+  the till (409). The product must exist in the org.
+- **Another staff member approves** with `approver_staff_id` + `pin`: checked
+  like `VerifyManagerPIN` (same lockout counter, same branch rule, generic 401),
+  and the approver needs `approve_manual_discount` (403) - plus
+  `approve_own_discount` if they are also the seller. **Or the seller
+  self-approves** (no PIN pad) by sending neither, if they hold
+  `approve_manual_discount` **and** `approve_own_discount`.
+- The response carries the prices the backend will charge (`unit_price`,
+  `unit_sale_price`), so the till shows exactly them.
+- An approval is for **one product, one %, up to N units, one seller, one
+  till's open shift**, and is spent by **one sale line, once**. It stays valid
+  until used, cancelled (`DELETE /sales/discount-approvals/:id`, 409 if already
+  used), or its **shift closes** (swept to `cancelled` in the close's own
+  transaction), at most 12 h.
+- `POST /sales` takes a `discount_approval_id` on the line and re-checks
+  everything (same org and branch, requested by this sale's staff, status
+  `approved`, not expired, same shift, same product, `qty <= max_qty`, not on
+  two lines of this request) - each failure is a 409 with a message. The
+  approval is spent in the sale's transaction by a conditional update, so two
+  sales racing for one approval can't both win. A retried sale that already
+  spent its approval returns the original (200) without re-checking.
+
+**How a line is priced** (`POST /sales`): everything comes from the product, not
+the client. `unit_price` is the product's price (a different client value is a
+409 `price changed, refresh the catalog`); with no approval the unit sale price
+is the product's `sale_price`; with one it is `DiscountedUnitPrice(original,
+approval %)`. A combo line keeps the client's bundle share as `combo_discount`
+(needs no approval, is not a manual discount). The line stores
+`catalog_discount_percent/_discount`, `manual_discount_percent/_discount/_reason`,
+`combo_discount`, `discount_approval_id` and `manual_approved_by`; `discount` is
+still their sum, so totals, returns and reports are unchanged. The same product
+may sit on several lines (1 of 2 coffees discounted). Payments must still equal
+the derived total exactly. Audit: `discount_approved` / `discount_cancelled`
+(entity `sale`, id of the approval) and `manual_discount` per spent approval.
+
+**Offline** - custom discounts are impossible (no approval offline); catalog
+discounts work. See Section 10.
+
+**Reporting** - the receipt/reprint items carry `unit_price` (original),
+`unit_sale_price`, both percents, the reason, `combo_discount`,
+`manual_approved_by` and the approver's name. `GET /reports/discounts`
+(`view_reports`) returns catalog vs manual totals, `manual_count`, the lists by
+seller and by approver, and how many approvals were cancelled.
 
 ## 9. Returns / Void / Exchange — Standard Business Rules
 
@@ -720,19 +798,26 @@ The shape below is the design it follows, reusing what was already in place.
   manager approval is needed. The same id from a different branch/device is
   **409**. (Two retries racing is handled the same way, never a 500.)
 - **`POST /sync/sales` trusts a queued sale with nothing it can't prove.** A
-  queued sale carries no staff token and an offline till can't get a manager
-  approval (no new PIN sign-ins offline), so: any item discount fails that
-  sale, and its `staff_id` must be a staff member of the calling device's own
+  queued sale carries no staff token and an offline till can't get a discount
+  approval (no PIN check offline), so: a line carrying a
+  `discount_approval_id` fails that sale (catalog discounts are automatic and
+  work offline), and its `staff_id` must be a staff member of the calling device's own
   branch. The already-stored check runs *first*, so retrying an ingested sale
   stays a success even if the staff member has since moved or left; an id
   already stored by another branch/device is a failed item, never a silent
   success. Failures are per-item in the response; the rest of the batch still
   lands.
-- **Known gap:** a discount sale rung up *online* whose response was lost
-  and which then gets queued offline will be rejected on sync (discount) -
-  retry it through `POST /sales` instead, which now succeeds idempotently.
-  `price_override` on a sale item has no permission gate on either path
-  (unconfirmed whether it should).
+- **A queued sale is priced from the till's cached catalog.** Its `unit_price`
+  and `catalog_discount_percent` snapshot are taken as rung up (percent
+  validated 0-100, line recomputed with the Kyat rounding rule). If either no
+  longer matches the product, the sale is still accepted and a `SyncConflict`
+  with reason `price_mismatch` is recorded per stale line (payload: product,
+  the till's price/percent, today's). The customer already paid what the till
+  showed.
+- **Known gap:** a sale with a *custom* discount rung up online whose response
+  was lost and which then gets queued offline will be rejected on sync (its
+  approval id) - retry it through `POST /sales` instead, which succeeds
+  idempotently. `price_override` is rejected on both paths.
 
 ### Design it follows
 1. **Local write-ahead queue on the device.** Every mutation created while
@@ -837,9 +922,8 @@ distinct methods used on the sale, sorted (`["cash"]`, `["qr"]`,
 3. **Customer `Tags`/`Consent`** are fully built in the backend but not
    surfaced anywhere in the Back Office UI — deferred, to be discussed
    later.
-4. **`price_override` on a sale item** has no permission gate on either the
-   live or the offline path — should changing a price need
-   `apply_manual_discount` (or its own permission)?
+4. ~~`price_override` on a sale item~~ — settled by Discount V1: it is rejected
+   (400) on every path; a price change is a product edit by the Owner.
 5. **Return/Exchange by the Owner** — Void is open to an Owner acting directly
    (no PIN); Return and Exchange still need a staff token. Should the owner be
    able to do those too?
@@ -852,10 +936,7 @@ distinct methods used on the sale, sorted (`["cash"]`, `["qr"]`,
    staff token on every read (it would break the till's own reads unless those
    move to separate endpoints), and whether suppliers/purchase orders get
    `view_*` permissions.
-7. **Part B discounts** — `apply_manual_discount` is still "may discount without
-   approval" and is off for Cashier; Part B redefines it as "may request"
-   (with `approve_manual_discount` / `approve_own_discount`), at which point it
-   should be switched on for Cashier. Until then Cashier holds neither.
+7. ~~Part B discounts~~ — replaced by Discount V1 (Section 8, "Discounts").
 8. **Per-branch timezone** — an org has one timezone (Section 11); a branch in
    another zone isn't supported.
 

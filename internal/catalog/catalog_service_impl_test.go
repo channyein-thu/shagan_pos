@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"image"
 	"image/png"
 	"net/http"
@@ -541,8 +542,7 @@ func validCreateProductRequest() CreateProductRequest {
 		CategoryID: 3,
 		Name:       "Iced Coffee",
 		Barcode:    "8850001234567",
-		Price:      decimal.NewFromFloat(3.50),
-		Discount:   decimal.NewFromFloat(0.50),
+		Price:      decimal.NewFromInt(6500),
 		Tax:        decimal.NewFromFloat(0.20),
 		Threshold:  10,
 		IsActive:   true,
@@ -654,7 +654,7 @@ func TestService_CreateProduct_PriceNotPositive_RejectsBeforeTouchingRepository(
 	requireRestErrorStatus(t, err, http.StatusBadRequest)
 }
 
-func TestService_CreateProduct_NegativeDiscount_RejectsBeforeTouchingRepository(t *testing.T) {
+func TestService_CreateProduct_NegativeDiscountPercent_RejectsBeforeTouchingRepository(t *testing.T) {
 	repo := NewMockRepository(t)
 	store := NewMockStorage(t)
 	svc := NewService(repo, fakeTransactioner{}, store)
@@ -662,7 +662,7 @@ func TestService_CreateProduct_NegativeDiscount_RejectsBeforeTouchingRepository(
 	repo.EXPECT().GetCategory(mock.Anything, uint(7), uint(3)).Return(&Category{ID: 3, OrgID: 7}, nil).Once()
 
 	in := validCreateProductRequest()
-	in.Discount = decimal.NewFromFloat(-0.01)
+	in.DiscountPercent = decimal.NewFromFloat(-0.01)
 
 	_, err := svc.CreateProduct(context.Background(), 7, in, bytes.NewReader(nil), 0, "image/png", "photo.png")
 	require.Error(t, err)
@@ -684,7 +684,7 @@ func TestService_CreateProduct_NegativeTax_RejectsBeforeTouchingRepository(t *te
 	requireRestErrorStatus(t, err, http.StatusBadRequest)
 }
 
-func TestService_CreateProduct_DiscountExceedsPrice_RejectsBeforeTouchingRepository(t *testing.T) {
+func TestService_CreateProduct_DiscountPercentOver100_RejectsBeforeTouchingRepository(t *testing.T) {
 	repo := NewMockRepository(t)
 	store := NewMockStorage(t)
 	svc := NewService(repo, fakeTransactioner{}, store)
@@ -692,12 +692,77 @@ func TestService_CreateProduct_DiscountExceedsPrice_RejectsBeforeTouchingReposit
 	repo.EXPECT().GetCategory(mock.Anything, uint(7), uint(3)).Return(&Category{ID: 3, OrgID: 7}, nil).Once()
 
 	in := validCreateProductRequest()
-	in.Price = decimal.NewFromFloat(3.50)
-	in.Discount = decimal.NewFromFloat(3.51)
+	in.DiscountPercent = decimal.NewFromFloat(100.01)
 
 	_, err := svc.CreateProduct(context.Background(), 7, in, bytes.NewReader(nil), 0, "image/png", "photo.png")
 	require.Error(t, err)
 	requireRestErrorStatus(t, err, http.StatusBadRequest)
+}
+
+// createProductCapturing runs a CreateProduct and returns the Product the
+// service handed to the repository.
+func createProductCapturing(t *testing.T, in CreateProductRequest) Product {
+	t.Helper()
+	repo := NewMockRepository(t)
+	store := NewMockStorage(t)
+	svc := NewService(repo, fakeTransactioner{}, store)
+	imgBytes := testProductImageBytes(t, 2, 3)
+	var saved Product
+	repo.EXPECT().GetCategory(mock.Anything, uint(7), uint(3)).Return(&Category{ID: 3, OrgID: 7}, nil).Once()
+	repo.EXPECT().CreateProduct(mock.Anything, mock.Anything).
+		Run(func(_ *gorm.DB, p *Product) { p.ID = 1; saved = *p }).Return(nil).Once()
+	store.EXPECT().Upload(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
+	repo.EXPECT().CreateProductImage(mock.Anything, mock.Anything).Return(nil).Once()
+	_, err := svc.CreateProduct(context.Background(), 7, in, bytes.NewReader(imgBytes), int64(len(imgBytes)), "image/png", "photo.png")
+	require.NoError(t, err)
+	return saved
+}
+
+// The Owner types a percent; the server computes and stores the sale price
+// (rounded up to K 100) and the per-unit discount amount.
+func TestService_CreateProduct_DiscountPercent_StoresRoundedSalePriceAndAmount(t *testing.T) {
+	in := validCreateProductRequest() // price 6,500
+	in.DiscountPercent = decimal.NewFromInt(10)
+
+	got := createProductCapturing(t, in)
+
+	require.True(t, decimal.NewFromInt(10).Equal(got.DiscountPercent))
+	require.True(t, decimal.NewFromInt(5900).Equal(got.SalePrice), "6,500 less 10%% is 5,850, rounded up to 5,900 (got %s)", got.SalePrice)
+	require.True(t, decimal.NewFromInt(600).Equal(got.Discount), "Discount is price - sale_price (got %s)", got.Discount)
+}
+
+func TestService_CreateProduct_ZeroPercent_SalePriceEqualsPrice(t *testing.T) {
+	in := validCreateProductRequest()
+	in.Price = decimal.RequireFromString("6750") // not a multiple of 100: must not be re-rounded
+	in.DiscountPercent = decimal.Zero
+
+	got := createProductCapturing(t, in)
+
+	require.True(t, decimal.RequireFromString("6750").Equal(got.SalePrice))
+	require.True(t, got.Discount.IsZero())
+}
+
+// A small price whose discounted figure would round up past itself is capped
+// at its own price - never charged more than the original.
+func TestService_CreateProduct_SalePriceNeverExceedsPrice(t *testing.T) {
+	in := validCreateProductRequest()
+	in.Price = decimal.NewFromInt(150)
+	in.DiscountPercent = decimal.NewFromInt(10) // 135 -> 200, capped to 150
+
+	got := createProductCapturing(t, in)
+
+	require.True(t, decimal.NewFromInt(150).Equal(got.SalePrice))
+	require.True(t, got.Discount.IsZero())
+}
+
+func TestService_CreateProduct_HundredPercent_IsFree(t *testing.T) {
+	in := validCreateProductRequest()
+	in.DiscountPercent = decimal.NewFromInt(100)
+
+	got := createProductCapturing(t, in)
+
+	require.True(t, got.SalePrice.IsZero())
+	require.True(t, got.Discount.Equal(got.Price))
 }
 
 func TestService_CreateProduct_DuplicateBarcode_ReturnsConflict(t *testing.T) {
@@ -788,7 +853,7 @@ func TestService_UpdateProduct_HappyPath_UpdatesAndReturns(t *testing.T) {
 	store := NewMockStorage(t)
 	svc := NewService(repo, fakeTransactioner{}, store)
 
-	existing := &Product{ID: 1, OrgID: 7, Price: decimal.NewFromFloat(3.50), Discount: decimal.NewFromFloat(0.50), Tax: decimal.NewFromFloat(0.20)}
+	existing := &Product{ID: 1, OrgID: 7, Price: decimal.NewFromInt(6500), Tax: decimal.NewFromFloat(0.20)}
 	updated := &Product{ID: 1, OrgID: 7, Name: "Hot Coffee"}
 	name := "Hot Coffee"
 	in := UpdateProductRequest{Name: &name}
@@ -906,24 +971,98 @@ func TestService_UpdateProduct_CategoryNotInOrg_PropagatesNotFound(t *testing.T)
 	requireRestErrorStatus(t, err, http.StatusNotFound)
 }
 
-func TestService_UpdateProduct_DiscountOnly_ValidatesAgainstExistingPrice(t *testing.T) {
+func TestService_UpdateProduct_DiscountPercentOutOfRange_RejectsBeforeWriting(t *testing.T) {
+	for name, pct := range map[string]string{"negative": "-1", "over 100": "100.5"} {
+		t.Run(name, func(t *testing.T) {
+			repo := NewMockRepository(t)
+			store := NewMockStorage(t)
+			svc := NewService(repo, fakeTransactioner{}, store)
+			existing := &Product{ID: 1, OrgID: 7, Price: decimal.NewFromInt(6500)}
+			value := decimal.RequireFromString(pct)
+			repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(existing, nil).Once()
+			// UpdateProduct must never be called
+
+			_, err := svc.UpdateProduct(context.Background(), 7, 1, UpdateProductRequest{DiscountPercent: &value}, nil, 0, "", "")
+			require.Error(t, err)
+			requireRestErrorStatus(t, err, http.StatusBadRequest)
+		})
+	}
+}
+
+// updateCapturing runs UpdateProduct on `existing` and returns the column
+// updates the service handed to the repository.
+func updateCapturing(t *testing.T, existing *Product, in UpdateProductRequest) map[string]any {
+	t.Helper()
 	repo := NewMockRepository(t)
 	store := NewMockStorage(t)
 	svc := NewService(repo, fakeTransactioner{}, store)
-
-	// existing Price is 3.50 - a Discount of 3.51 exceeds it, even though
-	// Price itself isn't part of this request.
-	existing := &Product{ID: 1, OrgID: 7, Price: decimal.NewFromFloat(3.50), Discount: decimal.Zero, Tax: decimal.Zero}
-	discount := decimal.NewFromFloat(3.51)
-	in := UpdateProductRequest{Discount: &discount}
-
-	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(existing, nil).Once()
-	// UpdateProduct must never be called - the combined state fails
-	// validation first.
-
+	var got map[string]any
+	repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(existing, nil).Twice()
+	repo.EXPECT().UpdateProduct(mock.Anything, uint(1), mock.Anything).
+		Run(func(_ *gorm.DB, _ uint, updates map[string]any) { got = updates }).Return(nil).Once()
 	_, err := svc.UpdateProduct(context.Background(), 7, 1, in, nil, 0, "", "")
-	require.Error(t, err)
-	requireRestErrorStatus(t, err, http.StatusBadRequest)
+	require.NoError(t, err)
+	return got
+}
+
+// requireUpdates compares a column-update map by the printed value of each
+// entry: decimal.Decimal structs with different internal exponents (0 vs 0.00)
+// are the same amount but not require.Equal-identical.
+func requireUpdates(t *testing.T, want map[string]string, got map[string]any) {
+	t.Helper()
+	printed := make(map[string]string, len(got))
+	for k, v := range got {
+		printed[k] = fmt.Sprint(v)
+	}
+	require.Equal(t, want, printed)
+}
+
+func TestService_UpdateProduct_ChangingThePercent_RecomputesSalePriceAndDiscount(t *testing.T) {
+	existing := &Product{ID: 1, OrgID: 7, Price: decimal.NewFromInt(6500), SalePrice: decimal.NewFromInt(6500)}
+	pct := decimal.NewFromInt(10)
+
+	got := updateCapturing(t, existing, UpdateProductRequest{DiscountPercent: &pct})
+
+	requireUpdates(t, map[string]string{"discount_percent": "10", "sale_price": "5900", "discount": "600"}, got)
+}
+
+// A price change keeps the product's percent and moves the sale price with it.
+func TestService_UpdateProduct_ChangingThePrice_RecomputesSalePriceFromTheExistingPercent(t *testing.T) {
+	existing := &Product{ID: 1, OrgID: 7, Price: decimal.NewFromInt(6500), DiscountPercent: decimal.NewFromInt(10), SalePrice: decimal.NewFromInt(5900)}
+	price := decimal.NewFromInt(7000)
+
+	got := updateCapturing(t, existing, UpdateProductRequest{Price: &price})
+
+	requireUpdates(t, map[string]string{"price": "7000", "sale_price": "6300", "discount": "700"}, got) // the percent itself is unchanged
+}
+
+func TestService_UpdateProduct_PriceAndPercentTogether_UseBothNewValues(t *testing.T) {
+	existing := &Product{ID: 1, OrgID: 7, Price: decimal.NewFromInt(6500), DiscountPercent: decimal.NewFromInt(10)}
+	price, pct := decimal.NewFromInt(7000), decimal.NewFromInt(50)
+
+	got := updateCapturing(t, existing, UpdateProductRequest{Price: &price, DiscountPercent: &pct})
+
+	requireUpdates(t, map[string]string{"price": "7000", "discount_percent": "50", "sale_price": "3500", "discount": "3500"}, got)
+}
+
+func TestService_UpdateProduct_PercentBackToZero_SalePriceEqualsPrice(t *testing.T) {
+	existing := &Product{ID: 1, OrgID: 7, Price: decimal.NewFromInt(6500), DiscountPercent: decimal.NewFromInt(10), SalePrice: decimal.NewFromInt(5900)}
+	zero := decimal.Zero
+
+	got := updateCapturing(t, existing, UpdateProductRequest{DiscountPercent: &zero})
+
+	requireUpdates(t, map[string]string{"discount_percent": "0", "sale_price": "6500", "discount": "0"}, got)
+}
+
+// Editing something unrelated must not touch a legacy product's pricing -
+// its sale price was backfilled exactly and is not re-rounded.
+func TestService_UpdateProduct_UnrelatedField_LeavesPricingColumnsAlone(t *testing.T) {
+	existing := &Product{ID: 1, OrgID: 7, Price: decimal.NewFromInt(6500), DiscountPercent: decimal.RequireFromString("4.62"), SalePrice: decimal.NewFromInt(6200)}
+	name := "Renamed"
+
+	got := updateCapturing(t, existing, UpdateProductRequest{Name: &name})
+
+	require.Equal(t, map[string]any{"name": "Renamed"}, got)
 }
 
 func TestService_UpdateProduct_WithImage_ReplacesOldImageAfterCommit(t *testing.T) {

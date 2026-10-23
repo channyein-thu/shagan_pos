@@ -25,23 +25,30 @@ const DefaultImageURLTTL = 15 * time.Minute
 
 // validateProductMoney enforces the business rules decimal.Decimal can't get
 // from struct tags (see CreateProductRequest's doc): Price must be positive,
-// Discount/Tax must not be negative, and Discount must not exceed Price
-// (which would make the effective price negative). Tax is stored exactly as
+// Tax must not be negative, and the discount percent must be within 0-100
+// (over 100 would make the sale price negative). Tax is stored exactly as
 // given - it's typed directly, never computed.
-func validateProductMoney(price, discount, tax decimal.Decimal) error {
+func validateProductMoney(price, discountPercent, tax decimal.Decimal) error {
 	if !price.IsPositive() {
 		return common.BadRequestError("price must be greater than zero")
 	}
-	if discount.IsNegative() {
-		return common.BadRequestError("discount must not be negative")
+	if discountPercent.IsNegative() || discountPercent.GreaterThan(decimal.NewFromInt(100)) {
+		return common.BadRequestError("discount_percent must be between 0 and 100")
 	}
 	if tax.IsNegative() {
 		return common.BadRequestError("tax must not be negative")
 	}
-	if discount.GreaterThan(price) {
-		return common.BadRequestError("discount must not exceed price")
-	}
 	return nil
+}
+
+// productPricing is the sale price and per-unit discount amount the server
+// derives from a price and a catalog percent. The percent is rounded to the 2
+// decimals it is stored with first, so the stored percent and the stored
+// sale price always agree.
+func productPricing(price, discountPercent decimal.Decimal) (percent, salePrice, discount decimal.Decimal) {
+	percent = discountPercent.Round(2)
+	salePrice = common.DiscountedUnitPrice(price, percent)
+	return percent, salePrice, price.Sub(salePrice)
 }
 
 type Service struct {
@@ -147,9 +154,10 @@ func (s *Service) CreateProduct(ctx context.Context, orgID uint, in CreateProduc
 		return nil, err
 	}
 
-	if err := validateProductMoney(in.Price, in.Discount, in.Tax); err != nil {
+	if err := validateProductMoney(in.Price, in.DiscountPercent, in.Tax); err != nil {
 		return nil, err
 	}
+	percent, salePrice, discount := productPricing(in.Price, in.DiscountPercent)
 
 	// image.DecodeConfig only reads the header (not the full pixel data) to
 	// get Width/Height, but it still consumes bytes from file - rewind
@@ -170,11 +178,14 @@ func (s *Service) CreateProduct(ctx context.Context, orgID uint, in CreateProduc
 			Name:       in.Name,
 			Barcode:    in.Barcode,
 			Price:      in.Price,
-			Discount:   in.Discount,
 			Tax:        in.Tax,
 			Threshold:  in.Threshold,
 			IsActive:   in.IsActive,
 			Modifier:   in.Modifier,
+
+			DiscountPercent: percent,
+			SalePrice:       salePrice,
+			Discount:        discount,
 		}
 		if err := s.repo.CreateProduct(tx, &product); err != nil {
 			if common.IsDuplicateError(err) {
@@ -227,18 +238,22 @@ func (s *Service) UpdateProduct(ctx context.Context, orgID uint, id uint, in Upd
 		}
 	}
 
-	if in.Price != nil || in.Discount != nil || in.Tax != nil {
-		price, discount, tax := product.Price, product.Discount, product.Tax
-		if in.Price != nil {
-			price = *in.Price
-		}
-		if in.Discount != nil {
-			discount = *in.Discount
-		}
+	// Price and the percent decide the sale price together, so either one
+	// changing recomputes it from the (new or existing) other.
+	pricingChanged := in.Price != nil || in.DiscountPercent != nil
+	price, percent := product.Price, product.DiscountPercent
+	if in.Price != nil {
+		price = *in.Price
+	}
+	if in.DiscountPercent != nil {
+		percent = *in.DiscountPercent
+	}
+	if pricingChanged || in.Tax != nil {
+		tax := product.Tax
 		if in.Tax != nil {
 			tax = *in.Tax
 		}
-		if err := validateProductMoney(price, discount, tax); err != nil {
+		if err := validateProductMoney(price, percent, tax); err != nil {
 			return nil, err
 		}
 	}
@@ -282,11 +297,16 @@ func (s *Service) UpdateProduct(ctx context.Context, orgID uint, id uint, in Upd
 	if in.Barcode != nil {
 		updates["barcode"] = *in.Barcode
 	}
-	if in.Price != nil {
-		updates["price"] = *in.Price
-	}
-	if in.Discount != nil {
-		updates["discount"] = *in.Discount
+	if pricingChanged {
+		storedPercent, salePrice, discount := productPricing(price, percent)
+		if in.Price != nil {
+			updates["price"] = *in.Price
+		}
+		if in.DiscountPercent != nil {
+			updates["discount_percent"] = storedPercent
+		}
+		updates["sale_price"] = salePrice
+		updates["discount"] = discount
 	}
 	if in.Tax != nil {
 		updates["tax"] = *in.Tax

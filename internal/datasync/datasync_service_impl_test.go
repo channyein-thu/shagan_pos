@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -163,7 +164,7 @@ func staffOfBranch(staff *MockStaffLookup, id, branchID uint) {
 	staff.EXPECT().GetStaff(mock.Anything, uint(7), id).Return(&identity.Staff{ID: id, BranchID: branchID}, nil).Once()
 }
 
-func TestService_IngestQueuedSales_NewSale_CreatedWithNoDiscountAuthority(t *testing.T) {
+func TestService_IngestQueuedSales_NewSale_Created(t *testing.T) {
 	repo := NewMockRepository(t)
 	staff := NewMockStaffLookup(t)
 	sw := NewMockSalesWriter(t)
@@ -175,7 +176,7 @@ func TestService_IngestQueuedSales_NewSale_CreatedWithNoDiscountAuthority(t *tes
 	notStored(sw, saleID)
 	staffOfBranch(staff, 14, 5)
 	sw.EXPECT().
-		CreateSale(mock.Anything, uint(7), uint(5), sales.SaleActor{StaffID: 14, CanApplyManualDiscount: false}, req, true).
+		CreateSale(mock.Anything, uint(7), uint(5), sales.SaleActor{StaffID: 14}, req, true).
 		Return(&sales.Sale{ID: saleID}, nil, nil).Once()
 
 	got, err := svc.IngestQueuedSales(context.Background(), 7, 5, IngestQueuedSalesRequest{Sales: []sales.CreateSaleRequest{req}})
@@ -186,7 +187,9 @@ func TestService_IngestQueuedSales_NewSale_CreatedWithNoDiscountAuthority(t *tes
 	require.Equal(t, saleID.String(), got.Results[0].SaleID)
 }
 
-func TestService_IngestQueuedSales_ItemDiscount_FailsWithoutCreating(t *testing.T) {
+// Catalog discounts are automatic - no approval - so they work offline too (R6).
+// The till sends its cached unit price and catalog %, which the sale is priced from.
+func TestService_IngestQueuedSales_CatalogDiscount_IsAccepted(t *testing.T) {
 	repo := NewMockRepository(t)
 	staff := NewMockStaffLookup(t)
 	sw := NewMockSalesWriter(t)
@@ -194,15 +197,75 @@ func TestService_IngestQueuedSales_ItemDiscount_FailsWithoutCreating(t *testing.
 
 	saleID := uuid.New()
 	req := queuedSale(saleID)
-	req.Items[0].Discount = decimal.NewFromInt(5)
+	pct := decimal.NewFromInt(10)
+	req.Items[0].UnitPrice = decimal.NewFromInt(6500)
+	req.Items[0].CatalogDiscountPercent = &pct
+
+	notStored(sw, saleID)
+	staffOfBranch(staff, 14, 5)
+	sw.EXPECT().CreateSale(mock.Anything, uint(7), uint(5), sales.SaleActor{StaffID: 14}, req, true).
+		Return(&sales.Sale{ID: saleID}, nil, nil).Once()
+
+	got, err := svc.IngestQueuedSales(context.Background(), 7, 5, IngestQueuedSalesRequest{Sales: []sales.CreateSaleRequest{req}})
+
+	require.NoError(t, err)
+	require.True(t, got.Results[0].Success, got.Results[0].Error)
+}
+
+// There is no approval offline: a PIN can't be checked, so a line carrying one
+// is refused before anything is created.
+func TestService_IngestQueuedSales_DiscountApprovalId_IsRejectedWithoutCreating(t *testing.T) {
+	repo := NewMockRepository(t)
+	staff := NewMockStaffLookup(t)
+	sw := NewMockSalesWriter(t)
+	svc := newIngestService(repo, staff, sw)
+
+	saleID := uuid.New()
+	req := queuedSale(saleID)
+	approval := uuid.New()
+	req.Items[0].DiscountApprovalID = &approval
 
 	notStored(sw, saleID)
 	// Neither GetStaff nor CreateSale is reached.
 
 	got, err := svc.IngestQueuedSales(context.Background(), 7, 5, IngestQueuedSalesRequest{Sales: []sales.CreateSaleRequest{req}})
+
 	require.NoError(t, err)
 	require.False(t, got.Results[0].Success)
-	require.Contains(t, got.Results[0].Error, "manual discount")
+	require.Contains(t, got.Results[0].Error, "can't be queued offline")
+}
+
+// The till priced the sale from a cached catalog that may be stale: the sale is
+// accepted as rung up, and each stale line is recorded as a conflict for a
+// manager to look at - not rejected.
+func TestService_IngestQueuedSales_StalePrice_IsAcceptedAndRecordedAsAConflict(t *testing.T) {
+	repo := NewMockRepository(t)
+	staff := NewMockStaffLookup(t)
+	sw := NewMockSalesWriter(t)
+	svc := newIngestService(repo, staff, sw)
+
+	saleID := uuid.New()
+	req := queuedSale(saleID)
+	mismatch := sales.PriceMismatch{
+		ProductID: 1, ClientUnitPrice: decimal.NewFromInt(6000), ClientPercent: decimal.Zero,
+		CurrentUnitPrice: decimal.NewFromInt(6500), CurrentPercent: decimal.NewFromInt(10),
+	}
+
+	notStored(sw, saleID)
+	staffOfBranch(staff, 14, 5)
+	sw.EXPECT().CreateSale(mock.Anything, uint(7), uint(5), mock.Anything, req, true).
+		Return(&sales.Sale{ID: saleID, PriceMismatches: []sales.PriceMismatch{mismatch}}, nil, nil).Once()
+	repo.EXPECT().
+		CreateSyncConflict(mock.Anything, mock.MatchedBy(func(c *SyncConflict) bool {
+			return c.SaleID == saleID && c.Reason == SyncConflictReasonPriceMismatch &&
+				strings.Contains(string(c.Payload), `"product_id":1`) && strings.Contains(string(c.Payload), `"client_unit_price":"6000"`)
+		})).
+		Return(nil).Once()
+
+	got, err := svc.IngestQueuedSales(context.Background(), 7, 5, IngestQueuedSalesRequest{Sales: []sales.CreateSaleRequest{req}})
+
+	require.NoError(t, err)
+	require.True(t, got.Results[0].Success, "the sale is accepted, not rejected")
 }
 
 func TestService_IngestQueuedSales_StaffFromAnotherBranch_FailsWithoutCreating(t *testing.T) {

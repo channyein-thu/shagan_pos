@@ -261,6 +261,15 @@ func (r *RepositoryImpl) closeShift(ctx context.Context, scope AccessScope, id u
 			Updates(map[string]any{"status": ShiftStatusClosed, "closed_at": closedAt, "closed_by_staff_id": closedByStaffID}).Error; err != nil {
 			return err
 		}
+		// An approved-but-unspent custom discount only lives as long as the
+		// shift it was approved on - in the same transaction as the close, so
+		// there is no moment where the shift is closed and an approval is
+		// still spendable.
+		if err := tx.Model(&sales.DiscountApproval{}).
+			Where("shift_id = ? AND status = ?", closed.ID, sales.DiscountApprovalApproved).
+			Update("status", sales.DiscountApprovalCancelled).Error; err != nil {
+			return err
+		}
 		closed.Status = ShiftStatusClosed
 		closed.ClosedAt = &closedAt
 		closed.ClosedByStaffID = &closedByStaffID

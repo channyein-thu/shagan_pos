@@ -74,7 +74,7 @@ var PermissionCatalogue = []PermissionDef{
 	{PermAddCustomers, "Add new customers at the till", CategoryPOS},
 	{PermViewAllReceipts, "See every receipt at the till (off = only their own)", CategoryPOS},
 	{PermReprintReceipt, "Reprint receipts", CategoryPOS},
-	{PermApplyManualDiscount, "Request a manual % discount (needs approval)", CategoryPOS},
+	{PermApplyManualDiscount, "Ask for a custom discount (needs approval)", CategoryPOS},
 	{PermApproveManualDiscount, "Approve manual discounts with their PIN", CategoryPOS},
 	{PermApproveOwnDiscount, "Approve a discount on their own sale", CategoryPOS},
 	{PermApproveVoid, "Cancel (void) receipts", CategoryPOS},
@@ -161,12 +161,11 @@ type DefaultRole struct {
 var cashierGrants = []string{
 	PermAccessPOSPortal, PermAcceptPayments, PermHoldResumeSales, PermManageOwnShift,
 	PermLogTillExpenses, PermAddCustomers, PermViewAllReceipts, PermReprintReceipt,
-	// apply_manual_discount is deliberately NOT here. Today a cashier can't
-	// discount on their own - a manager has to approve it with a PIN - and
-	// POST /sales still checks this permission as "may apply without
-	// approval". Granting it by default would silently let every cashier
-	// discount freely until Part B redefines it as "may request". Flip it on
-	// here when Part B ships.
+	// A cashier may ASK for a custom discount: it opens the dialog. It never
+	// gets one alone - the approval needs someone holding
+	// approve_manual_discount, which a Cashier doesn't - and an Owner can take
+	// this off any role to stop it from even asking.
+	PermApplyManualDiscount,
 }
 
 // DefaultRoles are the roles a new org gets. Manager holds everything in the

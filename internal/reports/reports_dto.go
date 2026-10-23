@@ -239,3 +239,33 @@ type ProductSalesReport struct {
 type TopProductsReport struct {
 	Products []ProductRevenue `json:"products"`
 }
+
+// DiscountsReport backs `GET /reports/discounts`: how much was given away over
+// a period, split by where the discount came from. Catalog discounts are the
+// Owner's own price decisions (automatic); manual ones are custom discounts a
+// seller asked for and an approver approved at the till - who asked and who
+// approved are the two lists. Lines sold before the discount was split by
+// source carry only their old combined discount and aren't in these totals.
+// Lists are never null.
+type DiscountsReport struct {
+	CatalogTotal decimal.Decimal `json:"catalog_total"`
+	ManualTotal  decimal.Decimal `json:"manual_total"`
+	// ManualCount is how many sale lines carry a manual discount.
+	ManualCount int `json:"manual_count"`
+	// BySeller groups manual discounts by the staff member who asked for them,
+	// ByApprover by the one who approved them (the same person when someone
+	// approves their own).
+	BySeller   []DiscountStaffRow `json:"by_seller"`
+	ByApprover []DiscountStaffRow `json:"by_approver"`
+	// CancelledCount is approvals that were granted but never spent: removed by
+	// the till, or swept when their shift closed.
+	CancelledCount int `json:"cancelled_count"`
+}
+
+// DiscountStaffRow is one staff member's manual discounts in a DiscountsReport.
+type DiscountStaffRow struct {
+	StaffID     uint            `json:"staff_id"`
+	Name        string          `json:"name"`
+	ManualTotal decimal.Decimal `json:"manual_total"`
+	Count       int             `json:"count"`
+}

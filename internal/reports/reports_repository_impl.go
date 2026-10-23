@@ -345,3 +345,68 @@ func (r *RepositoryImpl) Expenses(ctx context.Context, branchIDs []uint, from, t
 	}
 	return row.Total, nil
 }
+
+// DiscountsReport backs `GET /reports/discounts`. Every figure comes from the
+// per-source columns on sale_items (catalog_discount, manual_discount) over the
+// same completed-sales rule as the other reports, so a voided sale's discounts
+// never count. A manual discount line is one that carries an approval.
+func (r *RepositoryImpl) DiscountsReport(ctx context.Context, orgID uint, branchID *uint, from, to time.Time) (*DiscountsReport, error) {
+	db := r.db.WithContext(ctx)
+	lines := func() *gorm.DB {
+		q := db.Table("sale_items").
+			Joins("JOIN sales ON sales.id = sale_items.sale_id").
+			Where("sales.org_id = ? AND sales."+completedSalesWhere, orgID, from, to)
+		if branchID != nil {
+			q = q.Where("sales.branch_id = ?", *branchID)
+		}
+		return q
+	}
+
+	report := &DiscountsReport{}
+	var totals struct {
+		CatalogTotal decimal.Decimal
+		ManualTotal  decimal.Decimal
+		ManualCount  int
+	}
+	if err := lines().
+		Select("COALESCE(SUM(sale_items.catalog_discount), 0) AS catalog_total, " +
+			"COALESCE(SUM(sale_items.manual_discount), 0) AS manual_total, " +
+			"COALESCE(SUM(CASE WHEN sale_items.discount_approval_id IS NOT NULL THEN 1 ELSE 0 END), 0) AS manual_count").
+		Scan(&totals).Error; err != nil {
+		return nil, err
+	}
+	report.CatalogTotal, report.ManualTotal, report.ManualCount = totals.CatalogTotal, totals.ManualTotal, totals.ManualCount
+
+	if err := lines().
+		Select("sales.staff_id AS staff_id, COALESCE(staffs.name, '') AS name, " +
+			"COALESCE(SUM(sale_items.manual_discount), 0) AS manual_total, COUNT(*) AS count").
+		Joins("LEFT JOIN staffs ON staffs.id = sales.staff_id").
+		Where("sale_items.discount_approval_id IS NOT NULL").
+		Group("sales.staff_id, staffs.name").
+		Order("manual_total DESC, staff_id ASC").
+		Scan(&report.BySeller).Error; err != nil {
+		return nil, err
+	}
+	if err := lines().
+		Select("sale_items.manual_approved_by AS staff_id, COALESCE(staffs.name, '') AS name, " +
+			"COALESCE(SUM(sale_items.manual_discount), 0) AS manual_total, COUNT(*) AS count").
+		Joins("LEFT JOIN staffs ON staffs.id = sale_items.manual_approved_by").
+		Where("sale_items.discount_approval_id IS NOT NULL").
+		Group("sale_items.manual_approved_by, staffs.name").
+		Order("manual_total DESC, staff_id ASC").
+		Scan(&report.ByApprover).Error; err != nil {
+		return nil, err
+	}
+
+	cancelled := db.Table("discount_approvals").
+		Where("org_id = ? AND status = ? AND created_at >= ? AND created_at < ?", orgID, "cancelled", from, to)
+	if branchID != nil {
+		cancelled = cancelled.Where("branch_id = ?", *branchID)
+	}
+	var count int64
+	if err := cancelled.Count(&count).Error; err != nil {
+		return nil, err
+	}
+	report.CancelledCount = int(count)
+	return report, nil
+}

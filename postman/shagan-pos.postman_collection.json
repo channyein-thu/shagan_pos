@@ -3558,8 +3558,8 @@
                       "type": "text"
                     },
                     {
-                      "key": "discount",
-                      "value": "0.50",
+                      "key": "discount_percent",
+                      "value": "10",
                       "type": "text"
                     },
                     {
@@ -3594,7 +3594,7 @@
                   "host": ["{{baseUrl}}"],
                   "path": ["api", "v1", "products"]
                 },
-                "description": "Multipart upload: every product field as a form field, plus \"image\" (required product photo - attach it yourself, no default file is set). Products are org-wide - no branch_id. category_id must belong to your own org. modifier is optional - leave blank for null. Back Office write: an Owner / Service Center, or a till's X-Staff-Token carrying access_backoffice AND manage_catalog (403 with only one of them, 401 with no staff token)."
+                "description": "Multipart upload: every product field as a form field, plus \"image\" (required product photo - attach it yourself, no default file is set). Products are org-wide - no branch_id. category_id must belong to your own org. modifier is optional - leave blank for null. Back Office write: an Owner / Service Center, or a till's X-Staff-Token carrying access_backoffice AND manage_catalog (403 with only one of them, 401 with no staff token). discount_percent (0-100, default 0) is the catalog discount: the server computes and stores sale_price (price less the %, rounded UP to the next K 100, never above price) and the per-unit discount (price - sale_price); a client-sent discount amount is ignored. The catalog discount is automatic at the till - no approval, no permission, online or offline."
               },
               "response": []
             },
@@ -3645,7 +3645,7 @@
                     }
                   ]
                 },
-                "description": "Multipart upload, scoped to the caller's org (org_id can never be reassigned via this endpoint). Every field is optional - only send what you want to change, remove any row you don't need (an unselected \"image\" file row causes a Postman bug - EISDIR - so delete it entirely rather than leaving it empty). Products are org-wide - no branch_id. category_id, if sent, must belong to your own org. price/discount/tax are validated against the resulting combined state (existing values fill in for anything not sent), not just the fields in this request. image, if attached, entirely replaces the product's existing photo. modifier can't be cleared back to null via PATCH yet - omitting it just leaves it unchanged. cost_price lets you set the cost basis directly (e.g. for stock never received through a real Procurement goods receipt) - it never appears in GET /products or GET /products/:id (business-sensitive, only readable via GET /reports/profit-loss). Back Office write: an Owner / Service Center, or a till's X-Staff-Token carrying access_backoffice AND manage_catalog (403 with only one of them, 401 with no staff token)."
+                "description": "Multipart upload, scoped to the caller's org (org_id can never be reassigned via this endpoint). Every field is optional - only send what you want to change, remove any row you don't need (an unselected \"image\" file row causes a Postman bug - EISDIR - so delete it entirely rather than leaving it empty). Products are org-wide - no branch_id. category_id, if sent, must belong to your own org. price/discount/tax are validated against the resulting combined state (existing values fill in for anything not sent), not just the fields in this request. image, if attached, entirely replaces the product's existing photo. modifier can't be cleared back to null via PATCH yet - omitting it just leaves it unchanged. cost_price lets you set the cost basis directly (e.g. for stock never received through a real Procurement goods receipt) - it never appears in GET /products or GET /products/:id (business-sensitive, only readable via GET /reports/profit-loss). Back Office write: an Owner / Service Center, or a till's X-Staff-Token carrying access_backoffice AND manage_catalog (403 with only one of them, 401 with no staff token). discount_percent (0-100) is the only way to change a product's discount; changing it or the price recomputes sale_price and discount (a price change keeps the existing percent). A client-sent discount amount is ignored; a percent outside 0-100 is 400."
               },
               "response": []
             },
@@ -4192,12 +4192,6 @@
                 "type": "text"
               },
               {
-                "key": "X-Manager-Approval-Token",
-                "value": "{{managerApprovalToken}}",
-                "type": "text",
-                "disabled": true
-              },
-              {
                 "key": "Content-Type",
                 "value": "application/json",
                 "type": "text"
@@ -4205,7 +4199,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"id\": \"11111111-1111-1111-1111-111111111111\",\n  \"shift_id\": 1,\n  \"device_id\": 1,\n  \"items\": [\n    {\n      \"product_id\": 1,\n      \"name_snapshot\": \"Rice 5kg\",\n      \"unit_price\": \"1000\",\n      \"qty\": 2,\n      \"discount\": \"50\",\n      \"tax\": \"40\"\n    },\n    {\n      \"product_id\": 2,\n      \"combo_id\": null,\n      \"name_snapshot\": \"Cooking Oil 1L\",\n      \"unit_price\": \"7200\",\n      \"qty\": 1,\n      \"tax\": \"0\"\n    }\n  ],\n  \"payments\": [\n    {\n      \"method\": \"cash\",\n      \"amount\": \"9190\",\n      \"amount_received\": \"9190\"\n    }\n  ]\n}",
+              "raw": "{\n  \"id\": \"11111111-1111-1111-1111-111111111111\",\n  \"shift_id\": 1,\n  \"device_id\": 1,\n  \"items\": [\n    {\n      \"product_id\": 1,\n      \"name_snapshot\": \"Rice 5kg\",\n      \"unit_price\": \"1000\",\n      \"qty\": 2,\n      \"discount_approval_id\": \"{{discountApprovalId}}\",\n      \"tax\": \"40\"\n    },\n    {\n      \"product_id\": 2,\n      \"combo_id\": null,\n      \"name_snapshot\": \"Cooking Oil 1L\",\n      \"unit_price\": \"7200\",\n      \"qty\": 1,\n      \"tax\": \"0\"\n    }\n  ],\n  \"payments\": [\n    {\n      \"method\": \"cash\",\n      \"amount\": \"9190\",\n      \"amount_received\": \"9190\"\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4217,7 +4211,61 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "sales"]
             },
-            "description": "Requires a branch-bound pos-device token (org_id and branch_id both come from it, never the body) AND X-Staff-Token (run VerifyStaffPIN first - it auto-saves into {{staffToken}}). id is a client-generated UUID and the idempotency key: re-sending a sale this same device already recorded (e.g. after a lost response) returns the original sale with 200 instead of 201, creates nothing and decrements no stock again, and needs no fresh manager approval; the same id from a different branch/device is 409. Subtotal/Discount/Tax/Total are NOT accepted at the sale level - each item snapshots its own tax (from Product.Tax, same offline-first reasoning as unit_price/name_snapshot); the server sums Subtotal/Discount/Tax from items and derives Total = Subtotal - Discount + Tax, then rejects the request (400) if payments don't add up to that Total. combo_id is optional - set it to tag several line items as components of the same Combo rung up together (purely a grouping label for receipts/reporting; each component is still priced/taxed/discounted as its own normal line item). shift_id must be a currently-open shift belonging to this branch, else 404. Status/completed_at are always server-set to completed/now(). Any item's discount or tax must be zero or greater (400 otherwise). A positive item discount requires the calling staff's role to grant apply_manual_discount (only super_staff/manager have it by default) OR a valid X-Manager-Approval-Token granting it (enable that header and run VerifyManagerPIN with permission=apply_manual_discount first, as the target staff) - 403 without either. Stock decrement/inventory-ledger writes are deliberately deferred until the Inventory domain exists. Needs accept_payments on the X-Staff-Token (403 without it)."
+            "description": "Requires a branch-bound pos-device token (org_id and branch_id both come from it, never the body) AND X-Staff-Token (run VerifyStaffPIN first - it auto-saves into {{staffToken}}). id is a client-generated UUID and the idempotency key: re-sending a sale this same device already recorded (e.g. after a lost response) returns the original sale with 200 instead of 201, creates nothing and decrements no stock again, and needs no fresh manager approval; the same id from a different branch/device is 409. Subtotal/Discount/Tax/Total are NOT accepted at the sale level - each item snapshots its own tax (from Product.Tax, same offline-first reasoning as unit_price/name_snapshot); the server sums Subtotal/Discount/Tax from items and derives Total = Subtotal - Discount + Tax, then rejects the request (400) if payments don't add up to that Total. combo_id is optional - set it to tag several line items as components of the same Combo rung up together (purely a grouping label for receipts/reporting; each component is still priced/taxed/discounted as its own normal line item). shift_id must be a currently-open shift belonging to this branch, else 404. Status/completed_at are always server-set to completed/now(). Any item's discount or tax must be zero or greater (400 otherwise). A positive item discount requires the calling staff's role to grant apply_manual_discount (only super_staff/manager have it by default) OR a valid X-Manager-Approval-Token granting it (enable that header and run VerifyManagerPIN with permission=apply_manual_discount first, as the target staff) - 403 without either. Stock decrement/inventory-ledger writes are deliberately deferred until the Inventory domain exists. Needs accept_payments on the X-Staff-Token (403 without it). DISCOUNTS (Discount V1): every line is priced from the PRODUCT. unit_price is only checked - a different value is 409 'price changed, refresh the catalog'; leave it out freely. With no discount_approval_id the line gets the product's catalog % (sale_price). With one (from POST /sales/discount-approvals, obtained when the discount was ADDED) the approval's % comes off the original price and replaces the catalog %. A client discount is ignored except on a combo line (combo_id set), where it is the bundle share (combo_discount, needs no approval). price_override is 400. Approval errors are 409: already used, cancelled, expired, a different seller / product / shift, qty above max_qty, or the same approval on two lines. Payments must equal the derived total exactly. X-Manager-Approval-Token is NOT used for discounts any more, and payment never asks for a PIN."
+          },
+          "response": []
+        },
+        {
+          "name": "CreateDiscountApproval - POST /sales/discount-approvals",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    pm.environment.set('discountApprovalId', pm.response.json().id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" },
+              { "key": "X-Staff-Token", "value": "{{staffToken}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"product_id\": 1,\n  \"percent\": \"10\",\n  \"qty\": 1,\n  \"reason\": \"damaged box\",\n  \"approver_staff_id\": 17,\n  \"pin\": \"222222\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/sales/discount-approvals",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "sales", "discount-approvals"]
+            },
+            "description": "Approves ONE custom discount at the moment the till adds it (payment never asks for a PIN). Needs a branch-bound pos token and the SELLER's X-Staff-Token, whose role holds apply_manual_discount (403 \"Your role can't ask for discounts.\"), and an open shift on this till (409). percent is 0 < p <= 100, qty >= 1, reason optional (<= 200). WITH approver_staff_id + pin: another staff member of this branch approves - the PIN is checked like VerifyManagerPIN (same lockout counter: wrong PIN 401, locked out 429), and they need approve_manual_discount (403 \"That staff member can't approve discounts.\") plus approve_own_discount if they are also the seller (403 \"This discount needs approval from someone else.\"). WITHOUT them (omit both): self-approval - the seller needs BOTH approve_manual_discount and approve_own_discount, else 403 \"This discount needs approval from someone else.\" (sending only one of the two fields is 400). 404 if the product isn't in your org. 201 returns the prices the backend WILL charge: {id, product_id, percent, max_qty, unit_price, unit_sale_price, approved_by:{id,name}, expires_at}; the id is auto-saved into {{discountApprovalId}} for CreateSale. The approval is for this product, this %, up to qty units, this seller, this shift; usable by one sale line once; valid until used, cancelled, or the shift closes (max 12 h). Audit: discount_approved."
+          },
+          "response": []
+        },
+        {
+          "name": "CancelDiscountApproval - DELETE /sales/discount-approvals/:id",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" },
+              { "key": "X-Staff-Token", "value": "{{staffToken}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/sales/discount-approvals/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "sales", "discount-approvals", ":id"],
+              "variable": [ { "key": "id", "value": "{{discountApprovalId}}" } ]
+            },
+            "description": "The till removed the discount before paying. Needs the SAME seller's X-Staff-Token. 204 on success (cancelling twice is fine); 409 if the approval was already used by a sale; 404 for an approval that isn't this seller's or doesn't exist. Audit: discount_cancelled."
           },
           "response": []
         },
@@ -4296,7 +4344,7 @@
                 }
               ]
             },
-            "description": "Structured receipt data (sale + items + payments) - not printer-specific ESC/POS byte formatting, which belongs to Platform's printer integration, not here. sale also carries has_return, has_exchange and refunded_total (decimal string); every item also carries returned_qty (qty on return lines plus exchange 'in' lines) and returnable_qty (qty - returned_qty, never below 0) so the till can cap its Return/Exchange steppers before asking for a manager PIN. Needs view_sales only when called with a Back Office staff token (X-Staff-Token carrying access_backoffice); an Owner always passes and plain till reads are unchanged."
+            "description": "Structured receipt data (sale + items + payments) - not printer-specific ESC/POS byte formatting, which belongs to Platform's printer integration, not here. sale also carries has_return, has_exchange and refunded_total (decimal string); every item also carries returned_qty (qty on return lines plus exchange 'in' lines) and returnable_qty (qty - returned_qty, never below 0) so the till can cap its Return/Exchange steppers before asking for a manager PIN. Needs view_sales only when called with a Back Office staff token (X-Staff-Token carrying access_backoffice); an Owner always passes and plain till reads are unchanged. Each item also carries the discount breakdown: unit_price (the ORIGINAL price), unit_sale_price (after the catalog or manual discount), catalog_discount_percent / catalog_discount, manual_discount_percent / manual_discount / manual_discount_reason, combo_discount, discount_approval_id, manual_approved_by and manual_approved_by_name. discount is still their sum. A line sold before the split shows only discount."
           },
           "response": []
         },
@@ -4322,7 +4370,7 @@
                 }
               ]
             },
-            "description": "Returns the same bundle as GetSaleReceipt (including has_return/has_exchange/refunded_total on sale and returned_qty/returnable_qty on each item, which reflect returns made up to now). Needs reprint_receipt on the X-Staff-Token (an Owner / Service Center may reprint with no staff token); a till with no staff token gets 401."
+            "description": "Returns the same bundle as GetSaleReceipt (including has_return/has_exchange/refunded_total on sale and returned_qty/returnable_qty on each item, which reflect returns made up to now). Needs reprint_receipt on the X-Staff-Token (an Owner / Service Center may reprint with no staff token); a till with no staff token gets 401. Same discount fields on each item as GetSaleReceipt."
           },
           "response": []
         },
@@ -5407,7 +5455,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"sales\": [\n    {\n      \"id\": \"11111111-1111-1111-1111-111111111111\",\n      \"shift_id\": 1,\n      \"staff_id\": 14,\n      \"device_id\": 3,\n      \"items\": [\n        {\"product_id\": 1, \"name_snapshot\": \"Cola 500ml\", \"unit_price\": 1.50, \"qty\": 2, \"discount\": 0, \"tax\": 0}\n      ],\n      \"payments\": [\n        {\"method\": \"cash\", \"amount\": 3.00, \"amount_received\": 3.00, \"change_given\": 0}\n      ]\n    }\n  ]\n}",
+              "raw": "{\n  \"sales\": [\n    {\n      \"id\": \"11111111-1111-1111-1111-111111111111\",\n      \"shift_id\": 1,\n      \"staff_id\": 14,\n      \"device_id\": 3,\n      \"items\": [\n        {\"product_id\": 1, \"name_snapshot\": \"Cola 500ml\", \"unit_price\": \"1500\", \"catalog_discount_percent\": \"10\", \"qty\": 2, \"tax\": 0}\n      ],\n      \"payments\": [\n        {\"method\": \"cash\", \"amount\": 3.00, \"amount_received\": 3.00, \"change_given\": 0}\n      ]\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5419,7 +5467,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "sync", "sales"]
             },
-            "description": "Batch-uploads a device's offline-queued sales - each shaped exactly like a normal POST /sales body. branch_id comes from the caller's own pos-device token, never client input. Idempotent by each sale's own client-generated id - resubmitting an already-arrived sale is a safe no-op reported as success, not an error. Queued sales get NO manual-discount authority (an offline till cannot get a manager approval): any item discount fails that sale. Each sale's staff_id (client-supplied - a replayed sale carries no staff token) must be a staff member of the calling device's own branch or that sale fails. A sale id already stored by a different branch/device is reported as a failed item (already exists), not as a silent success. If it would take a product's stock negative, it's let through anyway (not rejected) and a SyncConflict is recorded instead - see GetSyncStatus/ListSyncConflicts. A sale that fails for another reason (e.g. its shift has since closed) is reported as a failed item in the response, not silently dropped."
+            "description": "Batch-uploads a device's offline-queued sales - each shaped exactly like a normal POST /sales body. branch_id comes from the caller's own pos-device token, never client input. Idempotent by each sale's own client-generated id - resubmitting an already-arrived sale is a safe no-op reported as success, not an error. Queued sales get NO manual-discount authority (an offline till cannot get a manager approval): any item discount fails that sale. Each sale's staff_id (client-supplied - a replayed sale carries no staff token) must be a staff member of the calling device's own branch or that sale fails. A sale id already stored by a different branch/device is reported as a failed item (already exists), not as a silent success. If it would take a product's stock negative, it's let through anyway (not rejected) and a SyncConflict is recorded instead - see GetSyncStatus/ListSyncConflicts. A sale that fails for another reason (e.g. its shift has since closed) is reported as a failed item in the response, not silently dropped. Catalog discounts work offline: send each line's cached unit_price and catalog_discount_percent (0-100) - the line is priced from them with the K 100 rounding rule. If either no longer matches the product the sale is still accepted and a sync conflict with reason price_mismatch is recorded. A line carrying discount_approval_id fails that sale (custom discounts need approval and can't be queued offline) - there is no approval offline."
           },
           "response": []
         },
@@ -5688,6 +5736,31 @@
               ]
             },
             "description": "Each payment method's share of the amount actually collected (Payment.Amount, tax-inclusive - a different question from the tax-excluded Net Sales revenue figure used elsewhere), over from/to (default: the last 30 days). Needs view_reports only when called with a Back Office staff token (X-Staff-Token carrying access_backoffice); an Owner always passes and plain till reads are unchanged."
+          },
+          "response": []
+        },
+        {
+          "name": "GetDiscountsReport - GET /reports/discounts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/reports/discounts?branch_id=1&from=2026-09-01&to=2026-09-27",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "reports", "discounts"],
+              "query": [
+                {"key": "branch_id", "value": "1", "description": "Optional - owner/service_center only (a pos-device token's own branch always wins instead)."},
+                {"key": "from", "value": "2026-09-01", "description": "Optional, YYYY-MM-DD, inclusive. Defaults (with to) to the last 30 days."},
+                {"key": "to", "value": "2026-09-27", "description": "Optional, YYYY-MM-DD, inclusive."}
+              ]
+            },
+            "description": "Catalog vs manual discounts over from/to (default: the last 30 days; to is inclusive; days are the org's own). Needs view_reports with a Back Office staff token (an Owner always passes). Returns {catalog_total, manual_total, manual_count, by_seller:[{staff_id,name,manual_total,count}], by_approver:[...], cancelled_count}. catalog_total is the Owner's own price decisions, manual_total the custom discounts a seller asked for and an approver approved at the till, cancelled_count the approvals granted but never spent (removed by the till or swept at shift close). Voided sales are left out; lists are always [] never null; lines sold before the discount was split by source are not counted."
           },
           "response": []
         },

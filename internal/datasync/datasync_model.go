@@ -32,6 +32,10 @@ const (
 	// Service.IngestQueuedSales; the values above are placeholders for
 	// conflict shapes nothing in this domain produces yet.
 	SyncConflictReasonStockConflict SyncConflictReason = "stock_conflict"
+	// SyncConflictReasonPriceMismatch: an offline-queued sale was priced from
+	// the till's cached catalog and the product's price or catalog % has since
+	// changed. The sale is accepted as rung up; this is the record of it.
+	SyncConflictReasonPriceMismatch SyncConflictReason = "price_mismatch"
 	SyncConflictReasonOther         SyncConflictReason = "other"
 )
 

@@ -1595,3 +1595,113 @@ func TestService_UpdateDevice_PropagatesNotFound(t *testing.T) {
 	require.Error(t, err)
 	requireRestErrorStatus(t, err, http.StatusNotFound)
 }
+
+// ---- VerifyApprover: the PIN check behind a discount approval ----
+//
+// A discount is approved by another staff member entering their PIN on the
+// till. It is the same credential check as VerifyManagerPIN (shared lockout
+// counter, branch rule, generic 401), but it issues no token and does not
+// decide whether the approver's role is enough - the caller does, because
+// "enough" depends on whether the approver is also the seller.
+
+func TestService_VerifyApprover_RightPin_ReturnsStaffAndTheirPermissions(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo, NewMockAuditWriter(t))
+	staff := &Staff{ID: 17, BranchID: 3, RoleID: 4, PinHash: hashPassword(t, "222222")}
+	repo.EXPECT().GetStaff(mock.Anything, uint(7), uint(17)).Return(staff, nil).Once()
+	repo.EXPECT().ListRolePermissions(mock.Anything, uint(7), uint(4)).
+		Return([]Permission{{Code: "approve_manual_discount"}, {Code: "access_pos_portal"}}, nil).Once()
+
+	got, perms, err := svc.VerifyApprover(context.Background(), 7, 3, 17, "222222")
+
+	require.NoError(t, err)
+	require.Equal(t, uint(17), got.ID)
+	require.ElementsMatch(t, []string{"approve_manual_discount", "access_pos_portal"}, perms)
+}
+
+// Unlike VerifyManagerPIN it does not fold "right PIN, role can't approve"
+// into a 401 - it hands back the permissions and lets the caller say 403.
+func TestService_VerifyApprover_RoleWithoutAnyApprovalRight_StillReturnsThePermissions(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo, NewMockAuditWriter(t))
+	staff := &Staff{ID: 18, BranchID: 3, RoleID: 5, PinHash: hashPassword(t, "333333")}
+	repo.EXPECT().GetStaff(mock.Anything, uint(7), uint(18)).Return(staff, nil).Once()
+	repo.EXPECT().ListRolePermissions(mock.Anything, uint(7), uint(5)).Return([]Permission{{Code: "access_pos_portal"}}, nil).Once()
+
+	_, perms, err := svc.VerifyApprover(context.Background(), 7, 3, 18, "333333")
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"access_pos_portal"}, perms)
+}
+
+func TestService_VerifyApprover_WrongPin_IsGenericUnauthorizedAndCountsTowardLockout(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo, NewMockAuditWriter(t))
+	staff := &Staff{ID: 17, BranchID: 3, RoleID: 4, PinHash: hashPassword(t, "222222")}
+	repo.EXPECT().GetStaff(mock.Anything, uint(7), uint(17)).Return(staff, nil).Once()
+	repo.EXPECT().UpdateStaffPinAttempts(mock.Anything, uint(17), 1, (*time.Time)(nil)).Return(nil).Once()
+
+	_, _, err := svc.VerifyApprover(context.Background(), 7, 3, 17, "000000")
+
+	requireRestErrorStatus(t, err, http.StatusUnauthorized)
+}
+
+func TestService_VerifyApprover_FifthWrongPinLocksTheStaffOut(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo, NewMockAuditWriter(t))
+	staff := &Staff{ID: 17, BranchID: 3, RoleID: 4, PinHash: hashPassword(t, "222222"), FailedPinAttempts: DefaultPinLockoutThreshold - 1}
+	repo.EXPECT().GetStaff(mock.Anything, uint(7), uint(17)).Return(staff, nil).Once()
+	repo.EXPECT().
+		UpdateStaffPinAttempts(mock.Anything, uint(17), DefaultPinLockoutThreshold, mock.MatchedBy(func(until *time.Time) bool { return until != nil })).
+		Return(nil).Once()
+
+	_, _, err := svc.VerifyApprover(context.Background(), 7, 3, 17, "000000")
+
+	requireRestErrorStatus(t, err, http.StatusUnauthorized)
+}
+
+func TestService_VerifyApprover_LockedOutStaff_IsTooManyRequestsEvenWithTheRightPin(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo, NewMockAuditWriter(t))
+	until := time.Now().Add(10 * time.Minute)
+	staff := &Staff{ID: 17, BranchID: 3, RoleID: 4, PinHash: hashPassword(t, "222222"), PinLockedUntil: &until}
+	repo.EXPECT().GetStaff(mock.Anything, uint(7), uint(17)).Return(staff, nil).Once()
+
+	_, _, err := svc.VerifyApprover(context.Background(), 7, 3, 17, "222222")
+
+	requireRestErrorStatus(t, err, http.StatusTooManyRequests)
+}
+
+func TestService_VerifyApprover_StaffOfAnotherBranch_IsGenericUnauthorized(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo, NewMockAuditWriter(t))
+	staff := &Staff{ID: 17, BranchID: 99, RoleID: 4, PinHash: hashPassword(t, "222222")}
+	repo.EXPECT().GetStaff(mock.Anything, uint(7), uint(17)).Return(staff, nil).Once()
+
+	_, _, err := svc.VerifyApprover(context.Background(), 7, 3, 17, "222222")
+
+	requireRestErrorStatus(t, err, http.StatusUnauthorized)
+}
+
+func TestService_VerifyApprover_UnknownStaff_IsGenericUnauthorized(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo, NewMockAuditWriter(t))
+	repo.EXPECT().GetStaff(mock.Anything, uint(7), uint(404)).Return(nil, common.NotFoundError("staff not found")).Once()
+
+	_, _, err := svc.VerifyApprover(context.Background(), 7, 3, 404, "222222")
+
+	requireRestErrorStatus(t, err, http.StatusUnauthorized)
+}
+
+func TestService_VerifyApprover_RightPinClearsEarlierFailedAttempts(t *testing.T) {
+	repo := NewMockRepository(t)
+	svc := newTestService(repo, NewMockAuditWriter(t))
+	staff := &Staff{ID: 17, BranchID: 3, RoleID: 4, PinHash: hashPassword(t, "222222"), FailedPinAttempts: 3}
+	repo.EXPECT().GetStaff(mock.Anything, uint(7), uint(17)).Return(staff, nil).Once()
+	repo.EXPECT().UpdateStaffPinAttempts(mock.Anything, uint(17), 0, (*time.Time)(nil)).Return(nil).Once()
+	repo.EXPECT().ListRolePermissions(mock.Anything, uint(7), uint(4)).Return([]Permission{}, nil).Once()
+
+	_, _, err := svc.VerifyApprover(context.Background(), 7, 3, 17, "222222")
+
+	require.NoError(t, err)
+}

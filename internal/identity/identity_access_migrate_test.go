@@ -156,7 +156,13 @@ func TestMigrateAccessRights_EveryStaffKeepsExactlyTheirLegacyPermissions(t *tes
 
 	for _, s := range append(orgAStaff, orgBStaff...) {
 		after := effectiveCodes(t, db, s.ID)
-		require.Equal(t, before[s.ID], onlyLegacy(after), "legacy permissions of staff %d (%s)", s.ID, legacyCode[s.ID])
+		wantLegacy := before[s.ID]
+		if legacyCode[s.ID] == "staff" {
+			// The one deliberate change (Discount V1): a Cashier may now ASK for a
+			// custom discount - it still needs someone's approval to get one.
+			wantLegacy = sorted(append(slices.Clone(wantLegacy), PermApplyManualDiscount))
+		}
+		require.Equal(t, wantLegacy, onlyLegacy(after), "legacy permissions of staff %d (%s)", s.ID, legacyCode[s.ID])
 
 		// and the new permissions are the catalogue defaults for that role
 		def, ok := defaultRoleForLegacyCode(legacyCode[s.ID])
@@ -362,8 +368,11 @@ func TestDefaultRoles_ManagerHoldsEverythingButManageStaff_CashierHoldsTillBasic
 	require.NotContains(t, cashier.Grants, PermAccessBackOffice)
 	require.NotContains(t, cashier.Grants, PermApproveVoid)
 	require.NotContains(t, cashier.Grants, PermForceCloseShift)
-	// see the note in identity_access.go: cashiers still need approval today
-	require.NotContains(t, cashier.Grants, PermApplyManualDiscount)
+	// A cashier may ASK for a custom discount (Discount V1); getting one still
+	// takes someone else's approval, which they don't hold.
+	require.Contains(t, cashier.Grants, PermApplyManualDiscount)
+	require.NotContains(t, cashier.Grants, PermApproveManualDiscount)
+	require.NotContains(t, cashier.Grants, PermApproveOwnDiscount)
 }
 
 func TestPermissionCatalogue_CodesAreUniqueAndFitTheColumn(t *testing.T) {
@@ -379,4 +388,124 @@ func TestPermissionCatalogue_CodesAreUniqueAndFitTheColumn(t *testing.T) {
 			require.True(t, seen[g], "role %s grants %s which is not in the catalogue", role.Code, g)
 		}
 	}
+}
+
+// ---- Discount V1: existing Cashier roles may now ask for a custom discount ----
+
+func cashierOf(t *testing.T, db *gorm.DB, orgID uint) Role {
+	t.Helper()
+	var role Role
+	require.NoError(t, db.Where("org_id = ? AND code = ?", orgID, RoleCodeCashier).First(&role).Error)
+	return role
+}
+
+func hasGrant(t *testing.T, db *gorm.DB, orgID, roleID uint, code string) bool {
+	t.Helper()
+	var n int64
+	require.NoError(t, db.Table("org_role_permission").
+		Joins("JOIN permissions ON permissions.id = org_role_permission.permission_id").
+		Where("org_role_permission.org_id = ? AND org_role_permission.role_id = ? AND permissions.code = ?", orgID, roleID, code).
+		Count(&n).Error)
+	return n > 0
+}
+
+// An org whose roles already exist (made before Discount V1) has a Cashier
+// without the permission; the next start grants it.
+func TestMigrateAccessRights_GrantsApplyManualDiscountToAnExistingCashier(t *testing.T) {
+	db := newAccessTestDB(t)
+	require.NoError(t, EnsurePermissionCatalogue(db))
+	org := Organization{Name: "Old Org", Timezone: "Asia/Yangon"}
+	require.NoError(t, db.Create(&org).Error)
+	require.NoError(t, ProvisionDefaultRoles(db, org.ID))
+	cashier := cashierOf(t, db, org.ID)
+	// roll the org back to how Cashier looked before Discount V1
+	require.NoError(t, db.Exec(`DELETE FROM org_role_permission WHERE role_id = ? AND permission_id = (SELECT id FROM permissions WHERE code = ?)`,
+		cashier.ID, PermApplyManualDiscount).Error)
+	require.NoError(t, db.Exec(`DELETE FROM data_migrations`).Error)
+	require.False(t, hasGrant(t, db, org.ID, cashier.ID, PermApplyManualDiscount))
+
+	require.NoError(t, MigrateAccessRights(db))
+
+	require.True(t, hasGrant(t, db, org.ID, cashier.ID, PermApplyManualDiscount))
+}
+
+// The grant is a one-off, not a rule: an Owner who takes it off Cashier (so
+// cashiers can't even ask) must not have it handed back on the next restart.
+func TestMigrateAccessRights_DoesNotRegrantApplyManualDiscountAfterAnOwnerRemovedIt(t *testing.T) {
+	db := newAccessTestDB(t)
+	org := Organization{Name: "Org", Timezone: "Asia/Yangon"}
+	require.NoError(t, db.Create(&org).Error)
+	require.NoError(t, MigrateAccessRights(db)) // grants it, records that it did
+	cashier := cashierOf(t, db, org.ID)
+	require.True(t, hasGrant(t, db, org.ID, cashier.ID, PermApplyManualDiscount))
+	require.NoError(t, db.Exec(`DELETE FROM org_role_permission WHERE role_id = ? AND permission_id = (SELECT id FROM permissions WHERE code = ?)`,
+		cashier.ID, PermApplyManualDiscount).Error)
+
+	require.NoError(t, MigrateAccessRights(db))
+	require.NoError(t, MigrateAccessRights(db))
+
+	require.False(t, hasGrant(t, db, org.ID, cashier.ID, PermApplyManualDiscount))
+}
+
+// Only the built-in Cashier gets it. A custom role the Owner built keeps
+// exactly what they gave it.
+func TestMigrateAccessRights_ApplyManualDiscountGrantLeavesCustomRolesAlone(t *testing.T) {
+	db := newAccessTestDB(t)
+	require.NoError(t, EnsurePermissionCatalogue(db))
+	org := Organization{Name: "Org", Timezone: "Asia/Yangon"}
+	require.NoError(t, db.Create(&org).Error)
+	require.NoError(t, ProvisionDefaultRoles(db, org.ID))
+	permIDs, err := permissionIDsByCode(db)
+	require.NoError(t, err)
+	custom, err := createOrgRole(db, org.ID, "stock_clerk", "Stock Clerk", false, []string{PermAccessPOSPortal}, permIDs)
+	require.NoError(t, err)
+	require.NoError(t, db.Exec(`DELETE FROM data_migrations`).Error)
+
+	require.NoError(t, MigrateAccessRights(db))
+
+	require.False(t, hasGrant(t, db, org.ID, custom.ID, PermApplyManualDiscount))
+}
+
+func TestMigrateAccessRights_ApplyManualDiscountGrantDoesNotDuplicateWhereCashierAlreadyHasIt(t *testing.T) {
+	db := newAccessTestDB(t)
+	org := Organization{Name: "Org", Timezone: "Asia/Yangon"}
+	require.NoError(t, db.Create(&org).Error)
+	require.NoError(t, MigrateAccessRights(db))
+	cashier := cashierOf(t, db, org.ID)
+	require.NoError(t, db.Exec(`DELETE FROM data_migrations`).Error) // pretend the marker was lost
+
+	require.NoError(t, MigrateAccessRights(db))
+
+	var n int64
+	require.NoError(t, db.Table("org_role_permission").
+		Where("role_id = ? AND permission_id = (SELECT id FROM permissions WHERE code = ?)", cashier.ID, PermApplyManualDiscount).
+		Count(&n).Error)
+	require.Equal(t, int64(1), n)
+}
+
+func TestApplyManualDiscountPermission_IsNamedForAskingForADiscount(t *testing.T) {
+	for _, def := range PermissionCatalogue {
+		if def.Code == PermApplyManualDiscount {
+			require.Equal(t, "Ask for a custom discount (needs approval)", def.Name)
+			return
+		}
+	}
+	t.Fatal("apply_manual_discount missing from the catalogue")
+}
+
+// The one-time grant has already been recorded; a legacy org that only shows up
+// afterwards (db/demo_seed.sql loaded later, say) is migrated with a Cashier
+// that must already be able to ask for discounts - the one-off won't run again.
+func TestMigrateAccessRights_LegacyOrgMigratedAfterTheOneTimeGrant_StillGetsACashierThatCanAsk(t *testing.T) {
+	db := newAccessTestDB(t)
+	world := seedLegacyWorld(t, db)
+	require.NoError(t, MigrateAccessRights(db)) // no org yet: records the one-time grant and does nothing else
+	org, staff := seedOrgWithStaff(t, db, "Late Org", world.roleIDs["staff"])
+
+	require.NoError(t, MigrateAccessRights(db))
+
+	cashier := cashierOf(t, db, org.ID)
+	require.True(t, hasGrant(t, db, org.ID, cashier.ID, PermApplyManualDiscount))
+	require.Contains(t, effectiveCodes(t, db, staff[0].ID), PermApplyManualDiscount)
+	require.NotContains(t, effectiveCodes(t, db, staff[0].ID), PermApproveManualDiscount, "asking is not approving")
 }

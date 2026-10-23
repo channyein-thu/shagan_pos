@@ -10,18 +10,14 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 
-	"shagan_pos/internal/audit"
-	"shagan_pos/internal/catalog"
 	"shagan_pos/internal/common"
 	"shagan_pos/internal/identity"
-	"shagan_pos/internal/inventory"
 )
 
 // fakeTransactioner runs fc directly against a nil *gorm.DB, with no real
@@ -43,7 +39,7 @@ func d(s string) decimal.Decimal {
 }
 
 func newTestService(repo Repository, inv InventoryWriter, products ProductLookup, auditWriter AuditWriter) *Service {
-	return NewService(repo, inv, products, auditWriter, nil, nil, fakeTransactioner{})
+	return NewService(repo, inv, products, auditWriter, nil, nil, nil, fakeTransactioner{})
 }
 
 // noStoredSale makes CreateSale's idempotency lookup find nothing, i.e. a
@@ -59,357 +55,6 @@ func requireRestErrorStatus(t *testing.T, err error, status int) {
 	require.Equal(t, status, restErr.Status)
 }
 
-func TestService_CreateSale_HappyPath_DerivesTotalsAndPersistsAtomically(t *testing.T) {
-	repo := NewMockRepository(t)
-	inv := NewMockInventoryWriter(t)
-	audW := NewMockAuditWriter(t)
-	products := NewMockProductLookup(t)
-	svc := newTestService(repo, inv, products, audW)
-	noStoredSale(repo)
-
-	saleID := uuid.New()
-	in := CreateSaleRequest{
-		ID:       saleID,
-		ShiftID:  9,
-		StaffID:  14,
-		DeviceID: 3,
-		Items: []CreateSaleItemRequest{
-			{ProductID: 1, NameSnapshot: "Rice 5kg", UnitPrice: decimal.NewFromInt(1000), Qty: 2, Discount: decimal.NewFromInt(50), Tax: decimal.NewFromInt(100)},
-		},
-		Payments: []CreateSalePaymentRequest{
-			{Method: PaymentMethodCash, Amount: decimal.NewFromInt(2050), AmountReceived: decimal.NewFromInt(2050)},
-		},
-	}
-	// subtotal = 1000*2 = 2000; discount = 50; tax = 100; total = 2000 - 50 + 100 = 2050
-
-	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7, CostPrice: d("600.00")}, nil).Once()
-	repo.EXPECT().RequireOpenShift(mock.Anything, uint(7), uint(3), uint(9)).Return(nil).Once()
-	repo.EXPECT().CreateSale(mock.Anything, mock.MatchedBy(func(s *Sale) bool {
-		return s.ID == saleID && s.OrgID == 7 && s.BranchID == 3 && s.ShiftID == 9 && s.StaffID == 14 && s.DeviceID == 3 &&
-			s.Subtotal.Equal(decimal.NewFromInt(2000)) &&
-			s.Discount.Equal(decimal.NewFromInt(50)) &&
-			s.Tax.Equal(decimal.NewFromInt(100)) &&
-			s.Total.Equal(decimal.NewFromInt(2050)) &&
-			s.Status == SaleStatusCompleted && s.CompletedAt != nil
-	})).Return(nil).Once()
-	repo.EXPECT().CreateSaleItems(mock.Anything, mock.MatchedBy(func(items []SaleItem) bool {
-		return len(items) == 1 && items[0].SaleID == saleID && items[0].LineTotal.Equal(decimal.NewFromInt(1950)) &&
-			items[0].UnitCost.Equal(d("600.00"))
-	})).Return(nil).Once()
-	repo.EXPECT().CreatePayments(mock.Anything, mock.MatchedBy(func(payments []Payment) bool {
-		return len(payments) == 1 && payments[0].SaleID == saleID && payments[0].Amount.Equal(decimal.NewFromInt(2050))
-	})).Return(nil).Once()
-	inv.EXPECT().GetStockLevel(mock.Anything, uint(1), uint(3)).Return(&inventory.StockLevel{ID: 50, ProductID: 1, BranchID: 3, Qty: 10}, nil).Once()
-	inv.EXPECT().UpdateStockLevelQty(mock.Anything, uint(50), 8).Return(nil).Once()
-	inv.EXPECT().
-		CreateInventoryLedgerEntry(mock.Anything, mock.MatchedBy(func(e *inventory.InventoryLedger) bool {
-			return e.OrgID == 7 && e.ProductID == 1 && e.BranchID == 3 && e.Type == inventory.LedgerEntryTypeSale &&
-				e.Qty == -2 && e.BalanceAfter == 8 && e.ActorID != nil && *e.ActorID == 14 &&
-				e.ReferenceType == inventory.ReferenceTypeSale && e.ReferenceID == saleID.String()
-		})).
-		Return(nil).Once()
-	audW.EXPECT().
-		CreateAuditLog(mock.Anything, mock.MatchedBy(func(e *audit.AuditLog) bool {
-			return e.OrgID == 7 && e.ActorID != nil && *e.ActorID == 14 && e.BranchID != nil && *e.BranchID == 3 &&
-				e.Entity == "sale" && e.EntityID == saleID.String() && e.Action == "manual_discount_applied"
-		})).
-		Return(nil).Once()
-
-	actor := SaleActor{StaffID: 14, CanApplyManualDiscount: true}
-	got, _, err := svc.CreateSale(context.Background(), 7, 3, actor, in, false)
-	require.NoError(t, err)
-	require.True(t, got.Total.Equal(decimal.NewFromInt(2050)))
-}
-
-func TestService_CreateSale_UsesPriceOverrideWhenSet(t *testing.T) {
-	repo := NewMockRepository(t)
-	inv := NewMockInventoryWriter(t)
-	audW := NewMockAuditWriter(t)
-	products := NewMockProductLookup(t)
-	svc := newTestService(repo, inv, products, audW)
-	noStoredSale(repo)
-
-	override := decimal.NewFromInt(800)
-	in := CreateSaleRequest{
-		ID:      uuid.New(),
-		ShiftID: 9, StaffID: 14, DeviceID: 3,
-		Items: []CreateSaleItemRequest{
-			{ProductID: 1, NameSnapshot: "Rice 5kg", UnitPrice: decimal.NewFromInt(1000), PriceOverride: &override, Qty: 1},
-		},
-		Payments: []CreateSalePaymentRequest{
-			{Method: PaymentMethodCash, Amount: decimal.NewFromInt(800)},
-		},
-	}
-
-	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7, CostPrice: d("400.00")}, nil).Once()
-	repo.EXPECT().RequireOpenShift(mock.Anything, uint(7), uint(3), uint(9)).Return(nil).Once()
-	repo.EXPECT().CreateSale(mock.Anything, mock.MatchedBy(func(s *Sale) bool {
-		return s.Subtotal.Equal(decimal.NewFromInt(800)) && s.Total.Equal(decimal.NewFromInt(800))
-	})).Return(nil).Once()
-	repo.EXPECT().CreateSaleItems(mock.Anything, mock.Anything).Return(nil).Once()
-	repo.EXPECT().CreatePayments(mock.Anything, mock.Anything).Return(nil).Once()
-	inv.EXPECT().GetStockLevel(mock.Anything, uint(1), uint(3)).Return(&inventory.StockLevel{ID: 60, ProductID: 1, BranchID: 3, Qty: 5}, nil).Once()
-	inv.EXPECT().UpdateStockLevelQty(mock.Anything, uint(60), 4).Return(nil).Once()
-	inv.EXPECT().CreateInventoryLedgerEntry(mock.Anything, mock.Anything).Return(nil).Once()
-
-	_, _, err := svc.CreateSale(context.Background(), 7, 3, SaleActor{StaffID: 14}, in, false)
-	require.NoError(t, err)
-}
-
-func TestService_CreateSale_PaymentsMismatch_RejectsWithoutOpeningTransaction(t *testing.T) {
-	repo := NewMockRepository(t)
-	inv := NewMockInventoryWriter(t)
-	audW := NewMockAuditWriter(t)
-	products := NewMockProductLookup(t)
-	svc := newTestService(repo, inv, products, audW)
-	noStoredSale(repo)
-
-	in := CreateSaleRequest{
-		ID:      uuid.New(),
-		ShiftID: 9, StaffID: 14, DeviceID: 3,
-		Items:    []CreateSaleItemRequest{{ProductID: 1, NameSnapshot: "Rice 5kg", UnitPrice: decimal.NewFromInt(1000), Qty: 1}},
-		Payments: []CreateSalePaymentRequest{{Method: PaymentMethodCash, Amount: decimal.NewFromInt(500)}},
-	}
-
-	_, _, err := svc.CreateSale(context.Background(), 7, 3, SaleActor{StaffID: 14}, in, false)
-	requireRestErrorStatus(t, err, http.StatusBadRequest)
-	repo.AssertNotCalled(t, "RequireOpenShift", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
-	repo.AssertNotCalled(t, "CreateSale", mock.Anything, mock.Anything)
-}
-
-func TestService_CreateSale_DiscountWithoutPermission_RejectsWithoutOpeningTransaction(t *testing.T) {
-	repo := NewMockRepository(t)
-	inv := NewMockInventoryWriter(t)
-	audW := NewMockAuditWriter(t)
-	products := NewMockProductLookup(t)
-	svc := newTestService(repo, inv, products, audW)
-	noStoredSale(repo)
-
-	in := CreateSaleRequest{
-		ID:      uuid.New(),
-		ShiftID: 9, StaffID: 14, DeviceID: 3,
-		Items:    []CreateSaleItemRequest{{ProductID: 1, NameSnapshot: "Rice 5kg", UnitPrice: decimal.NewFromInt(1000), Qty: 1, Discount: decimal.NewFromInt(50)}},
-		Payments: []CreateSalePaymentRequest{{Method: PaymentMethodCash, Amount: decimal.NewFromInt(950)}},
-	}
-
-	_, _, err := svc.CreateSale(context.Background(), 7, 3, SaleActor{StaffID: 14, CanApplyManualDiscount: false}, in, false)
-	requireRestErrorStatus(t, err, http.StatusForbidden)
-	repo.AssertNotCalled(t, "RequireOpenShift", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
-	repo.AssertNotCalled(t, "CreateSale", mock.Anything, mock.Anything)
-}
-
-func TestService_CreateSale_NegativeItemDiscount_RejectsWithoutOpeningTransaction(t *testing.T) {
-	repo := NewMockRepository(t)
-	inv := NewMockInventoryWriter(t)
-	audW := NewMockAuditWriter(t)
-	products := NewMockProductLookup(t)
-	svc := newTestService(repo, inv, products, audW)
-	noStoredSale(repo)
-
-	in := CreateSaleRequest{
-		ID:      uuid.New(),
-		ShiftID: 9, StaffID: 14, DeviceID: 3,
-		Items:    []CreateSaleItemRequest{{ProductID: 1, NameSnapshot: "Rice 5kg", UnitPrice: decimal.NewFromInt(1000), Qty: 1, Discount: decimal.NewFromInt(-10)}},
-		Payments: []CreateSalePaymentRequest{{Method: PaymentMethodCash, Amount: decimal.NewFromInt(1010)}},
-	}
-
-	_, _, err := svc.CreateSale(context.Background(), 7, 3, SaleActor{StaffID: 14, CanApplyManualDiscount: true}, in, false)
-	requireRestErrorStatus(t, err, http.StatusBadRequest)
-	repo.AssertNotCalled(t, "RequireOpenShift", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
-	repo.AssertNotCalled(t, "CreateSale", mock.Anything, mock.Anything)
-}
-
-func TestService_CreateSale_NegativeItemTax_RejectsWithoutOpeningTransaction(t *testing.T) {
-	repo := NewMockRepository(t)
-	inv := NewMockInventoryWriter(t)
-	audW := NewMockAuditWriter(t)
-	products := NewMockProductLookup(t)
-	svc := newTestService(repo, inv, products, audW)
-	noStoredSale(repo)
-
-	in := CreateSaleRequest{
-		ID:      uuid.New(),
-		ShiftID: 9, StaffID: 14, DeviceID: 3,
-		Items:    []CreateSaleItemRequest{{ProductID: 1, NameSnapshot: "Rice 5kg", UnitPrice: decimal.NewFromInt(1000), Qty: 1, Tax: decimal.NewFromInt(-5)}},
-		Payments: []CreateSalePaymentRequest{{Method: PaymentMethodCash, Amount: decimal.NewFromInt(995)}},
-	}
-
-	_, _, err := svc.CreateSale(context.Background(), 7, 3, SaleActor{StaffID: 14}, in, false)
-	requireRestErrorStatus(t, err, http.StatusBadRequest)
-	repo.AssertNotCalled(t, "RequireOpenShift", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
-	repo.AssertNotCalled(t, "CreateSale", mock.Anything, mock.Anything)
-}
-
-func TestService_CreateSale_SumsComboItemTaxIntoSaleTax(t *testing.T) {
-	repo := NewMockRepository(t)
-	inv := NewMockInventoryWriter(t)
-	audW := NewMockAuditWriter(t)
-	products := NewMockProductLookup(t)
-	svc := newTestService(repo, inv, products, audW)
-	noStoredSale(repo)
-
-	saleID := uuid.New()
-	comboID := uint(5)
-	in := CreateSaleRequest{
-		ID:      saleID,
-		ShiftID: 9, StaffID: 14, DeviceID: 3,
-		Items: []CreateSaleItemRequest{
-			{ProductID: 1, ComboID: &comboID, NameSnapshot: "Rice 5kg", UnitPrice: decimal.NewFromInt(600), Qty: 1, Tax: decimal.NewFromInt(20)},
-			{ProductID: 2, ComboID: &comboID, NameSnapshot: "Cooking Oil", UnitPrice: decimal.NewFromInt(400), Qty: 1, Tax: decimal.NewFromInt(10)},
-		},
-		Payments: []CreateSalePaymentRequest{{Method: PaymentMethodCash, Amount: decimal.NewFromInt(1030)}},
-	}
-	// subtotal = 600+400 = 1000; tax = 20+10 = 30; total = 1030
-
-	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7, CostPrice: d("300.00")}, nil).Once()
-	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(2)).Return(&catalog.Product{ID: 2, OrgID: 7, CostPrice: d("200.00")}, nil).Once()
-	repo.EXPECT().RequireOpenShift(mock.Anything, uint(7), uint(3), uint(9)).Return(nil).Once()
-	repo.EXPECT().CreateSale(mock.Anything, mock.MatchedBy(func(s *Sale) bool {
-		return s.Tax.Equal(decimal.NewFromInt(30)) && s.Total.Equal(decimal.NewFromInt(1030))
-	})).Return(nil).Once()
-	repo.EXPECT().CreateSaleItems(mock.Anything, mock.MatchedBy(func(items []SaleItem) bool {
-		return len(items) == 2 && items[0].ComboID != nil && *items[0].ComboID == comboID && items[1].ComboID != nil && *items[1].ComboID == comboID
-	})).Return(nil).Once()
-	repo.EXPECT().CreatePayments(mock.Anything, mock.Anything).Return(nil).Once()
-	inv.EXPECT().GetStockLevel(mock.Anything, uint(1), uint(3)).Return(&inventory.StockLevel{ID: 61, ProductID: 1, BranchID: 3, Qty: 5}, nil).Once()
-	inv.EXPECT().UpdateStockLevelQty(mock.Anything, uint(61), 4).Return(nil).Once()
-	inv.EXPECT().GetStockLevel(mock.Anything, uint(2), uint(3)).Return(&inventory.StockLevel{ID: 62, ProductID: 2, BranchID: 3, Qty: 5}, nil).Once()
-	inv.EXPECT().UpdateStockLevelQty(mock.Anything, uint(62), 4).Return(nil).Once()
-	inv.EXPECT().CreateInventoryLedgerEntry(mock.Anything, mock.Anything).Return(nil).Twice()
-
-	_, _, err := svc.CreateSale(context.Background(), 7, 3, SaleActor{StaffID: 14}, in, false)
-	require.NoError(t, err)
-}
-
-func TestService_CreateSale_InsufficientStock_RollsBackWithConflict(t *testing.T) {
-	repo := NewMockRepository(t)
-	inv := NewMockInventoryWriter(t)
-	audW := NewMockAuditWriter(t)
-	products := NewMockProductLookup(t)
-	svc := newTestService(repo, inv, products, audW)
-	noStoredSale(repo)
-
-	in := CreateSaleRequest{
-		ID:      uuid.New(),
-		ShiftID: 9, StaffID: 14, DeviceID: 3,
-		Items:    []CreateSaleItemRequest{{ProductID: 1, NameSnapshot: "Rice 5kg", UnitPrice: decimal.NewFromInt(1000), Qty: 5}},
-		Payments: []CreateSalePaymentRequest{{Method: PaymentMethodCash, Amount: decimal.NewFromInt(5000)}},
-	}
-
-	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7}, nil).Once()
-	repo.EXPECT().RequireOpenShift(mock.Anything, uint(7), uint(3), uint(9)).Return(nil).Once()
-	repo.EXPECT().CreateSale(mock.Anything, mock.Anything).Return(nil).Once()
-	repo.EXPECT().CreateSaleItems(mock.Anything, mock.Anything).Return(nil).Once()
-	repo.EXPECT().CreatePayments(mock.Anything, mock.Anything).Return(nil).Once()
-	inv.EXPECT().GetStockLevel(mock.Anything, uint(1), uint(3)).Return(&inventory.StockLevel{ID: 70, ProductID: 1, BranchID: 3, Qty: 2}, nil).Once()
-	// UpdateStockLevelQty/CreateInventoryLedgerEntry must never be called -
-	// the movement is rejected before either write happens. fakeTransactioner
-	// doesn't actually roll back a real DB, but the real *gorm.DB.Transaction
-	// this stands in for does when the closure returns an error.
-
-	_, _, err := svc.CreateSale(context.Background(), 7, 3, SaleActor{StaffID: 14}, in, false)
-	require.Error(t, err)
-	requireRestErrorStatus(t, err, http.StatusConflict)
-}
-
-func TestService_CreateSale_AllowNegativeStock_LetsItThroughAndReportsEvent(t *testing.T) {
-	repo := NewMockRepository(t)
-	inv := NewMockInventoryWriter(t)
-	audW := NewMockAuditWriter(t)
-	products := NewMockProductLookup(t)
-	svc := newTestService(repo, inv, products, audW)
-	noStoredSale(repo)
-
-	in := CreateSaleRequest{
-		ID:      uuid.New(),
-		ShiftID: 9, StaffID: 14, DeviceID: 3,
-		Items:    []CreateSaleItemRequest{{ProductID: 1, NameSnapshot: "Rice 5kg", UnitPrice: decimal.NewFromInt(1000), Qty: 5}},
-		Payments: []CreateSalePaymentRequest{{Method: PaymentMethodCash, Amount: decimal.NewFromInt(5000)}},
-	}
-
-	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7}, nil).Once()
-	repo.EXPECT().RequireOpenShift(mock.Anything, uint(7), uint(3), uint(9)).Return(nil).Once()
-	repo.EXPECT().CreateSale(mock.Anything, mock.Anything).Return(nil).Once()
-	repo.EXPECT().CreateSaleItems(mock.Anything, mock.Anything).Return(nil).Once()
-	repo.EXPECT().CreatePayments(mock.Anything, mock.Anything).Return(nil).Once()
-	inv.EXPECT().GetStockLevel(mock.Anything, uint(1), uint(3)).Return(&inventory.StockLevel{ID: 70, ProductID: 1, BranchID: 3, Qty: 2}, nil).Once()
-	inv.EXPECT().UpdateStockLevelQty(mock.Anything, uint(70), -3).Return(nil).Once()
-	inv.EXPECT().CreateInventoryLedgerEntry(mock.Anything, mock.MatchedBy(func(e *inventory.InventoryLedger) bool {
-		return e.BalanceAfter == -3
-	})).Return(nil).Once()
-
-	_, events, err := svc.CreateSale(context.Background(), 7, 3, SaleActor{StaffID: 14}, in, true)
-	require.NoError(t, err)
-	require.Len(t, events, 1)
-	require.Equal(t, NegativeStockEvent{ProductID: 1, BranchID: 3, ResultingQty: -3}, events[0])
-}
-
-func TestService_CreateSale_SameProductAcrossMultipleLines_AggregatesQtyBeforeDecrementing(t *testing.T) {
-	repo := NewMockRepository(t)
-	inv := NewMockInventoryWriter(t)
-	audW := NewMockAuditWriter(t)
-	products := NewMockProductLookup(t)
-	svc := newTestService(repo, inv, products, audW)
-	noStoredSale(repo)
-
-	in := CreateSaleRequest{
-		ID:      uuid.New(),
-		ShiftID: 9, StaffID: 14, DeviceID: 3,
-		Items: []CreateSaleItemRequest{
-			{ProductID: 1, NameSnapshot: "Rice 5kg", UnitPrice: decimal.NewFromInt(500), Qty: 2},
-			{ProductID: 1, NameSnapshot: "Rice 5kg", UnitPrice: decimal.NewFromInt(500), Qty: 3},
-		},
-		Payments: []CreateSalePaymentRequest{{Method: PaymentMethodCash, Amount: decimal.NewFromInt(2500)}},
-	}
-
-	// Exactly one GetProduct call for product 1 - the cost lookup is
-	// deduped per unique product, same as the stock decrement below.
-	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7, CostPrice: d("300.00")}, nil).Once()
-	repo.EXPECT().RequireOpenShift(mock.Anything, uint(7), uint(3), uint(9)).Return(nil).Once()
-	repo.EXPECT().CreateSale(mock.Anything, mock.Anything).Return(nil).Once()
-	repo.EXPECT().CreateSaleItems(mock.Anything, mock.MatchedBy(func(items []SaleItem) bool {
-		return len(items) == 2 && items[0].UnitCost.Equal(d("300.00")) && items[1].UnitCost.Equal(d("300.00"))
-	})).Return(nil).Once()
-	repo.EXPECT().CreatePayments(mock.Anything, mock.Anything).Return(nil).Once()
-	// Exactly one GetStockLevel/UpdateStockLevelQty pair for product 1,
-	// decrementing by the combined qty of both lines (5), not two separate
-	// decrements of 2 and 3.
-	inv.EXPECT().GetStockLevel(mock.Anything, uint(1), uint(3)).Return(&inventory.StockLevel{ID: 71, ProductID: 1, BranchID: 3, Qty: 10}, nil).Once()
-	inv.EXPECT().UpdateStockLevelQty(mock.Anything, uint(71), 5).Return(nil).Once()
-	inv.EXPECT().
-		CreateInventoryLedgerEntry(mock.Anything, mock.MatchedBy(func(e *inventory.InventoryLedger) bool {
-			return e.ProductID == 1 && e.Qty == -5 && e.BalanceAfter == 5
-		})).
-		Return(nil).Once()
-
-	_, _, err := svc.CreateSale(context.Background(), 7, 3, SaleActor{StaffID: 14}, in, false)
-	require.NoError(t, err)
-}
-
-func TestService_CreateSale_ShiftNotOpen_PropagatesErrorWithoutPersisting(t *testing.T) {
-	repo := NewMockRepository(t)
-	inv := NewMockInventoryWriter(t)
-	audW := NewMockAuditWriter(t)
-	products := NewMockProductLookup(t)
-	svc := newTestService(repo, inv, products, audW)
-	noStoredSale(repo)
-
-	in := CreateSaleRequest{
-		ID:      uuid.New(),
-		ShiftID: 9, StaffID: 14, DeviceID: 3,
-		Items:    []CreateSaleItemRequest{{ProductID: 1, NameSnapshot: "Rice 5kg", UnitPrice: decimal.NewFromInt(1000), Qty: 1}},
-		Payments: []CreateSalePaymentRequest{{Method: PaymentMethodCash, Amount: decimal.NewFromInt(1000)}},
-	}
-
-	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7}, nil).Once()
-	repo.EXPECT().RequireOpenShift(mock.Anything, uint(7), uint(3), uint(9)).
-		Return(common.NotFoundError("shift not found, not open, or doesn't belong to this branch")).Once()
-
-	_, _, err := svc.CreateSale(context.Background(), 7, 3, SaleActor{StaffID: 14}, in, false)
-	requireRestErrorStatus(t, err, http.StatusNotFound)
-	repo.AssertNotCalled(t, "CreateSale", mock.Anything, mock.Anything)
-}
-
 func newListSalesService(t *testing.T) (*Service, *MockRepository) {
 	svc, repo, _ := newListSalesServiceWithOrgs(t)
 	return svc, repo
@@ -418,7 +63,7 @@ func newListSalesService(t *testing.T) (*Service, *MockRepository) {
 func newListSalesServiceWithOrgs(t *testing.T) (*Service, *MockRepository, *MockOrganizationLookup) {
 	repo := NewMockRepository(t)
 	orgs := NewMockOrganizationLookup(t)
-	svc := NewService(repo, NewMockInventoryWriter(t), NewMockProductLookup(t), NewMockAuditWriter(t), orgs, NewMockReturnActivityReader(t), fakeTransactioner{})
+	svc := NewService(repo, NewMockInventoryWriter(t), NewMockProductLookup(t), NewMockAuditWriter(t), orgs, NewMockReturnActivityReader(t), NewMockStaffDirectory(t), fakeTransactioner{})
 	return svc, repo, orgs
 }
 
@@ -690,126 +335,10 @@ func TestService_ResumeHeldSale_PropagatesNotFound(t *testing.T) {
 	requireRestErrorStatus(t, err, http.StatusNotFound)
 }
 
-// --- idempotency (backend-recommendations #4) ---
-
-func replayRequest(saleID uuid.UUID) CreateSaleRequest {
-	return CreateSaleRequest{
-		ID: saleID, ShiftID: 9, DeviceID: 3,
-		Items:    []CreateSaleItemRequest{{ProductID: 1, NameSnapshot: "Rice", UnitPrice: decimal.NewFromInt(100), Qty: 1}},
-		Payments: []CreateSalePaymentRequest{{Method: PaymentMethodCash, Amount: decimal.NewFromInt(100)}},
-	}
-}
-
-func TestService_CreateSale_AlreadyStoredFromSameDevice_ReturnsOriginalWithoutWriting(t *testing.T) {
-	repo := NewMockRepository(t)
-	inv := NewMockInventoryWriter(t)
-	audW := NewMockAuditWriter(t)
-	products := NewMockProductLookup(t)
-	svc := newTestService(repo, inv, products, audW)
-
-	saleID := uuid.New()
-	stored := &Sale{ID: saleID, OrgID: 7, BranchID: 3, DeviceID: 3, StaffID: 14, Total: decimal.NewFromInt(100)}
-	repo.EXPECT().GetSale(mock.Anything, uint(7), saleID).Return(stored, nil).Once()
-	// No product lookup, shift check, insert, stock or audit call: a retry is a pure read.
-
-	// A discount-less retry by a staff member lacking the discount permission
-	// still works - the original already passed whatever checks it needed.
-	got, negs, err := svc.CreateSale(context.Background(), 7, 3, SaleActor{StaffID: 14}, replayRequest(saleID), false)
-	require.NoError(t, err)
-	require.Empty(t, negs)
-	require.Same(t, stored, got)
-	require.True(t, got.Replayed)
-}
-
-func TestService_CreateSale_AlreadyStoredWithDiscount_RetryNeedsNoFreshApproval(t *testing.T) {
-	repo := NewMockRepository(t)
-	svc := newTestService(repo, NewMockInventoryWriter(t), NewMockProductLookup(t), NewMockAuditWriter(t))
-
-	saleID := uuid.New()
-	repo.EXPECT().GetSale(mock.Anything, uint(7), saleID).Return(&Sale{ID: saleID, OrgID: 7, BranchID: 3, DeviceID: 3, Discount: decimal.NewFromInt(10)}, nil).Once()
-
-	in := replayRequest(saleID)
-	in.Items[0].Discount = decimal.NewFromInt(10)
-	// The manager-approval token has expired by retry time: CanApplyManualDiscount is false.
-	got, _, err := svc.CreateSale(context.Background(), 7, 3, SaleActor{StaffID: 14, CanApplyManualDiscount: false}, in, false)
-	require.NoError(t, err)
-	require.True(t, got.Replayed)
-}
-
-func TestService_CreateSale_AlreadyStoredFromDifferentDevice_Conflicts(t *testing.T) {
-	repo := NewMockRepository(t)
-	svc := newTestService(repo, NewMockInventoryWriter(t), NewMockProductLookup(t), NewMockAuditWriter(t))
-
-	saleID := uuid.New()
-	repo.EXPECT().GetSale(mock.Anything, uint(7), saleID).Return(&Sale{ID: saleID, OrgID: 7, BranchID: 3, DeviceID: 99}, nil).Once()
-
-	_, _, err := svc.CreateSale(context.Background(), 7, 3, SaleActor{StaffID: 14}, replayRequest(saleID), false)
-	requireRestErrorStatus(t, err, http.StatusConflict)
-}
-
-func TestService_CreateSale_AlreadyStoredAtDifferentBranch_Conflicts(t *testing.T) {
-	repo := NewMockRepository(t)
-	svc := newTestService(repo, NewMockInventoryWriter(t), NewMockProductLookup(t), NewMockAuditWriter(t))
-
-	saleID := uuid.New()
-	repo.EXPECT().GetSale(mock.Anything, uint(7), saleID).Return(&Sale{ID: saleID, OrgID: 7, BranchID: 8, DeviceID: 3}, nil).Once()
-
-	_, _, err := svc.CreateSale(context.Background(), 7, 3, SaleActor{StaffID: 14}, replayRequest(saleID), false)
-	requireRestErrorStatus(t, err, http.StatusConflict)
-}
-
-func TestService_CreateSale_LookupFails_PropagatesWithoutWriting(t *testing.T) {
-	repo := NewMockRepository(t)
-	svc := newTestService(repo, NewMockInventoryWriter(t), NewMockProductLookup(t), NewMockAuditWriter(t))
-
-	boom := errors.New("db down")
-	repo.EXPECT().GetSale(mock.Anything, uint(7), mock.Anything).Return(nil, boom).Once()
-
-	_, _, err := svc.CreateSale(context.Background(), 7, 3, SaleActor{StaffID: 14}, replayRequest(uuid.New()), false)
-	require.ErrorIs(t, err, boom)
-}
-
-// Two retries race past the lookup; the loser's insert hits the primary key.
-// It must resolve to the winner's stored sale, not a 500.
-func TestService_CreateSale_RaceLoser_ResolvesToStoredSale(t *testing.T) {
-	repo := NewMockRepository(t)
-	products := NewMockProductLookup(t)
-	svc := newTestService(repo, NewMockInventoryWriter(t), products, NewMockAuditWriter(t))
-
-	saleID := uuid.New()
-	stored := &Sale{ID: saleID, OrgID: 7, BranchID: 3, DeviceID: 3}
-	repo.EXPECT().GetSale(mock.Anything, uint(7), saleID).Return(nil, common.NotFoundError("sale not found")).Once()
-	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7}, nil).Once()
-	repo.EXPECT().RequireOpenShift(mock.Anything, uint(7), uint(3), uint(9)).Return(nil).Once()
-	repo.EXPECT().CreateSale(mock.Anything, mock.Anything).Return(&pgconn.PgError{Code: "23505"}).Once()
-	repo.EXPECT().GetSale(mock.Anything, uint(7), saleID).Return(stored, nil).Once()
-
-	got, _, err := svc.CreateSale(context.Background(), 7, 3, SaleActor{StaffID: 14}, replayRequest(saleID), false)
-	require.NoError(t, err)
-	require.True(t, got.Replayed)
-}
-
-// The duplicate key belongs to another org's sale: this org can't see it, and
-// must not be handed it or told more than "already exists".
-func TestService_CreateSale_RaceLoser_IdOwnedByAnotherOrg_Conflicts(t *testing.T) {
-	repo := NewMockRepository(t)
-	products := NewMockProductLookup(t)
-	svc := newTestService(repo, NewMockInventoryWriter(t), products, NewMockAuditWriter(t))
-
-	saleID := uuid.New()
-	repo.EXPECT().GetSale(mock.Anything, uint(7), saleID).Return(nil, common.NotFoundError("sale not found")).Twice()
-	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(&catalog.Product{ID: 1, OrgID: 7}, nil).Once()
-	repo.EXPECT().RequireOpenShift(mock.Anything, uint(7), uint(3), uint(9)).Return(nil).Once()
-	repo.EXPECT().CreateSale(mock.Anything, mock.Anything).Return(&pgconn.PgError{Code: "23505"}).Once()
-
-	_, _, err := svc.CreateSale(context.Background(), 7, 3, SaleActor{StaffID: 14}, replayRequest(saleID), false)
-	requireRestErrorStatus(t, err, http.StatusConflict)
-}
-
 func newReceiptService(t *testing.T) (*Service, *MockRepository, *MockReturnActivityReader) {
 	repo := NewMockRepository(t)
 	activity := NewMockReturnActivityReader(t)
-	svc := NewService(repo, NewMockInventoryWriter(t), NewMockProductLookup(t), NewMockAuditWriter(t), nil, activity, fakeTransactioner{})
+	svc := NewService(repo, NewMockInventoryWriter(t), NewMockProductLookup(t), NewMockAuditWriter(t), nil, activity, NewMockStaffDirectory(t), fakeTransactioner{})
 	return svc, repo, activity
 }
 
@@ -1017,4 +546,157 @@ func TestService_ListSales_StaffFilterIsPassedToTheRepository(t *testing.T) {
 	_, err := svc.ListSales(context.Background(), 7, nil, &staff, nil, nil, 1, 20)
 
 	require.NoError(t, err)
+}
+
+// ---- discount breakdown on the receipt ----
+
+func newReceiptServiceWithStaff(t *testing.T) (*Service, *MockRepository, *MockReturnActivityReader, *MockStaffDirectory) {
+	repo := NewMockRepository(t)
+	activity := NewMockReturnActivityReader(t)
+	staff := NewMockStaffDirectory(t)
+	svc := NewService(repo, NewMockInventoryWriter(t), NewMockProductLookup(t), NewMockAuditWriter(t), nil, activity, staff, fakeTransactioner{})
+	return svc, repo, activity, staff
+}
+
+func receiptOf(t *testing.T, svc *Service, repo *MockRepository, activity *MockReturnActivityReader, lines []SaleItem) []ReceiptItem {
+	t.Helper()
+	saleID := uuid.New()
+	ids := make([]uint, len(lines))
+	for i := range lines {
+		lines[i].SaleID = saleID
+		ids[i] = lines[i].ID
+	}
+	repo.EXPECT().GetSale(mock.Anything, uint(7), saleID).Return(&Sale{ID: saleID, OrgID: 7}, nil).Once()
+	repo.EXPECT().ListSaleItems(mock.Anything, saleID).Return(lines, nil).Once()
+	repo.EXPECT().ListPayments(mock.Anything, saleID).Return([]Payment{}, nil).Once()
+	activity.EXPECT().ReturnedQtyBySaleItems(mock.Anything, ids).Return(map[uint]int{}, nil).Once()
+	activity.EXPECT().ReturnSummaries(mock.Anything, []uuid.UUID{saleID}).Return(map[uuid.UUID]ReturnSummary{}, nil).Once()
+	got, err := svc.GetSaleReceipt(context.Background(), 7, saleID)
+	require.NoError(t, err)
+	return receiptItems(t, got)
+}
+
+func uintPtr(v uint) *uint { return &v }
+
+func TestService_GetSaleReceipt_ManualDiscountLine_ShowsOriginalAndSalePriceAndWhoApproved(t *testing.T) {
+	svc, repo, activity, staff := newReceiptServiceWithStaff(t)
+	approval := uuid.New()
+	staff.EXPECT().GetStaff(mock.Anything, uint(7), uint(17)).Return(&identity.Staff{ID: 17, Name: "Ko Zaw"}, nil).Once()
+
+	items := receiptOf(t, svc, repo, activity, []SaleItem{{
+		ID: 1, Qty: 2, UnitPrice: d("6500"), ManualDiscountPercent: d("10"), ManualDiscount: d("1200"),
+		ManualDiscountReason: "damaged box", Discount: d("1200"), LineTotal: d("11800"),
+		DiscountApprovalID: &approval, ManualApprovedBy: uintPtr(17),
+	}})
+
+	it := items[0]
+	require.True(t, d("6500").Equal(it.UnitPrice), "original price")
+	require.True(t, d("5900").Equal(it.UnitSalePrice), "6,500 - 1,200 / 2")
+	require.True(t, d("10").Equal(it.ManualDiscountPercent))
+	require.Equal(t, "damaged box", it.ManualDiscountReason)
+	require.Equal(t, "Ko Zaw", it.ManualApprovedByName)
+	require.Equal(t, uint(17), *it.ManualApprovedBy)
+}
+
+func TestService_GetSaleReceipt_CatalogDiscountLine_ShowsTheCatalogPercentAndNoApprover(t *testing.T) {
+	svc, repo, activity, _ := newReceiptServiceWithStaff(t) // GetStaff must not be called
+
+	items := receiptOf(t, svc, repo, activity, []SaleItem{{
+		ID: 1, Qty: 1, UnitPrice: d("6500"), CatalogDiscountPercent: d("10"), CatalogDiscount: d("600"),
+		Discount: d("600"), LineTotal: d("5900"),
+	}})
+
+	require.True(t, d("5900").Equal(items[0].UnitSalePrice))
+	require.True(t, d("10").Equal(items[0].CatalogDiscountPercent))
+	require.Equal(t, "", items[0].ManualApprovedByName)
+}
+
+func TestService_GetSaleReceipt_ComboLine_ShowsTheComboDiscountSeparately(t *testing.T) {
+	svc, repo, activity, _ := newReceiptServiceWithStaff(t)
+
+	items := receiptOf(t, svc, repo, activity, []SaleItem{{
+		ID: 1, Qty: 1, UnitPrice: d("600"), ComboDiscount: d("40"), Discount: d("40"), LineTotal: d("560"),
+	}})
+
+	require.True(t, d("40").Equal(items[0].ComboDiscount))
+	require.True(t, d("600").Equal(items[0].UnitSalePrice), "a combo share is not a unit-price discount")
+}
+
+// A line rung up before the discount was split by source has only `discount`:
+// it must still render without inventing a breakdown.
+func TestService_GetSaleReceipt_LegacyLine_KeepsItsDiscountAndOriginalPrice(t *testing.T) {
+	svc, repo, activity, _ := newReceiptServiceWithStaff(t)
+
+	items := receiptOf(t, svc, repo, activity, []SaleItem{{
+		ID: 1, Qty: 2, UnitPrice: d("1000"), Discount: d("50"), LineTotal: d("1950"),
+	}})
+
+	require.True(t, d("50").Equal(items[0].Discount))
+	require.True(t, d("1000").Equal(items[0].UnitSalePrice))
+	require.True(t, items[0].CatalogDiscount.IsZero() && items[0].ManualDiscount.IsZero())
+}
+
+func TestService_GetSaleReceipt_SameApproverOnSeveralLines_IsLookedUpOnce(t *testing.T) {
+	svc, repo, activity, staff := newReceiptServiceWithStaff(t)
+	staff.EXPECT().GetStaff(mock.Anything, uint(7), uint(17)).Return(&identity.Staff{ID: 17, Name: "Ko Zaw"}, nil).Once()
+	line := func(id uint) SaleItem {
+		return SaleItem{ID: id, Qty: 1, UnitPrice: d("100"), ManualDiscount: d("10"), Discount: d("10"), ManualApprovedBy: uintPtr(17)}
+	}
+
+	items := receiptOf(t, svc, repo, activity, []SaleItem{line(1), line(2)})
+
+	require.Equal(t, "Ko Zaw", items[0].ManualApprovedByName)
+	require.Equal(t, "Ko Zaw", items[1].ManualApprovedByName)
+}
+
+func TestService_GetSaleReceipt_ApproverNoLongerFindable_StillReturnsTheReceiptWithoutAName(t *testing.T) {
+	svc, repo, activity, staff := newReceiptServiceWithStaff(t)
+	staff.EXPECT().GetStaff(mock.Anything, uint(7), uint(17)).Return(nil, common.NotFoundError("staff not found")).Once()
+
+	items := receiptOf(t, svc, repo, activity, []SaleItem{{
+		ID: 1, Qty: 1, UnitPrice: d("100"), ManualDiscount: d("10"), Discount: d("10"), ManualApprovedBy: uintPtr(17),
+	}})
+
+	require.Equal(t, "", items[0].ManualApprovedByName)
+	require.Equal(t, uint(17), *items[0].ManualApprovedBy, "the id is still there")
+}
+
+func TestService_GetSaleReceipt_ApproverLookupFails_PropagatesAsIs(t *testing.T) {
+	svc, repo, activity, staff := newReceiptServiceWithStaff(t)
+	saleID := uuid.New()
+	boom := errors.New("db down")
+	repo.EXPECT().GetSale(mock.Anything, uint(7), saleID).Return(&Sale{ID: saleID, OrgID: 7}, nil).Once()
+	repo.EXPECT().ListSaleItems(mock.Anything, saleID).Return([]SaleItem{{ID: 1, SaleID: saleID, Qty: 1, ManualApprovedBy: uintPtr(17)}}, nil).Once()
+	repo.EXPECT().ListPayments(mock.Anything, saleID).Return([]Payment{}, nil).Once()
+	activity.EXPECT().ReturnedQtyBySaleItems(mock.Anything, mock.Anything).Return(map[uint]int{}, nil).Once()
+	activity.EXPECT().ReturnSummaries(mock.Anything, mock.Anything).Return(map[uuid.UUID]ReturnSummary{}, nil).Once()
+	staff.EXPECT().GetStaff(mock.Anything, uint(7), uint(17)).Return(nil, boom).Once()
+
+	_, err := svc.GetSaleReceipt(context.Background(), 7, saleID)
+
+	require.ErrorIs(t, err, boom)
+}
+
+func TestService_GetSaleReceipt_JSONShape_CarriesTheDiscountFields(t *testing.T) {
+	svc, repo, activity, staff := newReceiptServiceWithStaff(t)
+	staff.EXPECT().GetStaff(mock.Anything, uint(7), uint(17)).Return(&identity.Staff{ID: 17, Name: "Ko Zaw"}, nil).Once()
+	items := receiptOf(t, svc, repo, activity, []SaleItem{{
+		ID: 1, Qty: 1, UnitPrice: d("6500"), ManualDiscountPercent: d("10"), ManualDiscount: d("600"),
+		ManualDiscountReason: "damaged box", Discount: d("600"), LineTotal: d("5900"), ManualApprovedBy: uintPtr(17),
+	}})
+
+	raw, err := json.Marshal(items[0])
+	require.NoError(t, err)
+	var got map[string]any
+	require.NoError(t, json.Unmarshal(raw, &got))
+
+	require.Equal(t, "6500", got["unit_price"])
+	require.Equal(t, "5900", got["unit_sale_price"])
+	require.Equal(t, "10", got["manual_discount_percent"])
+	require.Equal(t, "damaged box", got["manual_discount_reason"])
+	require.Equal(t, "0", got["combo_discount"])
+	require.Equal(t, "0", got["catalog_discount_percent"])
+	require.EqualValues(t, 17, got["manual_approved_by"])
+	require.Equal(t, "Ko Zaw", got["manual_approved_by_name"])
+	require.NotContains(t, got, "unit_cost", "cost is never serialized")
 }

@@ -617,7 +617,7 @@ func newOpenShiftTestDB(t *testing.T) *gorm.DB {
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
 		&identity.Branch{}, &identity.Staff{}, &identity.Device{}, &identity.User{},
-		&sales.Sale{}, &sales.Payment{}, &returns.Return{}, &returns.Exchange{},
+		&sales.Sale{}, &sales.Payment{}, &sales.DiscountApproval{}, &returns.Return{}, &returns.Exchange{},
 		&Shift{}, &ShiftReconciliation{}, &DrawerEvent{}, &Expense{},
 	))
 	return db
@@ -883,6 +883,73 @@ func TestRepository_CloseShift_RefundedSaleStillCountsItsPayments(t *testing.T) 
 	require.NoError(t, db.Where("shift_id = ? AND method = ?", shift.ID, ReconciliationMethodCash).First(&reconciliation).Error)
 	require.True(t, decimal.NewFromInt(100).Equal(reconciliation.Expected))
 	require.True(t, reconciliation.Difference.IsZero())
+}
+
+func seedApprovalOnShift(t *testing.T, db *gorm.DB, shiftID uint, status sales.DiscountApprovalStatus) sales.DiscountApproval {
+	t.Helper()
+	a := sales.DiscountApproval{
+		ID: uuid.New(), OrgID: 7, BranchID: 1, ShiftID: shiftID, RequestedBy: 14, ApprovedBy: 17, ProductID: 2,
+		Percent: decimal.NewFromInt(10), MaxQty: 1, Status: status, ExpiresAt: time.Now().Add(time.Hour),
+	}
+	require.NoError(t, db.Create(&a).Error)
+	return a
+}
+
+func approvalStatus(t *testing.T, db *gorm.DB, id uuid.UUID) sales.DiscountApprovalStatus {
+	t.Helper()
+	var a sales.DiscountApproval
+	require.NoError(t, db.First(&a, "id = ?", id).Error)
+	return a.Status
+}
+
+// A discount approved at the till is only good for that shift: closing it
+// withdraws every approval nobody spent, so none can be used on a later shift.
+func TestRepository_CloseShift_CancelsApprovalsStillOutstandingOnThatShift(t *testing.T) {
+	db := newOpenShiftTestDB(t)
+	branch, staff, device := seedActiveOpenShiftResources(t, db, 7)
+	shift := seedShift(t, db, branch.ID, staff.ID, device.ID, ShiftStatusOpen)
+	otherShift := seedShift(t, db, branch.ID, staff.ID, device.ID, ShiftStatusOpen)
+	open := seedApprovalOnShift(t, db, shift.ID, sales.DiscountApprovalApproved)
+	spent := seedApprovalOnShift(t, db, shift.ID, sales.DiscountApprovalUsed)
+	alreadyCancelled := seedApprovalOnShift(t, db, shift.ID, sales.DiscountApprovalCancelled)
+	elsewhere := seedApprovalOnShift(t, db, otherShift.ID, sales.DiscountApprovalApproved)
+
+	_, err := NewRepository(db).CloseShift(context.Background(), AccessScope{OrgID: 7}, shift.ID, time.Now().UTC(), staff.ID,
+		CloseShiftRequest{ClosingCash: decimal.NewFromInt(100)})
+
+	require.NoError(t, err)
+	require.Equal(t, sales.DiscountApprovalCancelled, approvalStatus(t, db, open.ID))
+	require.Equal(t, sales.DiscountApprovalUsed, approvalStatus(t, db, spent.ID), "a spent approval stays spent")
+	require.Equal(t, sales.DiscountApprovalCancelled, approvalStatus(t, db, alreadyCancelled.ID))
+	require.Equal(t, sales.DiscountApprovalApproved, approvalStatus(t, db, elsewhere.ID), "another shift's approval is untouched")
+}
+
+func TestRepository_ForceCloseShift_AlsoCancelsOutstandingApprovals(t *testing.T) {
+	db := newOpenShiftTestDB(t)
+	branch, staff, device := seedActiveOpenShiftResources(t, db, 7)
+	shift := seedShift(t, db, branch.ID, staff.ID, device.ID, ShiftStatusOpen)
+	open := seedApprovalOnShift(t, db, shift.ID, sales.DiscountApprovalApproved)
+
+	_, err := NewRepository(db).ForceCloseShift(context.Background(), AccessScope{OrgID: 7}, shift.ID, time.Now().UTC(), staff.ID,
+		CloseShiftRequest{ClosingCash: decimal.NewFromInt(100), Reason: "staff called in sick"})
+
+	require.NoError(t, err)
+	require.Equal(t, sales.DiscountApprovalCancelled, approvalStatus(t, db, open.ID))
+}
+
+// The sweep is part of the close's transaction: a close that is refused (cash
+// doesn't match and no reason was given) leaves the approvals usable.
+func TestRepository_CloseShift_RefusedClose_LeavesApprovalsUntouched(t *testing.T) {
+	db := newOpenShiftTestDB(t)
+	branch, staff, device := seedActiveOpenShiftResources(t, db, 7)
+	shift := seedShift(t, db, branch.ID, staff.ID, device.ID, ShiftStatusOpen)
+	open := seedApprovalOnShift(t, db, shift.ID, sales.DiscountApprovalApproved)
+
+	_, err := NewRepository(db).CloseShift(context.Background(), AccessScope{OrgID: 7}, shift.ID, time.Now().UTC(), staff.ID,
+		CloseShiftRequest{ClosingCash: decimal.NewFromInt(5)}) // expected 100, no reason
+
+	requireRestErrorStatus(t, err, http.StatusBadRequest)
+	require.Equal(t, sales.DiscountApprovalApproved, approvalStatus(t, db, open.ID))
 }
 
 func TestRepository_ListShiftReconciliations_EnforcesBranchScope(t *testing.T) {

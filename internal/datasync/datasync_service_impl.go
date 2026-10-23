@@ -148,10 +148,8 @@ func (s *Service) IngestQueuedSales(ctx context.Context, orgID uint, branchID ui
 			continue
 		}
 
-		// No manual-discount authority is ever granted on this path - see
-		// validateQueuedSale; false here is the backstop behind it.
-		actor := sales.SaleActor{StaffID: req.StaffID, CanApplyManualDiscount: false}
-		_, negativeEvents, err := s.sales.CreateSale(ctx, orgID, branchID, actor, req, true)
+		actor := sales.SaleActor{StaffID: req.StaffID}
+		sale, negativeEvents, err := s.sales.CreateSale(ctx, orgID, branchID, actor, req, true)
 		if err != nil {
 			result.Success = false
 			result.Error = err.Error()
@@ -171,6 +169,21 @@ func (s *Service) IngestQueuedSales(ctx context.Context, orgID uint, branchID ui
 				Reason:  SyncConflictReasonStockConflict,
 				Payload: payload,
 			})
+		}
+		// A stale cached price or catalog % is recorded, never rejected: the
+		// customer already paid what the till showed.
+		if sale != nil {
+			for _, mismatch := range sale.PriceMismatches {
+				payload, marshalErr := json.Marshal(mismatch)
+				if marshalErr != nil {
+					continue
+				}
+				_ = s.repo.CreateSyncConflict(ctx, &SyncConflict{
+					SaleID:  req.ID,
+					Reason:  SyncConflictReasonPriceMismatch,
+					Payload: payload,
+				})
+			}
 		}
 	}
 	return &IngestQueuedSalesResponse{Results: results}, nil
@@ -231,14 +244,15 @@ func (s *Service) ResolveSyncConflict(ctx context.Context, orgID uint, actorUser
 }
 
 // validateQueuedSale enforces what a queued sale can't prove for itself (it
-// carries no staff token): no item discount - an offline till can't get a
-// manager's approval - and a staff_id that is a real staff member of the
-// calling device's own branch. Returns a message-only error for the failed
-// IngestSaleResult.
+// carries no staff token): no custom discount - approving one needs a PIN
+// entered on a connected till, so a line carrying a discount_approval_id is
+// refused (catalog discounts are automatic and fine) - and a staff_id that is a
+// real staff member of the calling device's own branch. Returns a message-only
+// error for the failed IngestSaleResult.
 func (s *Service) validateQueuedSale(ctx context.Context, orgID uint, branchID uint, req sales.CreateSaleRequest) error {
 	for _, item := range req.Items {
-		if item.Discount.IsPositive() {
-			return common.BadRequestError("an offline-queued sale cannot carry a manual discount")
+		if item.DiscountApprovalID != nil {
+			return common.BadRequestError("custom discounts need approval and can't be queued offline")
 		}
 	}
 	const notYourStaff = "staff_id is not a staff member of this branch"

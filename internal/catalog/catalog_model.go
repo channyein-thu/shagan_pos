@@ -21,11 +21,21 @@ type Product struct {
 	Name       string          `gorm:"size:255;not null" json:"name"`
 	Barcode    string          `gorm:"size:255;uniqueIndex:ux_products_org_barcode;not null" json:"barcode"`
 	Price      decimal.Decimal `gorm:"type:decimal(10,2);not null" json:"price"`
-	Discount   decimal.Decimal `gorm:"type:decimal(10,2);not null" json:"discount"`
-	Tax        decimal.Decimal `gorm:"type:decimal(10,2);not null" json:"tax"`
-	Threshold  int             `gorm:"not null" json:"threshold"`
-	IsActive   bool            `gorm:"not null" json:"is_active"`
-	Modifier   *string         `gorm:"size:255" json:"modifier"`
+	// DiscountPercent is the catalog discount the Owner sets (0-100). It is
+	// automatic at the till: no approval, no permission, online or offline.
+	// SalePrice and Discount are computed from it and Price by the server
+	// (never client input) and recomputed whenever either changes - see
+	// common.DiscountedUnitPrice. Discount is the per-unit amount,
+	// Price - SalePrice, kept so older clients and reports keep working.
+	// default:0 lets AutoMigrate add the columns to a table that has rows;
+	// the backfill (see AutoMigrate) then fills them from the old amount.
+	DiscountPercent decimal.Decimal `gorm:"type:decimal(5,2);not null;default:0" json:"discount_percent"`
+	SalePrice       decimal.Decimal `gorm:"type:decimal(10,2);not null;default:0" json:"sale_price"`
+	Discount        decimal.Decimal `gorm:"type:decimal(10,2);not null" json:"discount"`
+	Tax             decimal.Decimal `gorm:"type:decimal(10,2);not null" json:"tax"`
+	Threshold       int             `gorm:"not null" json:"threshold"`
+	IsActive        bool            `gorm:"not null" json:"is_active"`
+	Modifier        *string         `gorm:"size:255" json:"modifier"`
 	// CostPrice is this product's current cost basis, blended via weighted
 	// average across however it enters stock (a Procurement goods receipt,
 	// or an Inventory stock adjustment that supplies its own unit_cost -

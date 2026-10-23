@@ -66,14 +66,21 @@ type ReturnActivityReader interface {
 	ReturnSummaries(ctx context.Context, saleIDs []uuid.UUID) (map[uuid.UUID]ReturnSummary, error)
 }
 
+// StaffDirectory is what sales needs from identity for custom discounts:
+// looking up the approver's name, and the PIN check that approves a discount
+// when it is added. *identity.Service already satisfies it - no adapter.
+type StaffDirectory interface {
+	GetStaff(ctx context.Context, orgID uint, id uint) (*identity.Staff, error)
+	VerifyApprover(ctx context.Context, orgID uint, branchID uint, staffID uint, pin string) (*identity.Staff, []string, error)
+}
+
 // SaleActor identifies the authenticated staff member ringing up a sale
-// (derived from the verified X-Staff-Token, never client input), and
-// whether their role's granted permissions let them apply a manual
-// discount at all - checked against apply_manual_discount, same permission
-// shift.ExpenseActor checks access_backoffice against.
+// (derived from the verified X-Staff-Token, never client input). A custom
+// discount is no longer authorized at payment by this actor's permissions or a
+// manager token: it was approved when it was added, and the approval - which
+// must have been requested by this same staff member - is what a line carries.
 type SaleActor struct {
-	StaffID                uint
-	CanApplyManualDiscount bool
+	StaffID uint
 }
 
 // NegativeStockEvent is one product's stock going negative as a direct
@@ -121,6 +128,19 @@ type Interface interface {
 	// whole history, paged. page/pageSize follow reports' convention
 	// (default 20, max 100).
 	ListSales(ctx context.Context, orgID uint, branchID *uint, staffID *uint, from, to *time.Time, page, pageSize int) (*SalesPage, error)
+
+	// CreateDiscountApproval is `POST /sales/discount-approvals`: approves one
+	// custom discount at the moment the till adds it (payment never asks for a
+	// PIN). Needs seller.Permissions to hold apply_manual_discount (403), an
+	// open shift on the till (409), and an approver - the PIN of a staff member
+	// holding approve_manual_discount (and approve_own_discount if that is the
+	// seller), or self-approval by a seller holding both. Returns the prices the
+	// backend will charge.
+	CreateDiscountApproval(ctx context.Context, orgID uint, branchID uint, seller DiscountSeller, in CreateDiscountApprovalRequest) (*DiscountApprovalResult, error)
+	// CancelDiscountApproval is `DELETE /sales/discount-approvals/:id`: the till
+	// removed the discount before paying. 404 for an approval that isn't this
+	// seller's, 409 if it was already used; cancelling twice is fine.
+	CancelDiscountApproval(ctx context.Context, orgID uint, staffID uint, id uuid.UUID) error
 	GetSale(ctx context.Context, orgID uint, id uuid.UUID) (*Sale, error)
 	// GetSaleReceipt and ReprintSale return the same bundle - a receipt's
 	// content never changes between its first print and a reprint.

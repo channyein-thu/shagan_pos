@@ -49,7 +49,7 @@ func TestEffectivePermissions_LegacyCashierTokenKeepsTheTillBasics(t *testing.T)
 
 	assert.ElementsMatch(t, []string{
 		"access_pos_portal", "accept_payments", "hold_resume_sales", "manage_own_shift",
-		"log_till_expenses", "add_customers", "view_all_receipts", "reprint_receipt",
+		"log_till_expenses", "add_customers", "view_all_receipts", "reprint_receipt", "apply_manual_discount",
 	}, got)
 }
 
@@ -83,7 +83,8 @@ func TestEffectivePermissions_LegacySuperStaffTokenGainsNoBackOffice(t *testing.
 func TestEffectivePermissions_LegacyTokenNeverGainsApprovals(t *testing.T) {
 	got := legacyClaims("access_pos_portal", "access_backoffice").EffectivePermissions()
 
-	for _, notWanted := range []string{"approve_void", "approve_return", "approve_exchange", "open_drawer_no_sale", "apply_manual_discount"} {
+	// (it may now ASK for a discount, but approving one is another matter)
+	for _, notWanted := range []string{"approve_void", "approve_return", "approve_exchange", "open_drawer_no_sale", "approve_manual_discount", "approve_own_discount"} {
 		assert.NotContains(t, got, notWanted)
 	}
 }

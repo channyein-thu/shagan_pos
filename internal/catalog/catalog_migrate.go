@@ -23,7 +23,27 @@ func AutoMigrate(db *gorm.DB) error {
 	); err != nil {
 		return err
 	}
-	return dropStaleBranchScopeColumn(db)
+	if err := dropStaleBranchScopeColumn(db); err != nil {
+		return err
+	}
+	return backfillProductDiscountPercent(db)
+}
+
+// backfillProductDiscountPercent moves products from the old fixed per-unit
+// discount amount to a percent, without changing a single price: every product
+// still without a sale price gets sale_price = price - discount (exactly what
+// the till charged before; deliberately NOT re-rounded to K 100) and
+// discount_percent = discount / price x 100 (2 dp). The amount in `discount` itself
+// is left alone, so price - sale_price still equals it.
+//
+// Idempotent: it only touches rows whose sale_price is still 0, which a new
+// column's default gives every pre-existing row. A product the server has
+// priced since then has a non-zero sale price and is never revisited; one that
+// is genuinely free (100%) is revisited but comes out identical.
+func backfillProductDiscountPercent(db *gorm.DB) error {
+	return db.Exec(`UPDATE products
+		SET discount_percent = ROUND(discount * 100.0 / price, 2), sale_price = price - discount
+		WHERE sale_price = 0 AND price > 0`).Error
 }
 
 // dropStaleProductBranchIDColumn removes products.branch_id, a NOT NULL

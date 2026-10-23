@@ -85,6 +85,10 @@ type Interface interface {
 	// the last 30 days) - see ProfitAndLoss's own doc for COGS's
 	// reliability caveat on sales predating cost tracking.
 	GetProfitAndLoss(ctx context.Context, orgID uint, branchID *uint, from, to *time.Time) (*ProfitAndLoss, error)
+	// GetDiscountsReport is the catalog-vs-manual discount split over from/to
+	// (default: the last 30 days), with who asked for and who approved the
+	// manual ones - see DiscountsReport.
+	GetDiscountsReport(ctx context.Context, orgID uint, branchID *uint, from, to *time.Time) (*DiscountsReport, error)
 	// ExportReport stays deferred - out of the confirmed v1 spec (see
 	// docs/WORKFLOWS.md Section 11), matching the existing stub's own
 	// DEFER comment.

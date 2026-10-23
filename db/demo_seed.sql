@@ -13,6 +13,9 @@
 -- loading it run `go run ./cmd/seed` (or just restart `go run ./cmd`): the
 -- start-up migration gives the demo org its own Manager / Cashier / Super Staff
 -- roles with exactly the permissions the staff had, and repoints the staff.
+-- The same run backfills the demo products' discount percent / sale price from
+-- their old fixed discount amount (prices unchanged) and gives each Cashier the
+-- "may ask for a custom discount" permission.
 --
 -- SAFE TO RUN ON A NON-EMPTY DATABASE: ids are allocated after the current
 -- maximum, sequences are advanced afterwards, and the whole file is one

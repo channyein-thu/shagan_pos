@@ -28,6 +28,16 @@ type Interface interface {
 	// - momentary single-action elevation only, not a backoffice sign-in (use
 	// VerifyStaffPIN for that).
 	VerifyManagerPIN(ctx context.Context, orgID uint, branchID *uint, id uint, in VerifyManagerPINRequest) (*VerifyManagerPINResult, error)
+	// VerifyApprover is the PIN check behind a discount approval: another staff
+	// member of branchID enters their PIN on the till to approve something the
+	// seller can't. Same credential rules as VerifyManagerPIN - shared lockout
+	// counter, the staff must belong to branchID, and every failure except
+	// lockout is the same generic 401 - but it issues no token, and it returns
+	// the approver's permission codes instead of judging them: whether they are
+	// enough depends on whether the approver is also the seller, which only the
+	// caller knows. It lives here (not in sales) so the lockout counter stays in
+	// one place.
+	VerifyApprover(ctx context.Context, orgID uint, branchID uint, staffID uint, pin string) (*Staff, []string, error)
 	// VerifyStaffPIN backs `POST /staff/:id/pin/verify`. branchID is the
 	// caller's own branch (nil for an owner/service_center token, which isn't
 	// branch-locked) - when set, the staff being verified must belong to that

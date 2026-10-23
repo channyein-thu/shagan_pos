@@ -3,6 +3,7 @@ package identity
 import (
 	"fmt"
 	"slices"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -137,7 +138,51 @@ func MigrateAccessRights(db *gorm.DB) error {
 			return fmt.Errorf("migrate roles of org %d: %w", orgID, err)
 		}
 	}
-	return nil
+	return runOnce(db, migrationCashierMayAskForDiscounts, grantCashierApplyManualDiscount)
+}
+
+// DataMigration records a one-off data change that has already been applied, so
+// it is not applied again on the next start. Unlike MigrateAccessRights' other
+// steps - which only create what is missing and so are safe to repeat - a
+// change that GRANTS a permission would undo an Owner's later removal of it if
+// it ran every start.
+type DataMigration struct {
+	Name      string    `gorm:"primaryKey;size:100"`
+	AppliedAt time.Time `gorm:"autoCreateTime;not null"`
+}
+
+func (DataMigration) TableName() string { return "data_migrations" }
+
+// runOnce runs fn in a transaction and records name, unless name is already
+// recorded.
+func runOnce(db *gorm.DB, name string, fn func(tx *gorm.DB) error) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		var done int64
+		if err := tx.Model(&DataMigration{}).Where("name = ?", name).Count(&done).Error; err != nil {
+			return err
+		}
+		if done > 0 {
+			return nil
+		}
+		if err := fn(tx); err != nil {
+			return fmt.Errorf("%s: %w", name, err)
+		}
+		return tx.Create(&DataMigration{Name: name}).Error
+	})
+}
+
+const migrationCashierMayAskForDiscounts = "2026-10-23-cashier-apply-manual-discount"
+
+// grantCashierApplyManualDiscount gives every org's built-in Cashier role
+// apply_manual_discount ("may ask for a custom discount", Discount V1), once.
+// Custom roles - which the Owner shaped on purpose - are not touched, and a
+// Cashier that already has it is skipped.
+func grantCashierApplyManualDiscount(tx *gorm.DB) error {
+	return tx.Exec(`INSERT INTO org_role_permission (org_id, role_id, permission_id)
+		SELECT r.org_id, r.id, p.id FROM roles r, permissions p
+		WHERE r.org_id IS NOT NULL AND r.code = ? AND r.is_system = ? AND p.code = ?
+		AND NOT EXISTS (SELECT 1 FROM org_role_permission x WHERE x.role_id = r.id AND x.permission_id = p.id)`,
+		RoleCodeCashier, true, PermApplyManualDiscount).Error
 }
 
 // dropLegacyRoleCodeIndex removes the old unique index on roles.code alone:
@@ -208,7 +253,15 @@ func migrateOrgRoles(tx *gorm.DB, orgID uint) error {
 			// no legacy role to copy from: a database that never had one
 			return def.Grants
 		}
-		return mergeGrants(fromLegacy, def.Grants)
+		merged := mergeGrants(fromLegacy, def.Grants)
+		// apply_manual_discount is a legacy code, so it is copied from the legacy
+		// role - which never had it for staff. A Cashier migrated now must still
+		// be able to ask for a discount (Discount V1); the one-time grant for orgs
+		// that already existed won't run again for this one.
+		if def.Code == RoleCodeCashier && !slices.Contains(merged, PermApplyManualDiscount) {
+			merged = append(merged, PermApplyManualDiscount)
+		}
+		return merged
 	}
 
 	newRoleByLegacyID := map[uint]uint{}

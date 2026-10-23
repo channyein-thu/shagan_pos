@@ -131,9 +131,11 @@ func (a *CatalogAPI) CreateProduct(c *gin.Context) {
 		common.HandleError(c, common.BadRequestError("invalid price"))
 		return
 	}
-	discount, err := decimal.NewFromString(c.DefaultPostForm("discount", "0"))
+	// discount_percent is the only discount input; a client-sent `discount`
+	// amount is ignored - the server computes it from the percent.
+	discountPercent, err := decimal.NewFromString(c.DefaultPostForm("discount_percent", "0"))
 	if err != nil {
-		common.HandleError(c, common.BadRequestError("invalid discount"))
+		common.HandleError(c, common.BadRequestError("invalid discount_percent"))
 		return
 	}
 	tax, err := decimal.NewFromString(c.DefaultPostForm("tax", "0"))
@@ -167,15 +169,15 @@ func (a *CatalogAPI) CreateProduct(c *gin.Context) {
 	defer file.Close()
 
 	in := catalog.CreateProductRequest{
-		CategoryID: uint(categoryID),
-		Name:       name,
-		Barcode:    barcode,
-		Price:      price,
-		Discount:   discount,
-		Tax:        tax,
-		Threshold:  threshold,
-		IsActive:   isActive,
-		Modifier:   modifier,
+		CategoryID:      uint(categoryID),
+		Name:            name,
+		Barcode:         barcode,
+		Price:           price,
+		DiscountPercent: discountPercent,
+		Tax:             tax,
+		Threshold:       threshold,
+		IsActive:        isActive,
+		Modifier:        modifier,
 	}
 
 	result, err := a.service.CreateProduct(
@@ -236,13 +238,13 @@ func (a *CatalogAPI) UpdateProduct(c *gin.Context) {
 		}
 		in.Price = &price
 	}
-	if v, ok := c.GetPostForm("discount"); ok {
-		discount, err := decimal.NewFromString(v)
+	if v, ok := c.GetPostForm("discount_percent"); ok {
+		discountPercent, err := decimal.NewFromString(v)
 		if err != nil {
-			common.HandleError(c, common.BadRequestError("invalid discount"))
+			common.HandleError(c, common.BadRequestError("invalid discount_percent"))
 			return
 		}
-		in.Discount = &discount
+		in.DiscountPercent = &discountPercent
 	}
 	if v, ok := c.GetPostForm("tax"); ok {
 		tax, err := decimal.NewFromString(v)

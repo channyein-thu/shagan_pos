@@ -34,6 +34,7 @@ func (a *ReportsAPI) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.GET("/reports/sales-summary", viewReports, a.GetSalesSummary)
 	rg.GET("/reports/sales-trend", viewReports, a.GetSalesTrend)
 	rg.GET("/reports/payment-methods", viewReports, a.GetPaymentMethodsReport)
+	rg.GET("/reports/discounts", viewReports, a.GetDiscountsReport)
 	rg.GET("/reports/transactions", viewReports, a.GetTransactionsReport)
 	rg.GET("/reports/product-sales", viewReports, a.GetProductSalesReport)
 	rg.GET("/reports/top-products", viewReports, a.GetTopProducts)
@@ -344,6 +345,30 @@ func (a *ReportsAPI) GetProfitAndLoss(c *gin.Context) {
 // reports.Interface.ExportReport's doc.
 func (a *ReportsAPI) ExportReport(c *gin.Context) {
 	result, err := a.service.ExportReport(c.Request.Context())
+	if err != nil {
+		common.HandleError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// GetDiscountsReport handles `GET /reports/discounts`: catalog vs manual
+// discount totals over from/to (default: the last 30 days), who asked for and
+// who approved the manual ones, and how many approvals were cancelled.
+func (a *ReportsAPI) GetDiscountsReport(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	branchID, ok := reportBranchID(c)
+	if !ok {
+		return
+	}
+	from, to, ok := reportDateRange(c)
+	if !ok {
+		return
+	}
+	result, err := a.service.GetDiscountsReport(c.Request.Context(), orgID, branchID, from, to)
 	if err != nil {
 		common.HandleError(c, err)
 		return

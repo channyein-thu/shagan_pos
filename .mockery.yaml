@@ -86,6 +86,9 @@ packages:
       ReturnActivityReader:
         config:
           filename: "mock_sales_return_activity_reader_test.go"
+      StaffDirectory:
+        config:
+          filename: "mock_sales_staff_directory_test.go"
   shagan_pos/internal/procurement:
     config:
       dir: "internal/procurement"

@@ -223,3 +223,86 @@ func (r *RepositoryImpl) ResumeHeldSale(ctx context.Context, branchID uint, id u
 	}
 	return &held, nil
 }
+
+// CreateDiscountApproval backs `POST /sales/discount-approvals`. Plain insert.
+func (r *RepositoryImpl) CreateDiscountApproval(db *gorm.DB, approval *DiscountApproval) error {
+	return db.Create(approval).Error
+}
+
+// ListDiscountApprovals backs CreateSale's line validation.
+func (r *RepositoryImpl) ListDiscountApprovals(ctx context.Context, orgID uint, ids []uuid.UUID) ([]DiscountApproval, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var approvals []DiscountApproval
+	if err := r.db.WithContext(ctx).Where("org_id = ? AND id IN ?", orgID, ids).Find(&approvals).Error; err != nil {
+		return nil, err
+	}
+	return approvals, nil
+}
+
+// GetDiscountApproval backs `DELETE /sales/discount-approvals/:id`.
+func (r *RepositoryImpl) GetDiscountApproval(ctx context.Context, orgID uint, id uuid.UUID) (*DiscountApproval, error) {
+	var approval DiscountApproval
+	if err := r.db.WithContext(ctx).Where("id = ? AND org_id = ?", id, orgID).First(&approval).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, common.NotFoundError("discount approval not found")
+		}
+		return nil, err
+	}
+	return &approval, nil
+}
+
+// MarkDiscountApprovalUsed spends an approval. The WHERE on status is the whole
+// point: two sales racing to use the same approval both pass the read-side
+// check, but only one UPDATE finds it still `approved`.
+func (r *RepositoryImpl) MarkDiscountApprovalUsed(db *gorm.DB, id uuid.UUID, saleID uuid.UUID) (bool, error) {
+	res := db.Model(&DiscountApproval{}).
+		Where("id = ? AND status = ?", id, DiscountApprovalApproved).
+		Updates(map[string]any{"status": DiscountApprovalUsed, "sale_id": saleID})
+	return res.RowsAffected == 1, res.Error
+}
+
+// CancelDiscountApproval withdraws an approval that hasn't been spent.
+func (r *RepositoryImpl) CancelDiscountApproval(db *gorm.DB, id uuid.UUID) (bool, error) {
+	res := db.Model(&DiscountApproval{}).
+		Where("id = ? AND status = ?", id, DiscountApprovalApproved).
+		Update("status", DiscountApprovalCancelled)
+	return res.RowsAffected == 1, res.Error
+}
+
+// FindOpenShift resolves the open shift of the till behind posUserID by table
+// name - see Repository.FindOpenShift. The POS account carries the till's
+// branch and device; the shift is that device's most recent open one.
+func (r *RepositoryImpl) FindOpenShift(ctx context.Context, orgID uint, posUserID uint) (*OpenShift, error) {
+	db := r.db.WithContext(ctx)
+	var users []struct {
+		BranchID *uint
+		DeviceID *uint
+	}
+	if err := db.Table("users").
+		Select("branch_id, device_id").
+		Where("id = ? AND org_id = ? AND account_type = ?", posUserID, orgID, "pos").
+		Limit(1).
+		Scan(&users).Error; err != nil {
+		return nil, err
+	}
+	if len(users) == 0 || users[0].BranchID == nil || users[0].DeviceID == nil {
+		return nil, nil
+	}
+	var shifts []OpenShift
+	if err := db.Table("shifts").
+		Select("shifts.id AS id, shifts.branch_id AS branch_id").
+		Joins("JOIN branches ON branches.id = shifts.branch_id").
+		Where("branches.org_id = ? AND shifts.branch_id = ? AND shifts.device_id = ? AND shifts.status = ?",
+			orgID, *users[0].BranchID, *users[0].DeviceID, "open").
+		Order("shifts.opened_at DESC").
+		Limit(1).
+		Scan(&shifts).Error; err != nil {
+		return nil, err
+	}
+	if len(shifts) == 0 {
+		return nil, nil
+	}
+	return &shifts[0], nil
+}

@@ -51,6 +51,11 @@ type Sale struct {
 	// device (an idempotent retry) instead of creating a new one, so the
 	// handler can answer 200 rather than 201.
 	Replayed bool `gorm:"-" json:"-"`
+	// PriceMismatches is never stored or serialized either: for an
+	// offline-queued sale, the lines whose till-cached price or catalog % had
+	// gone stale by the time it arrived. datasync turns each into a
+	// SyncConflict (price_mismatch); the sale itself is accepted as rung up.
+	PriceMismatches []PriceMismatch `gorm:"-" json:"-"`
 }
 
 // SameOrigin reports whether this stored sale was rung up at branchID on
@@ -76,7 +81,25 @@ type SaleItem struct {
 	PriceOverride *decimal.Decimal `gorm:"type:decimal(10,2)" json:"price_override"`
 	Qty           int              `gorm:"not null" json:"qty"`
 	LineTotal     decimal.Decimal  `gorm:"type:decimal(10,2);not null" json:"line_total"`
-	Discount      decimal.Decimal  `gorm:"type:decimal(10,2);not null" json:"discount"`
+	// Discount is the line's whole discount, Catalog + Manual + Combo below -
+	// kept as the one figure totals and reports already read.
+	Discount decimal.Decimal `gorm:"type:decimal(10,2);not null" json:"discount"`
+	// The line's discount, split by where it came from. All of them are
+	// derived server-side from the product (and the approval), never taken from
+	// the client - see Service.CreateSale. UnitPrice is always the ORIGINAL
+	// price; at most one of Catalog/Manual is non-zero (a manual % replaces the
+	// catalog %), and ComboDiscount is the bundle share of a combo line.
+	CatalogDiscountPercent decimal.Decimal `gorm:"type:decimal(5,2);not null;default:0" json:"catalog_discount_percent"`
+	CatalogDiscount        decimal.Decimal `gorm:"type:decimal(10,2);not null;default:0" json:"catalog_discount"`
+	ManualDiscountPercent  decimal.Decimal `gorm:"type:decimal(5,2);not null;default:0" json:"manual_discount_percent"`
+	ManualDiscount         decimal.Decimal `gorm:"type:decimal(10,2);not null;default:0" json:"manual_discount"`
+	ManualDiscountReason   string          `gorm:"size:200;not null;default:''" json:"manual_discount_reason"`
+	ComboDiscount          decimal.Decimal `gorm:"type:decimal(10,2);not null;default:0" json:"combo_discount"`
+	// DiscountApprovalID is the approval that authorized ManualDiscount, and
+	// ManualApprovedBy the staff member who gave it. Both nil on a line with
+	// no manual discount.
+	DiscountApprovalID *uuid.UUID `gorm:"type:uuid;index" json:"discount_approval_id"`
+	ManualApprovedBy   *uint      `gorm:"index" json:"manual_approved_by"`
 	// Tax is this line's own tax amount (qty already accounted for), snapshotted
 	// by the client from Product.Tax at ring-up time - same offline-first
 	// reasoning as UnitPrice/NameSnapshot. Summed into Sale.Tax rather than
@@ -111,4 +134,44 @@ type HeldSale struct {
 	Items       datatypes.JSON  `gorm:"type:jsonb;not null" json:"items"`
 	Discount    decimal.Decimal `gorm:"type:decimal(10,2);not null" json:"discount"`
 	HeldAt      time.Time       `gorm:"not null" json:"held_at"`
+}
+
+// DiscountApprovalStatus is where an approval is in its life: approved (usable
+// once), used (spent on one sale line), or cancelled (withdrawn by the till, or
+// swept when its shift closed).
+type DiscountApprovalStatus string
+
+const (
+	DiscountApprovalApproved  DiscountApprovalStatus = "approved"
+	DiscountApprovalUsed      DiscountApprovalStatus = "used"
+	DiscountApprovalCancelled DiscountApprovalStatus = "cancelled"
+)
+
+// DiscountApprovalMaxLifetime caps how long an unused approval stays valid. It
+// normally ends sooner: closing the shift cancels it.
+const DiscountApprovalMaxLifetime = 12 * time.Hour
+
+// DiscountApproval is one custom discount, approved at the moment the till
+// adds it - never at payment. It is for ONE product at ONE percent, covers up
+// to MaxQty units, was requested by ONE seller on ONE till's open shift, and is
+// spent by exactly ONE sale line, once. The percent comes off the product's
+// original price and replaces its catalog %.
+type DiscountApproval struct {
+	ID          uuid.UUID `gorm:"primaryKey;type:uuid" json:"id"`
+	OrgID       uint      `gorm:"index;not null" json:"org_id"`
+	BranchID    uint      `gorm:"index;not null" json:"branch_id"`
+	ShiftID     uint      `gorm:"index;not null" json:"shift_id"`
+	RequestedBy uint      `gorm:"index;not null" json:"requested_by"`
+	ApprovedBy  uint      `gorm:"index;not null" json:"approved_by"`
+	ProductID   uint      `gorm:"index;not null" json:"product_id"`
+	// Percent is 0 < p <= 100, off the original price.
+	Percent decimal.Decimal        `gorm:"type:decimal(5,2);not null" json:"percent"`
+	MaxQty  int                    `gorm:"not null" json:"max_qty"`
+	Reason  string                 `gorm:"size:200;not null;default:''" json:"reason"`
+	Status  DiscountApprovalStatus `gorm:"type:varchar(20);not null;index" json:"status"`
+	// SaleID is set when the approval is used.
+	SaleID    *uuid.UUID `gorm:"type:uuid;index" json:"sale_id"`
+	ExpiresAt time.Time  `gorm:"not null" json:"expires_at"`
+	CreatedAt time.Time  `gorm:"autoCreateTime;not null" json:"created_at"`
+	UpdatedAt time.Time  `gorm:"autoUpdateTime;not null" json:"updated_at"`
 }

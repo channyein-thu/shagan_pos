@@ -2,6 +2,7 @@ package reports
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"testing"
@@ -618,4 +619,67 @@ func TestService_Reports_UnloadableStoredZone_FallsBackToDefault(t *testing.T) {
 
 	_, err := svc.GetRevenueTrend(context.Background(), 7, nil, nil, nil, "")
 	require.NoError(t, err)
+}
+
+// ---- GetDiscountsReport ----
+
+func TestService_GetDiscountsReport_PassesTheWindowAndBranchToTheRepository(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	allowOrg(branches)
+	svc := NewService(repo, branches)
+	branch := uint(5)
+	from, to := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 10, 7, 0, 0, 0, 0, time.UTC)
+	loc := yangon(t)
+	wantStart, wantEnd := resolveDateRange(loc, &from, &to)
+	want := &DiscountsReport{CatalogTotal: d("1200"), ManualTotal: d("600"), ManualCount: 1}
+	repo.EXPECT().DiscountsReport(mock.Anything, uint(7), &branch, wantStart, wantEnd).Return(want, nil).Once()
+
+	got, err := svc.GetDiscountsReport(context.Background(), 7, &branch, &from, &to)
+
+	require.NoError(t, err)
+	require.True(t, d("1200").Equal(got.CatalogTotal))
+	require.True(t, d("600").Equal(got.ManualTotal))
+	require.Equal(t, 1, got.ManualCount)
+}
+
+// A period with nothing in it is zeros and empty lists - never null, which a
+// client would have to special-case.
+func TestService_GetDiscountsReport_EmptyPeriod_ReturnsZerosAndEmptyListsNotNull(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	allowOrg(branches)
+	svc := NewService(repo, branches)
+	repo.EXPECT().DiscountsReport(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).
+		Return(&DiscountsReport{}, nil).Once()
+
+	got, err := svc.GetDiscountsReport(context.Background(), 7, nil, nil, nil)
+
+	require.NoError(t, err)
+	require.True(t, got.CatalogTotal.IsZero())
+	require.True(t, got.ManualTotal.IsZero())
+	require.Equal(t, 0, got.ManualCount)
+	require.Equal(t, 0, got.CancelledCount)
+	require.NotNil(t, got.BySeller)
+	require.NotNil(t, got.ByApprover)
+	require.Empty(t, got.BySeller)
+	require.Empty(t, got.ByApprover)
+	raw, err := json.Marshal(got)
+	require.NoError(t, err)
+	require.Contains(t, string(raw), `"by_seller":[]`)
+	require.Contains(t, string(raw), `"by_approver":[]`)
+	require.Contains(t, string(raw), `"catalog_total":"0"`)
+}
+
+func TestService_GetDiscountsReport_RepositoryError_Propagates(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	allowOrg(branches)
+	svc := NewService(repo, branches)
+	boom := errors.New("db down")
+	repo.EXPECT().DiscountsReport(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).Return(nil, boom).Once()
+
+	_, err := svc.GetDiscountsReport(context.Background(), 7, nil, nil, nil)
+
+	require.ErrorIs(t, err, boom)
 }

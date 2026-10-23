@@ -46,11 +46,14 @@ type CreateComboItemRequest struct {
 // deliberately not here - same reasoning as CreateCategoryRequest. Products
 // are org-wide, not branch-scoped, so there's no BranchID either - stock at
 // a given branch is established separately via Inventory/Procurement.
-// Price, Discount, and Tax carry no binding tag: decimal.Decimal is a
+// Price, DiscountPercent and Tax carry no binding tag: decimal.Decimal is a
 // struct, so go-playground/validator's `required` is a no-op on it and can't
 // do numeric comparisons without a custom type registration -
-// Service.CreateProduct enforces the real rules (Price > 0, Discount/Tax >=
-// 0, Discount <= Price). IsActive also carries no `required` tag
+// Service.CreateProduct enforces the real rules (Price > 0, Tax >= 0,
+// 0 <= DiscountPercent <= 100). There is deliberately no discount *amount*
+// field: the server computes sale_price and the per-unit discount from the
+// percent, and a client-sent `discount` is ignored. IsActive also carries no
+// `required` tag
 // deliberately - required on a bool rejects its zero value, which would make
 // false unrepresentable.
 type CreateProductRequest struct {
@@ -58,10 +61,11 @@ type CreateProductRequest struct {
 	Name       string          `json:"name" binding:"required"`
 	Barcode    string          `json:"barcode" binding:"required"`
 	Price      decimal.Decimal `json:"price"`
-	Discount   decimal.Decimal `json:"discount"`
-	Tax        decimal.Decimal `json:"tax"`
-	Threshold  int             `json:"threshold" binding:"required"`
-	IsActive   bool            `json:"is_active"`
+	// DiscountPercent is the catalog discount, 0-100 (omitted = 0).
+	DiscountPercent decimal.Decimal `json:"discount_percent"`
+	Tax             decimal.Decimal `json:"tax"`
+	Threshold       int             `json:"threshold" binding:"required"`
+	IsActive        bool            `json:"is_active"`
 	// Modifier is optional and genuinely nullable - nil means no modifier at
 	// all (stored as SQL NULL), not an empty string.
 	Modifier *string `json:"modifier" binding:"omitempty"`
@@ -111,9 +115,11 @@ type UpdateProductRequest struct {
 	Name       *string          `json:"name" binding:"omitempty"`
 	Barcode    *string          `json:"barcode" binding:"omitempty"`
 	Price      *decimal.Decimal `json:"price" binding:"omitempty"`
-	Discount   *decimal.Decimal `json:"discount" binding:"omitempty"`
-	Tax        *decimal.Decimal `json:"tax" binding:"omitempty"`
-	Threshold  *int             `json:"threshold" binding:"omitempty"`
+	// DiscountPercent (0-100) is the only way to change a product's
+	// discount; sale_price and the per-unit discount follow from it.
+	DiscountPercent *decimal.Decimal `json:"discount_percent" binding:"omitempty"`
+	Tax             *decimal.Decimal `json:"tax" binding:"omitempty"`
+	Threshold       *int             `json:"threshold" binding:"omitempty"`
 	// CostPrice lets an Owner set the cost basis directly - useful for
 	// stock that was never received through a real Procurement goods
 	// receipt (imported starting inventory, catalog seeded before

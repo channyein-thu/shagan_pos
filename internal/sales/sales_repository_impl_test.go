@@ -69,3 +69,151 @@ func TestRepository_ListSales_NoStaffFilterReturnsEveryoneInTheOrg(t *testing.T)
 	require.Equal(t, int64(2), total)
 	require.Len(t, got, 2)
 }
+
+func newApprovalRepoTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db := newSalesRepoTestDB(t)
+	require.NoError(t, db.AutoMigrate(&DiscountApproval{}))
+	return db
+}
+
+func seedApproval(t *testing.T, db *gorm.DB, orgID uint, status DiscountApprovalStatus) DiscountApproval {
+	t.Helper()
+	a := DiscountApproval{
+		ID: uuid.New(), OrgID: orgID, BranchID: 1, ShiftID: 1, RequestedBy: 14, ApprovedBy: 17, ProductID: 2,
+		Percent: decimal.NewFromInt(10), MaxQty: 2, Status: status, ExpiresAt: time.Now().Add(time.Hour),
+	}
+	require.NoError(t, db.Create(&a).Error)
+	return a
+}
+
+// "Once" must hold when two sales race for the same approval: both read it as
+// approved, but only one conditional UPDATE can still find it that way.
+func TestRepository_MarkDiscountApprovalUsed_OnlyTheFirstSaleWins(t *testing.T) {
+	db := newApprovalRepoTestDB(t)
+	a := seedApproval(t, db, 7, DiscountApprovalApproved)
+	repo := NewRepository(db)
+	first, second := uuid.New(), uuid.New()
+
+	won, err := repo.MarkDiscountApprovalUsed(db, a.ID, first)
+	require.NoError(t, err)
+	require.True(t, won)
+	won, err = repo.MarkDiscountApprovalUsed(db, a.ID, second)
+	require.NoError(t, err)
+	require.False(t, won, "already spent")
+
+	got, err := repo.GetDiscountApproval(context.Background(), 7, a.ID)
+	require.NoError(t, err)
+	require.Equal(t, DiscountApprovalUsed, got.Status)
+	require.NotNil(t, got.SaleID)
+	require.Equal(t, first, *got.SaleID)
+}
+
+func TestRepository_MarkDiscountApprovalUsed_CancelledApprovalCannotBeSpent(t *testing.T) {
+	db := newApprovalRepoTestDB(t)
+	a := seedApproval(t, db, 7, DiscountApprovalCancelled)
+
+	won, err := NewRepository(db).MarkDiscountApprovalUsed(db, a.ID, uuid.New())
+
+	require.NoError(t, err)
+	require.False(t, won)
+}
+
+func TestRepository_CancelDiscountApproval_OnlyWhileStillApproved(t *testing.T) {
+	db := newApprovalRepoTestDB(t)
+	repo := NewRepository(db)
+	open := seedApproval(t, db, 7, DiscountApprovalApproved)
+	spent := seedApproval(t, db, 7, DiscountApprovalUsed)
+
+	cancelled, err := repo.CancelDiscountApproval(db, open.ID)
+	require.NoError(t, err)
+	require.True(t, cancelled)
+	cancelled, err = repo.CancelDiscountApproval(db, spent.ID)
+	require.NoError(t, err)
+	require.False(t, cancelled, "a used approval stays used")
+	got, err := repo.GetDiscountApproval(context.Background(), 7, spent.ID)
+	require.NoError(t, err)
+	require.Equal(t, DiscountApprovalUsed, got.Status)
+}
+
+func TestRepository_GetDiscountApproval_AnotherOrgsApprovalIsNotFound(t *testing.T) {
+	db := newApprovalRepoTestDB(t)
+	a := seedApproval(t, db, 8, DiscountApprovalApproved)
+
+	_, err := NewRepository(db).GetDiscountApproval(context.Background(), 7, a.ID)
+
+	require.Error(t, err)
+	require.True(t, isNotFound(err))
+}
+
+func TestRepository_ListDiscountApprovals_ScopedToTheOrgAndTheRequestedIDs(t *testing.T) {
+	db := newApprovalRepoTestDB(t)
+	mine := seedApproval(t, db, 7, DiscountApprovalApproved)
+	seedApproval(t, db, 7, DiscountApprovalApproved) // not asked for
+	theirs := seedApproval(t, db, 8, DiscountApprovalApproved)
+
+	got, err := NewRepository(db).ListDiscountApprovals(context.Background(), 7, []uuid.UUID{mine.ID, theirs.ID, uuid.New()})
+
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	require.Equal(t, mine.ID, got[0].ID)
+}
+
+func TestRepository_ListDiscountApprovals_NoIDsIsEmptyWithoutQuerying(t *testing.T) {
+	got, err := NewRepository(nil).ListDiscountApprovals(context.Background(), 7, nil)
+
+	require.NoError(t, err)
+	require.Empty(t, got)
+}
+
+func tillTables(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	for _, ddl := range []string{
+		`CREATE TABLE users (id integer primary key, org_id integer, account_type text, branch_id integer, device_id integer)`,
+		`CREATE TABLE branches (id integer primary key, org_id integer)`,
+		`CREATE TABLE shifts (id integer primary key, branch_id integer, device_id integer, status text, opened_at datetime)`,
+	} {
+		require.NoError(t, db.Exec(ddl).Error)
+	}
+}
+
+func TestRepository_FindOpenShift_ResolvesTheTillsOwnOpenShift(t *testing.T) {
+	db := newApprovalRepoTestDB(t)
+	tillTables(t, db)
+	require.NoError(t, db.Exec(`INSERT INTO branches VALUES (5, 7)`).Error)
+	require.NoError(t, db.Exec(`INSERT INTO users VALUES (70, 7, 'pos', 5, 9), (71, 7, 'pos', 5, 10), (72, 7, 'owner', NULL, NULL)`).Error)
+	require.NoError(t, db.Exec(`INSERT INTO shifts VALUES
+		(1, 5, 9, 'closed', '2026-10-01 08:00:00'),
+		(2, 5, 9, 'open',   '2026-10-02 08:00:00'),
+		(3, 5, 10, 'open',  '2026-10-02 09:00:00')`).Error)
+	repo := NewRepository(db)
+
+	got, err := repo.FindOpenShift(context.Background(), 7, 70)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.Equal(t, uint(2), got.ID, "this till's device, not the other register's")
+	require.Equal(t, uint(5), got.BranchID)
+
+	other, err := repo.FindOpenShift(context.Background(), 7, 71)
+	require.NoError(t, err)
+	require.Equal(t, uint(3), other.ID)
+}
+
+func TestRepository_FindOpenShift_NilWhenThereIsNone(t *testing.T) {
+	db := newApprovalRepoTestDB(t)
+	tillTables(t, db)
+	require.NoError(t, db.Exec(`INSERT INTO branches VALUES (5, 7)`).Error)
+	require.NoError(t, db.Exec(`INSERT INTO users VALUES (70, 7, 'pos', 5, 9), (72, 7, 'owner', NULL, NULL)`).Error)
+	require.NoError(t, db.Exec(`INSERT INTO shifts VALUES (1, 5, 9, 'closed', '2026-10-01 08:00:00')`).Error)
+	repo := NewRepository(db)
+
+	closed, err := repo.FindOpenShift(context.Background(), 7, 70)
+	require.NoError(t, err)
+	require.Nil(t, closed, "its only shift is closed")
+	owner, err := repo.FindOpenShift(context.Background(), 7, 72)
+	require.NoError(t, err)
+	require.Nil(t, owner, "an owner account has no till")
+	otherOrg, err := repo.FindOpenShift(context.Background(), 99, 70)
+	require.NoError(t, err)
+	require.Nil(t, otherOrg, "another org can't resolve this till")
+}

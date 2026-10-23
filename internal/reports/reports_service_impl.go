@@ -438,3 +438,21 @@ func (s *Service) GetProfitAndLoss(ctx context.Context, orgID uint, branchID *ui
 func (s *Service) ExportReport(ctx context.Context) (map[string]any, error) {
 	return nil, common.ErrNotImplemented
 }
+
+func (s *Service) GetDiscountsReport(ctx context.Context, orgID uint, branchID *uint, from, to *time.Time) (*DiscountsReport, error) {
+	start, end, err := s.window(ctx, orgID, from, to)
+	if err != nil {
+		return nil, err
+	}
+	report, err := s.repo.DiscountsReport(ctx, orgID, branchID, start, end)
+	if err != nil {
+		return nil, err
+	}
+	if report.BySeller == nil {
+		report.BySeller = []DiscountStaffRow{}
+	}
+	if report.ByApprover == nil {
+		report.ByApprover = []DiscountStaffRow{}
+	}
+	return report, nil
+}

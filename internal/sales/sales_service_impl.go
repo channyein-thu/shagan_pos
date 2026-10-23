@@ -22,28 +22,46 @@ type Service struct {
 	audit     AuditWriter
 	orgs      OrganizationLookup
 	returns   ReturnActivityReader
+	staff     StaffDirectory
 	db        common.Transactioner
 }
 
-func NewService(repo Repository, inv InventoryWriter, products ProductLookup, auditWriter AuditWriter, orgs OrganizationLookup, returns ReturnActivityReader, db common.Transactioner) *Service {
-	return &Service{repo: repo, inventory: inv, products: products, audit: auditWriter, orgs: orgs, returns: returns, db: db}
+func NewService(repo Repository, inv InventoryWriter, products ProductLookup, auditWriter AuditWriter, orgs OrganizationLookup, returns ReturnActivityReader, staff StaffDirectory, db common.Transactioner) *Service {
+	return &Service{repo: repo, inventory: inv, products: products, audit: auditWriter, orgs: orgs, returns: returns, staff: staff, db: db}
 }
 
 var _ Interface = (*Service)(nil)
 
-// CreateSale derives Subtotal/Discount/Tax/Total from in.Items rather than
-// trusting client-computed totals, rejects a payments total that doesn't
-// cover the derived Total, then persists the Sale/SaleItems/Payments as one
-// atomic unit guarded by a currently-open-shift check - same
-// transaction-composes-atomic-primitives shape as identity.Service.CreateAccount.
+// pricedLine is one request line after the server has priced it from the
+// product: nothing in it comes from the client except qty and tax.
+type pricedLine struct {
+	item     SaleItem
+	approval *DiscountApproval // the approval this line spends, if any
+	mismatch *PriceMismatch    // queued sales only: the till's cache was stale for this line
+}
+
+// CreateSale prices every line from the PRODUCT (see CreateSaleItemRequest),
+// derives Subtotal/Discount/Tax/Total from those lines rather than trusting
+// client-computed totals, rejects a payments total that doesn't equal the
+// derived Total, then persists the Sale/SaleItems/Payments as one atomic unit
+// guarded by a currently-open-shift check - same transaction-composes-atomic-
+// primitives shape as identity.Service.CreateAccount.
 //
-// A discount on any item requires actor.CanApplyManualDiscount - a plain
-// Staff member's own token won't have it (only super_staff/manager do, per
-// the seeded role grants); it's true either because the calling staff holds
-// apply_manual_discount themselves, or because a manager approved this sale
-// via X-Manager-Approval-Token (see middleware.ManagerApproved) - both are
-// folded into one bool by the handler before this is ever called, so this
-// method doesn't need to know which case applied.
+// A line's discount is one of three things, never mixed:
+//   - the product's catalog % (automatic: no approval, no permission),
+//   - a custom % taken from the ORIGINAL price that REPLACES the catalog %,
+//     carried by a DiscountApproval the seller got when the discount was added
+//     (the approval is checked here, spent atomically, and audited), or
+//   - on a combo line, the client's share of the bundle discount.
+//
+// There is no permission or manager-token check for discounts here any more:
+// the approval record is the authorization, and payment never asks for a PIN.
+//
+// allowNegativeStock is only ever true for an offline-queued sale
+// (datasync.IngestQueuedSales). That sale was priced from the till's cached
+// catalog, so its unit price and catalog % are taken as rung up - a stale one
+// is reported on Sale.PriceMismatches, not rejected - and it can never carry
+// an approval (there is no approval offline).
 //
 // Also decrements each product's stock at branchID (the selling branch,
 // aggregated across every line for that product) in the same transaction,
@@ -53,10 +71,9 @@ var _ Interface = (*Service)(nil)
 // CreateStockTransfer doc). Every item's stock effect and the sale itself
 // commit or roll back together.
 func (s *Service) CreateSale(ctx context.Context, orgID uint, branchID uint, actor SaleActor, in CreateSaleRequest, allowNegativeStock bool) (*Sale, []NegativeStockEvent, error) {
-	// Idempotent by in.ID - checked before anything else (including the
-	// discount-permission check), so a till retrying after a lost response
-	// gets its original sale back even if the manager-approval token that
-	// authorized it has long expired.
+	// Idempotent by in.ID - checked before anything else, so a till retrying
+	// after a lost response gets its original sale back even if the discount
+	// approval it carried has since been used (by this very sale).
 	existing, err := s.repo.GetSale(ctx, orgID, in.ID)
 	switch {
 	case err == nil:
@@ -65,42 +82,21 @@ func (s *Service) CreateSale(ctx context.Context, orgID uint, branchID uint, act
 		return nil, nil, err
 	}
 
-	saleItems := make([]SaleItem, 0, len(in.Items))
-	subtotal := decimal.Zero
-	itemDiscountTotal := decimal.Zero
-	itemTaxTotal := decimal.Zero
-	for _, item := range in.Items {
-		if item.Discount.IsNegative() {
-			return nil, nil, common.BadRequestError("item discount must be zero or greater")
-		}
-		if item.Tax.IsNegative() {
-			return nil, nil, common.BadRequestError("item tax must be zero or greater")
-		}
-		effectivePrice := item.UnitPrice
-		if item.PriceOverride != nil {
-			effectivePrice = *item.PriceOverride
-		}
-		lineGross := effectivePrice.Mul(decimal.NewFromInt(int64(item.Qty)))
-		subtotal = subtotal.Add(lineGross)
-		itemDiscountTotal = itemDiscountTotal.Add(item.Discount)
-		itemTaxTotal = itemTaxTotal.Add(item.Tax)
-		saleItems = append(saleItems, SaleItem{
-			SaleID:        in.ID,
-			ProductID:     item.ProductID,
-			ComboID:       item.ComboID,
-			NameSnapshot:  item.NameSnapshot,
-			UnitPrice:     item.UnitPrice,
-			PriceOverride: item.PriceOverride,
-			Qty:           item.Qty,
-			LineTotal:     lineGross.Sub(item.Discount),
-			Discount:      item.Discount,
-			Tax:           item.Tax,
-		})
+	queued := allowNegativeStock
+	lines, err := s.priceLines(ctx, orgID, branchID, actor, in, queued)
+	if err != nil {
+		return nil, nil, err
 	}
-	if itemDiscountTotal.IsPositive() && !actor.CanApplyManualDiscount {
-		return nil, nil, common.ForbiddenError("staff does not have permission to apply a manual discount")
+
+	saleItems := make([]SaleItem, len(lines))
+	subtotal, discountTotal, taxTotal := decimal.Zero, decimal.Zero, decimal.Zero
+	for i, line := range lines {
+		saleItems[i] = line.item
+		subtotal = subtotal.Add(line.item.UnitPrice.Mul(decimal.NewFromInt(int64(line.item.Qty))))
+		discountTotal = discountTotal.Add(line.item.Discount)
+		taxTotal = taxTotal.Add(line.item.Tax)
 	}
-	total := subtotal.Sub(itemDiscountTotal).Add(itemTaxTotal)
+	total := subtotal.Sub(discountTotal).Add(taxTotal)
 
 	payments := make([]Payment, 0, len(in.Payments))
 	paymentsTotal := decimal.Zero
@@ -118,24 +114,6 @@ func (s *Service) CreateSale(ctx context.Context, orgID uint, branchID uint, act
 		return nil, nil, common.BadRequestError("payments must add up to the sale total")
 	}
 
-	// Cost is resolved server-side, once per unique product, only once the
-	// request itself is known to be well-formed - see SaleItem.UnitCost's
-	// own doc for why this is never client-supplied.
-	costByProduct := make(map[uint]decimal.Decimal, len(saleItems))
-	for i := range saleItems {
-		productID := saleItems[i].ProductID
-		cost, ok := costByProduct[productID]
-		if !ok {
-			product, err := s.products.GetProduct(ctx, orgID, productID)
-			if err != nil {
-				return nil, nil, err
-			}
-			cost = product.CostPrice
-			costByProduct[productID] = cost
-		}
-		saleItems[i].UnitCost = cost
-	}
-
 	now := time.Now()
 	sale := &Sale{
 		ID:          in.ID,
@@ -146,8 +124,8 @@ func (s *Service) CreateSale(ctx context.Context, orgID uint, branchID uint, act
 		DeviceID:    in.DeviceID,
 		CustomerID:  in.CustomerID,
 		Subtotal:    subtotal,
-		Discount:    itemDiscountTotal,
-		Tax:         itemTaxTotal,
+		Discount:    discountTotal,
+		Tax:         taxTotal,
 		Total:       total,
 		Status:      SaleStatusCompleted,
 		CompletedAt: &now,
@@ -156,8 +134,13 @@ func (s *Service) CreateSale(ctx context.Context, orgID uint, branchID uint, act
 	// re-submitting an offline-queued sale - stamp SyncedAt to mark it as
 	// confirmed received, same reasoning as the Interface doc. A live,
 	// online-rung-up sale was never "synced" from anywhere, so it stays nil.
-	if allowNegativeStock {
+	if queued {
 		sale.SyncedAt = &now
+		for _, line := range lines {
+			if line.mismatch != nil {
+				sale.PriceMismatches = append(sale.PriceMismatches, *line.mismatch)
+			}
+		}
 	}
 
 	qtyByProduct := make(map[uint]int, len(in.Items))
@@ -195,11 +178,29 @@ func (s *Service) CreateSale(ctx context.Context, orgID uint, branchID uint, act
 				return err
 			}
 		}
-		if itemDiscountTotal.IsPositive() {
+		// Spend each approval inside the sale's transaction. The conditional
+		// update is what makes "once" hold when two sales race for one
+		// approval; a loser rolls the whole sale back.
+		for _, line := range lines {
+			if line.approval == nil {
+				continue
+			}
+			won, err := s.repo.MarkDiscountApprovalUsed(tx, line.approval.ID, sale.ID)
+			if err != nil {
+				return err
+			}
+			if !won {
+				return common.ConflictError("this discount approval was already used")
+			}
 			if err := s.audit.CreateAuditLog(tx, &audit.AuditLog{
 				OrgID: orgID, ActorID: &actor.StaffID, BranchID: &branchID,
-				Entity: "sale", EntityID: sale.ID.String(), Action: "manual_discount_applied",
-				Before: audit.ToJSON(nil), After: audit.ToJSON(sale),
+				Entity: "sale", EntityID: sale.ID.String(), Action: "manual_discount",
+				Before: audit.ToJSON(nil),
+				After: audit.ToJSON(map[string]any{
+					"discount_approval_id": line.approval.ID, "product_id": line.item.ProductID,
+					"percent": line.approval.Percent, "qty": line.item.Qty, "manual_discount": line.item.ManualDiscount,
+					"seller": line.approval.RequestedBy, "approver": line.approval.ApprovedBy, "reason": line.approval.Reason,
+				}),
 			}); err != nil {
 				return err
 			}
@@ -220,6 +221,18 @@ func (s *Service) CreateSale(ctx context.Context, orgID uint, branchID uint, act
 		return nil, nil, err
 	}
 	return sale, negativeEvents, nil
+}
+
+// unitSalePrice is the unit price after the catalog or manual discount (not the
+// combo share, which is the bundle's, not the unit's): UnitPrice minus the
+// per-unit amount of whichever of the two applied. A line sold before the
+// discount was split by source has neither, so it reads as its original price.
+func unitSalePrice(item SaleItem) decimal.Decimal {
+	if item.Qty <= 0 {
+		return item.UnitPrice
+	}
+	perUnit := item.CatalogDiscount.Add(item.ManualDiscount).Div(decimal.NewFromInt(int64(item.Qty)))
+	return item.UnitPrice.Sub(perUnit)
 }
 
 // replay answers a CreateSale whose id is already stored: the original sale
@@ -365,6 +378,27 @@ func (s *Service) GetSaleReceipt(ctx context.Context, orgID uint, id uuid.UUID) 
 	if err != nil {
 		return nil, err
 	}
+	// Who approved each manual discount, by name: one lookup per approver, not
+	// per line. An approver who can no longer be found just has no name.
+	approverNames := make(map[uint]string)
+	for _, item := range items {
+		if item.ManualApprovedBy == nil {
+			continue
+		}
+		approver := *item.ManualApprovedBy
+		if _, done := approverNames[approver]; done {
+			continue
+		}
+		staff, err := s.staff.GetStaff(ctx, orgID, approver)
+		switch {
+		case err == nil:
+			approverNames[approver] = staff.Name
+		case isNotFound(err):
+			approverNames[approver] = ""
+		default:
+			return nil, err
+		}
+	}
 	receiptItems := make([]ReceiptItem, len(items))
 	for i, item := range items {
 		returned := returnedQty[item.ID]
@@ -372,7 +406,11 @@ func (s *Service) GetSaleReceipt(ctx context.Context, orgID uint, id uuid.UUID) 
 		if returnable < 0 {
 			returnable = 0
 		}
-		receiptItems[i] = ReceiptItem{SaleItem: item, ReturnedQty: returned, ReturnableQty: returnable}
+		ri := ReceiptItem{SaleItem: item, ReturnedQty: returned, ReturnableQty: returnable, UnitSalePrice: unitSalePrice(item)}
+		if item.ManualApprovedBy != nil {
+			ri.ManualApprovedByName = approverNames[*item.ManualApprovedBy]
+		}
+		receiptItems[i] = ri
 	}
 	return map[string]any{
 		"sale":     ReceiptSale{Sale: *sale, ReturnSummary: summaries[id]},

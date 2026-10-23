@@ -102,6 +102,9 @@ var (
 	legacyTillPermissions = []string{
 		"accept_payments", "hold_resume_sales", "manage_own_shift", "log_till_expenses",
 		"add_customers", "view_all_receipts", "reprint_receipt",
+		// Discount V1: a Cashier may ask for a custom discount (it still needs
+		// an approver's PIN) - so a till signed in before the deploy can too.
+		"apply_manual_discount",
 	}
 	// what the old access_backoffice permission (the Manager's) unlocked,
 	// including the force-close override it used to gate. manage_staff is

@@ -56,6 +56,12 @@ type Repository interface {
 	// Percentage is always zero here - the service computes it once every
 	// method's amount is known.
 	PaymentMethodBreakdown(ctx context.Context, orgID uint, branchID *uint, from, to time.Time) ([]PaymentMethodBreakdown, error)
+	// DiscountsReport backs GetDiscountsReport: catalog and manual discount
+	// totals over sales in the window (the same completed-sales rule as every
+	// other report, so a voided sale's discounts don't count), who asked for and
+	// approved the manual ones, and how many approvals were cancelled. The
+	// repository may return nil lists; the service makes them [].
+	DiscountsReport(ctx context.Context, orgID uint, branchID *uint, from, to time.Time) (*DiscountsReport, error)
 	// ListTransactions backs GetTransactionsReport - a page of raw sale rows
 	// ordered newest-first, plus the total count across every page.
 	ListTransactions(ctx context.Context, orgID uint, branchID *uint, from, to time.Time, page, pageSize int) ([]TransactionSummary, int64, error)
