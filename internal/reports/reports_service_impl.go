@@ -149,9 +149,9 @@ func resolveLimit(limit *int) int {
 	return *limit
 }
 
-// salesTotals composes Repository.SalesAggregate and Repository.ReturnsTotal
-// into the Gross/Discounts/Returns/Net breakdown - see SalesTotals's own doc
-// for the formula.
+// salesTotals composes Repository.SalesAggregate, ReturnsTotal and TaxTotals
+// into the Gross/Discounts/Returns/Net breakdown and the tax inside it - see
+// SalesTotals's own doc for the formulas.
 func (s *Service) salesTotals(ctx context.Context, orgID uint, branchID *uint, from, to time.Time) (SalesTotals, error) {
 	agg, err := s.repo.SalesAggregate(ctx, orgID, branchID, from, to)
 	if err != nil {
@@ -161,11 +161,21 @@ func (s *Service) salesTotals(ctx context.Context, orgID uint, branchID *uint, f
 	if err != nil {
 		return SalesTotals{}, err
 	}
+	tax, err := s.repo.TaxTotals(ctx, orgID, branchID, from, to)
+	if err != nil {
+		return SalesTotals{}, err
+	}
+	netSales := agg.Gross.Sub(agg.Discounts).Sub(returns)
+	taxCollected := tax.SalesTax.Sub(tax.TaxRefunded).Add(tax.ExchangeTaxDelta)
 	return SalesTotals{
-		GrossSales:       agg.Gross,
-		Discounts:        agg.Discounts,
-		Returns:          returns,
-		NetSales:         agg.Gross.Sub(agg.Discounts).Sub(returns),
+		GrossSales:   agg.Gross,
+		Discounts:    agg.Discounts,
+		Returns:      returns,
+		NetSales:     netSales,
+		TaxCollected: taxCollected,
+		// the tax of an old sale was never in net sales: leave it out of the
+		// part that gets subtracted
+		NetSalesExclTax:  netSales.Sub(taxCollected.Sub(tax.AddedOnTopTax)),
 		TransactionCount: agg.Count,
 	}, nil
 }
@@ -244,6 +254,12 @@ func (s *Service) GetTodayReport(ctx context.Context, orgID uint, branchID *uint
 		return nil, err
 	}
 
+	if methods == nil {
+		methods = []PaymentMethodBreakdown{}
+	}
+	if products == nil {
+		products = []ProductRevenue{}
+	}
 	return &TodayReport{
 		SalesTotals:    totals,
 		HourlyTrend:    hourly,
@@ -297,6 +313,15 @@ func (s *Service) GetSalesSummary(ctx context.Context, orgID uint, branchID *uin
 		return nil, err
 	}
 
+	if byBranch == nil {
+		byBranch = []BranchBreakdown{}
+	}
+	if byMethod == nil {
+		byMethod = []PaymentMethodBreakdown{}
+	}
+	if byCategory == nil {
+		byCategory = []CategoryBreakdown{}
+	}
 	return &SalesSummary{
 		SalesTotals:     totals,
 		ByBranch:        byBranch,
@@ -424,7 +449,10 @@ func (s *Service) GetProfitAndLoss(ctx context.Context, orgID uint, branchID *ui
 		return nil, err
 	}
 
-	grossProfit := totals.NetSales.Sub(cogs)
+	// Profit is taken on revenue WITHOUT the tax: the tax inside a price is
+	// not the shop's money (and before tax was inside the price, net sales
+	// never contained it, so this is the same basis as always).
+	grossProfit := totals.NetSalesExclTax.Sub(cogs)
 	netProfit := grossProfit.Sub(expenses)
 	return &ProfitAndLoss{
 		SalesTotals: totals,

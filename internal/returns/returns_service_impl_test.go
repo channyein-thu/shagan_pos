@@ -14,6 +14,7 @@ import (
 	"gorm.io/gorm"
 
 	"shagan_pos/internal/audit"
+	"shagan_pos/internal/catalog"
 	"shagan_pos/internal/common"
 	"shagan_pos/internal/identity"
 	"shagan_pos/internal/inventory"
@@ -45,7 +46,7 @@ func (fakeTransactioner) Transaction(fc func(tx *gorm.DB) error, _ ...*sql.TxOpt
 }
 
 func newTestService(repo Repository, branches BranchLookup, salesRepo SalesReader, inv InventoryWriter, auditWriter AuditWriter) *Service {
-	return NewService(repo, branches, salesRepo, inv, auditWriter, fakeTransactioner{})
+	return NewService(repo, branches, salesRepo, nil, inv, auditWriter, fakeTransactioner{})
 }
 
 // --- VoidSale ---
@@ -797,6 +798,7 @@ func TestService_CreateExchange_HappyPath_CreditsInAndDebitsOut(t *testing.T) {
 	inv := NewMockInventoryWriter(t)
 	audW := NewMockAuditWriter(t)
 	svc := newTestService(repo, branches, salesRepo, inv, audW)
+	svc.products = productsAt(t, 3, "15.00", "0")
 
 	saleID := uuid.New()
 	sale := &sales.Sale{ID: saleID, OrgID: 7, BranchID: 5, Status: sales.SaleStatusCompleted}
@@ -842,13 +844,12 @@ func TestService_CreateExchange_HappyPath_CreditsInAndDebitsOut(t *testing.T) {
 		})).
 		Return(nil).Once()
 
-	price := d("15.00")
 	in := CreateExchangeRequest{
 		SaleID: saleID,
 		Method: ExchangeMethodCash,
 		Items: []CreateExchangeItemRequest{
 			{Direction: DirectionIn, SaleItemID: uintPtr(1), Qty: 1},
-			{Direction: DirectionOut, ProductID: uintPtr(3), Qty: 1, UnitPrice: &price},
+			{Direction: DirectionOut, ProductID: uintPtr(3), Qty: 1},
 		},
 	}
 	got, err := svc.CreateExchange(context.Background(), 7, Actor{StaffID: 30, CanApprove: true}, in)
@@ -871,7 +872,7 @@ func TestService_CreateExchange_NoPermission_ReturnsForbidden(t *testing.T) {
 	requireRestErrorStatus(t, err, http.StatusForbidden)
 }
 
-func TestService_CreateExchange_OutItemMissingProductOrPrice_ReturnsBadRequest(t *testing.T) {
+func TestService_CreateExchange_OutItemMissingProduct_ReturnsBadRequest(t *testing.T) {
 	repo := NewMockRepository(t)
 	branches := NewMockBranchLookup(t)
 	salesRepo := NewMockSalesReader(t)
@@ -899,6 +900,7 @@ func TestService_CreateExchange_InsufficientStockForOutItem_ReturnsConflict(t *t
 	inv := NewMockInventoryWriter(t)
 	audW := NewMockAuditWriter(t)
 	svc := newTestService(repo, branches, salesRepo, inv, audW)
+	svc.products = productsAt(t, 3, "15.00", "0")
 
 	saleID := uuid.New()
 	sale := &sales.Sale{ID: saleID, OrgID: 7, BranchID: 5, Status: sales.SaleStatusCompleted}
@@ -910,11 +912,10 @@ func TestService_CreateExchange_InsufficientStockForOutItem_ReturnsConflict(t *t
 	// UpdateStockLevelQty/CreateInventoryLedgerEntry must never be called -
 	// the movement is rejected before either write happens.
 
-	price := d("15.00")
 	_, err := svc.CreateExchange(context.Background(), 7, Actor{StaffID: 30, CanApprove: true}, CreateExchangeRequest{
 		SaleID: saleID,
 		Method: ExchangeMethodCash,
-		Items:  []CreateExchangeItemRequest{{Direction: DirectionOut, ProductID: uintPtr(3), Qty: 1, UnitPrice: &price}},
+		Items:  []CreateExchangeItemRequest{{Direction: DirectionOut, ProductID: uintPtr(3), Qty: 1}},
 	})
 	require.Error(t, err)
 	requireRestErrorStatus(t, err, http.StatusConflict)
@@ -1029,6 +1030,11 @@ func exchangeShiftFixture(t *testing.T, completes bool) (*Service, *MockReposito
 	inv := NewMockInventoryWriter(t)
 	audW := NewMockAuditWriter(t)
 	svc := newTestService(repo, branches, salesRepo, inv, audW)
+	// product 3 is priced at 10.00 and 15.00 by different tests, so the lookup
+	// is left open (and unrestricted) here
+	products := NewMockProductLookup(t)
+	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(3)).Return(&catalog.Product{ID: 3, OrgID: 7, Price: d("15.00"), SalePrice: d("15.00")}, nil).Maybe()
+	svc.products = products
 
 	saleID := uuid.New()
 	sale := &sales.Sale{ID: saleID, OrgID: 7, BranchID: 5, Status: sales.SaleStatusCompleted}
@@ -1049,17 +1055,28 @@ func exchangeShiftFixture(t *testing.T, completes bool) (*Service, *MockReposito
 	return svc, repo, saleID
 }
 
-// swapForProduct3 is "bring product 2 back, take product 3 at outPrice".
-func swapForProduct3(saleID uuid.UUID, outPrice string, method ExchangeMethod) CreateExchangeRequest {
-	price := d(outPrice)
+// swapForProduct3 is "bring product 2 back, take product 3" - at whatever
+// price the product lookup of the test says product 3 sells for (the server
+// prices an out line from the product, never from the request).
+func swapForProduct3(saleID uuid.UUID, method ExchangeMethod) CreateExchangeRequest {
 	return CreateExchangeRequest{
 		SaleID: saleID,
 		Method: method,
 		Items: []CreateExchangeItemRequest{
 			{Direction: DirectionIn, SaleItemID: uintPtr(1), Qty: 1},
-			{Direction: DirectionOut, ProductID: uintPtr(3), Qty: 1, UnitPrice: &price},
+			{Direction: DirectionOut, ProductID: uintPtr(3), Qty: 1},
 		},
 	}
+}
+
+// productsAt is a product lookup in which product `id` is priced at `price`
+// (no catalog discount) and carries `taxRate`.
+func productsAt(t *testing.T, id uint, price, taxRate string) *MockProductLookup {
+	t.Helper()
+	products := NewMockProductLookup(t)
+	products.EXPECT().GetProduct(mock.Anything, uint(7), id).
+		Return(&catalog.Product{ID: id, OrgID: 7, Price: d(price), SalePrice: d(price), TaxPercent: d(taxRate)}, nil).Maybe()
+	return products
 }
 
 // swapWithInCondition is an even swap ("bring product 2 back in the given
@@ -1076,6 +1093,7 @@ func swapWithInCondition(t *testing.T, condition ItemCondition, restocksIn bool)
 	inv := NewMockInventoryWriter(t)
 	audW := NewMockAuditWriter(t)
 	svc := newTestService(repo, branches, salesRepo, inv, audW)
+	svc.products = productsAt(t, 3, "10.00", "0")
 
 	saleID := uuid.New()
 	sale := &sales.Sale{ID: saleID, OrgID: 7, BranchID: 5, Status: sales.SaleStatusCompleted}
@@ -1100,7 +1118,7 @@ func swapWithInCondition(t *testing.T, condition ItemCondition, restocksIn bool)
 		Run(func(_ *gorm.DB, e *inventory.InventoryLedger) { ledger = append(ledger, *e) }).Return(nil).Twice()
 	audW.EXPECT().CreateAuditLog(mock.Anything, mock.Anything).Return(nil).Once()
 
-	req := swapForProduct3(saleID, "10.00", "")
+	req := swapForProduct3(saleID, "")
 	req.Items[0].Condition = condition
 	_, err := svc.CreateExchange(context.Background(), 7, Actor{StaffID: 30, CanApprove: true}, req)
 	require.NoError(t, err)
@@ -1204,7 +1222,7 @@ func TestService_CreateExchange_MissingMethodOnNonZeroDifference_ReturnsBadReque
 	// CreateExchange must never be called - rejected before anything is
 	// written.
 
-	_, err := svc.CreateExchange(context.Background(), 7, Actor{StaffID: 30, CanApprove: true}, swapForProduct3(saleID, "15.00", ""))
+	_, err := svc.CreateExchange(context.Background(), 7, Actor{StaffID: 30, CanApprove: true}, swapForProduct3(saleID, ""))
 	require.Error(t, err)
 	requireRestErrorStatus(t, err, http.StatusBadRequest)
 }
@@ -1212,6 +1230,7 @@ func TestService_CreateExchange_MissingMethodOnNonZeroDifference_ReturnsBadReque
 // An even swap moves no money, so there's nothing to say "cash or QR" about.
 func TestService_CreateExchange_ZeroDifferenceWithoutMethod_Accepted(t *testing.T) {
 	svc, repo, saleID := exchangeShiftFixture(t, true)
+	svc.products = productsAt(t, 3, "10.00", "0") // same price as the product that came back
 	repo.EXPECT().
 		CreateExchange(mock.Anything, mock.MatchedBy(func(e *Exchange) bool {
 			return e.NetDifference.IsZero() && e.Method == nil && e.ShiftID == nil
@@ -1219,7 +1238,7 @@ func TestService_CreateExchange_ZeroDifferenceWithoutMethod_Accepted(t *testing.
 		Run(func(_ *gorm.DB, e *Exchange) { e.ID = 310 }).
 		Return(nil).Once()
 
-	_, err := svc.CreateExchange(context.Background(), 7, Actor{StaffID: 30, CanApprove: true}, swapForProduct3(saleID, "10.00", ""))
+	_, err := svc.CreateExchange(context.Background(), 7, Actor{StaffID: 30, CanApprove: true}, swapForProduct3(saleID, ""))
 	require.NoError(t, err)
 }
 
@@ -1233,7 +1252,7 @@ func TestService_CreateExchange_StampsMethodAndCallersOpenShift(t *testing.T) {
 		Run(func(_ *gorm.DB, e *Exchange) { e.ID = 311 }).
 		Return(nil).Once()
 
-	_, err := svc.CreateExchange(context.Background(), 7, Actor{StaffID: 30, PosUserID: 70, CanApprove: true}, swapForProduct3(saleID, "15.00", ExchangeMethodQR))
+	_, err := svc.CreateExchange(context.Background(), 7, Actor{StaffID: 30, PosUserID: 70, CanApprove: true}, swapForProduct3(saleID, ExchangeMethodQR))
 	require.NoError(t, err)
 }
 
@@ -1245,6 +1264,257 @@ func TestService_CreateExchange_NoOpenShift_LeavesShiftNil(t *testing.T) {
 		Run(func(_ *gorm.DB, e *Exchange) { e.ID = 312 }).
 		Return(nil).Once()
 
-	_, err := svc.CreateExchange(context.Background(), 7, Actor{StaffID: 30, PosUserID: 70, CanApprove: true}, swapForProduct3(saleID, "15.00", ExchangeMethodCash))
+	_, err := svc.CreateExchange(context.Background(), 7, Actor{StaffID: 30, PosUserID: 70, CanApprove: true}, swapForProduct3(saleID, ExchangeMethodCash))
 	require.NoError(t, err)
+}
+
+// --- Tax inside refunds and exchanges (Tax V1) ---
+
+// returnLine returns qty units of one sale line (sellable, cash) and gives back
+// the Return the service stored. Everything around it is set up generously: these
+// tests only care about the money.
+func returnLine(t *testing.T, line sales.SaleItem, qty int) Return {
+	t.Helper()
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	salesRepo := NewMockSalesReader(t)
+	inv := NewMockInventoryWriter(t)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, branches, salesRepo, inv, audW)
+
+	saleID := uuid.New()
+	line.ID, line.SaleID, line.ProductID = 1, saleID, 2
+	salesRepo.EXPECT().GetSaleWithLock(mock.Anything, uint(7), saleID).
+		Return(&sales.Sale{ID: saleID, OrgID: 7, BranchID: 5, Status: sales.SaleStatusCompleted}, nil).Once()
+	salesRepo.EXPECT().ListSaleItemsTx(mock.Anything, saleID).Return([]sales.SaleItem{line}, nil).Once()
+	salesRepo.EXPECT().UpdateSaleStatus(mock.Anything, saleID, mock.Anything).Return(nil).Maybe()
+	repo.EXPECT().ReturnedQtyForSaleItem(mock.Anything, uint(1)).Return(0, nil).Maybe()
+	repo.EXPECT().ExchangedInQtyForSaleItem(mock.Anything, uint(1)).Return(0, nil).Once()
+	var saved Return
+	repo.EXPECT().CreateReturn(mock.Anything, mock.Anything).
+		Run(func(_ *gorm.DB, r *Return) { r.ID = 400; saved = *r }).Return(nil).Once()
+	repo.EXPECT().CreateReturnItems(mock.Anything, mock.Anything).Return(nil).Once()
+	inv.EXPECT().GetStockLevel(mock.Anything, mock.Anything, mock.Anything).Return(&inventory.StockLevel{ID: 50, Qty: 10}, nil).Maybe()
+	inv.EXPECT().UpdateStockLevelQty(mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+	inv.EXPECT().CreateInventoryLedgerEntry(mock.Anything, mock.Anything).Return(nil).Maybe()
+	audW.EXPECT().CreateAuditLog(mock.Anything, mock.Anything).Return(nil).Once()
+
+	_, err := svc.CreateReturn(context.Background(), 7, Actor{StaffID: 30, CanApprove: true}, CreateReturnRequest{
+		SaleID: saleID, Items: []CreateReturnItemRequest{sellable(1, qty)}, ReasonCode: ReturnReasonCodeOther, RefundMethod: RefundMethodCash,
+	})
+	require.NoError(t, err)
+	return saved
+}
+
+// The refund is what the customer paid for the line (tax already inside it);
+// TaxRefunded is just the part of that which is tax, at the line's stored rate.
+func TestService_CreateReturn_FullReturnOfATaxedLine_RefundsTheLineTotalAndTheTaxInIt(t *testing.T) {
+	got := returnLine(t, sales.SaleItem{Qty: 4, LineTotal: d("42000"), TaxPercent: d("5"), Tax: d("2000")}, 4)
+
+	require.True(t, d("42000").Equal(got.RefundTotal))
+	require.True(t, d("2000").Equal(got.TaxRefunded), "42,000 x 5 / 105 (got %s)", got.TaxRefunded)
+}
+
+func TestService_CreateReturn_PartialReturnOfATaxedLine_RefundsTheShareAndItsTax(t *testing.T) {
+	got := returnLine(t, sales.SaleItem{Qty: 3, LineTotal: d("10500"), TaxPercent: d("5"), Tax: d("500")}, 1)
+
+	require.True(t, d("3500").Equal(got.RefundTotal))
+	require.True(t, d("166.67").Equal(got.TaxRefunded), "3,500 x 5 / 105 (got %s)", got.TaxRefunded)
+}
+
+// A line sold at a discount refunds what was actually paid, so the tax given
+// back is the (smaller) tax inside that.
+func TestService_CreateReturn_DiscountedTaxedLine_RefundsTheTaxOfWhatWasPaid(t *testing.T) {
+	// 2 x 6,500 less 10% = 11,800 paid, 561.90 tax inside it
+	got := returnLine(t, sales.SaleItem{Qty: 2, LineTotal: d("11800"), TaxPercent: d("5"), Tax: d("561.90")}, 1)
+
+	require.True(t, d("5900").Equal(got.RefundTotal))
+	require.True(t, d("280.95").Equal(got.TaxRefunded))
+}
+
+// A line from before tax was a rate has no stored rate: its refund is as it
+// always was and no tax is reported back.
+func TestService_CreateReturn_LineFromBeforeTaxWasARate_RefundsTheSameAndReportsNoTax(t *testing.T) {
+	got := returnLine(t, sales.SaleItem{Qty: 4, LineTotal: d("40.00"), Tax: d("2.00")}, 2)
+
+	require.True(t, d("20.00").Equal(got.RefundTotal))
+	require.True(t, got.TaxRefunded.IsZero())
+}
+
+func TestService_CreateReturn_TwoLinesWithDifferentRates_SumTheirTaxRefunded(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	salesRepo := NewMockSalesReader(t)
+	inv := NewMockInventoryWriter(t)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, branches, salesRepo, inv, audW)
+	saleID := uuid.New()
+	lines := []sales.SaleItem{
+		{ID: 1, SaleID: saleID, ProductID: 2, Qty: 1, LineTotal: d("10500"), TaxPercent: d("5")},
+		{ID: 2, SaleID: saleID, ProductID: 3, Qty: 1, LineTotal: d("1100"), TaxPercent: d("10")},
+		{ID: 3, SaleID: saleID, ProductID: 4, Qty: 1, LineTotal: d("700")},
+	}
+	salesRepo.EXPECT().GetSaleWithLock(mock.Anything, uint(7), saleID).Return(&sales.Sale{ID: saleID, OrgID: 7, BranchID: 5, Status: sales.SaleStatusCompleted}, nil).Once()
+	salesRepo.EXPECT().ListSaleItemsTx(mock.Anything, saleID).Return(lines, nil).Once()
+	salesRepo.EXPECT().UpdateSaleStatus(mock.Anything, saleID, mock.Anything).Return(nil).Maybe()
+	repo.EXPECT().ReturnedQtyForSaleItem(mock.Anything, mock.Anything).Return(0, nil).Maybe()
+	repo.EXPECT().ExchangedInQtyForSaleItem(mock.Anything, mock.Anything).Return(0, nil).Maybe()
+	var saved Return
+	repo.EXPECT().CreateReturn(mock.Anything, mock.Anything).Run(func(_ *gorm.DB, r *Return) { r.ID = 401; saved = *r }).Return(nil).Once()
+	repo.EXPECT().CreateReturnItems(mock.Anything, mock.Anything).Return(nil).Once()
+	inv.EXPECT().GetStockLevel(mock.Anything, mock.Anything, mock.Anything).Return(&inventory.StockLevel{ID: 50, Qty: 10}, nil).Maybe()
+	inv.EXPECT().UpdateStockLevelQty(mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+	inv.EXPECT().CreateInventoryLedgerEntry(mock.Anything, mock.Anything).Return(nil).Maybe()
+	audW.EXPECT().CreateAuditLog(mock.Anything, mock.Anything).Return(nil).Once()
+
+	_, err := svc.CreateReturn(context.Background(), 7, Actor{StaffID: 30, CanApprove: true}, CreateReturnRequest{
+		SaleID: saleID, ReasonCode: ReturnReasonCodeOther, RefundMethod: RefundMethodCash,
+		Items: []CreateReturnItemRequest{sellable(1, 1), sellable(2, 1), sellable(3, 1)},
+	})
+
+	require.NoError(t, err)
+	require.True(t, d("12300").Equal(saved.RefundTotal))
+	require.True(t, d("600").Equal(saved.TaxRefunded), "500 + 100 + 0 (got %s)", saved.TaxRefunded)
+}
+
+// exchangeForProduct3 brings back product 2 (one line: 10,500 paid at 5% tax)
+// and takes product 3, which the lookup prices as given. It returns the Exchange
+// and the lines the service stored.
+func exchangeForProduct3(t *testing.T, product *catalog.Product, req CreateExchangeItemRequest) (*Exchange, []ExchangeItem) {
+	t.Helper()
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	salesRepo := NewMockSalesReader(t)
+	inv := NewMockInventoryWriter(t)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, branches, salesRepo, inv, audW)
+	products := NewMockProductLookup(t)
+	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(3)).Return(product, nil).Once()
+	svc.products = products
+
+	saleID := uuid.New()
+	items := []sales.SaleItem{{ID: 1, SaleID: saleID, ProductID: 2, Qty: 1, LineTotal: d("10500"), TaxPercent: d("5"), Tax: d("500")}}
+	salesRepo.EXPECT().GetSaleWithLock(mock.Anything, uint(7), saleID).Return(&sales.Sale{ID: saleID, OrgID: 7, BranchID: 5, Status: sales.SaleStatusCompleted}, nil).Once()
+	salesRepo.EXPECT().ListSaleItemsTx(mock.Anything, saleID).Return(items, nil).Once()
+	repo.EXPECT().ReturnedQtyForSaleItem(mock.Anything, uint(1)).Return(0, nil).Once()
+	repo.EXPECT().ExchangedInQtyForSaleItem(mock.Anything, uint(1)).Return(0, nil).Once()
+	var saved Exchange
+	repo.EXPECT().CreateExchange(mock.Anything, mock.Anything).Run(func(_ *gorm.DB, e *Exchange) { e.ID = 330; saved = *e }).Return(nil).Once()
+	var savedItems []ExchangeItem
+	repo.EXPECT().CreateExchangeItems(mock.Anything, mock.Anything).Run(func(_ *gorm.DB, items []ExchangeItem) { savedItems = items }).Return(nil).Once()
+	inv.EXPECT().GetStockLevel(mock.Anything, mock.Anything, mock.Anything).Return(&inventory.StockLevel{ID: 50, Qty: 10}, nil).Maybe()
+	inv.EXPECT().UpdateStockLevelQty(mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+	inv.EXPECT().CreateInventoryLedgerEntry(mock.Anything, mock.Anything).Return(nil).Maybe()
+	audW.EXPECT().CreateAuditLog(mock.Anything, mock.Anything).Return(nil).Once()
+
+	got, err := svc.CreateExchange(context.Background(), 7, Actor{StaffID: 30, CanApprove: true}, CreateExchangeRequest{
+		SaleID: saleID, Method: ExchangeMethodCash,
+		Items: []CreateExchangeItemRequest{{Direction: DirectionIn, SaleItemID: uintPtr(1), Qty: 1}, req},
+	})
+	require.NoError(t, err)
+	require.Equal(t, uint(330), saved.ID)
+	return got, savedItems
+}
+
+func outLine(t *testing.T, items []ExchangeItem) ExchangeItem {
+	t.Helper()
+	for _, it := range items {
+		if it.Direction == DirectionOut {
+			return it
+		}
+	}
+	t.Fatal("no out line saved")
+	return ExchangeItem{}
+}
+
+// The new goods are priced from the PRODUCT: its sale price (catalog discount
+// applied) with its tax already inside - not from a price the client typed, and
+// with no tax added on top. 5,900 at 5% carries 280.95 of tax.
+func TestService_CreateExchange_OutLine_IsPricedFromTheProductWithItsIncludedTax(t *testing.T) {
+	product := &catalog.Product{ID: 3, OrgID: 7, Price: d("6500"), DiscountPercent: d("10"), SalePrice: d("5900"), TaxPercent: d("5")}
+
+	got, items := exchangeForProduct3(t, product, CreateExchangeItemRequest{Direction: DirectionOut, ProductID: uintPtr(3), Qty: 1})
+
+	out := outLine(t, items)
+	require.True(t, d("5900").Equal(out.UnitPrice), "the sale price (got %s)", out.UnitPrice)
+	require.True(t, d("5").Equal(out.TaxPercent))
+	require.True(t, d("280.95").Equal(out.Tax), "(got %s)", out.Tax)
+	require.True(t, d("-4600").Equal(got.NetDifference), "out 5,900 - in 10,500; tax is never added on top (got %s)", got.NetDifference)
+	require.True(t, d("280.95").Equal(got.TaxOut))
+	require.True(t, d("500").Equal(got.TaxIn), "the in line's stored 5%% of 10,500")
+	require.Len(t, got.Items, 2, "the response carries the priced lines")
+}
+
+// An "out" price the client sends (an old till still does) is not read.
+func TestService_CreateExchange_OutLine_ClientUnitPriceIsIgnored(t *testing.T) {
+	product := &catalog.Product{ID: 3, OrgID: 7, Price: d("6500"), SalePrice: d("6500"), TaxPercent: d("5")}
+	cheap := d("1")
+
+	got, items := exchangeForProduct3(t, product, CreateExchangeItemRequest{Direction: DirectionOut, ProductID: uintPtr(3), Qty: 1, UnitPrice: &cheap})
+
+	require.True(t, d("6500").Equal(outLine(t, items).UnitPrice))
+	require.True(t, d("-4000").Equal(got.NetDifference))
+}
+
+func TestService_CreateExchange_OutLineQty_MultipliesThePriceAndTheTax(t *testing.T) {
+	product := &catalog.Product{ID: 3, OrgID: 7, Price: d("10500"), SalePrice: d("10500"), TaxPercent: d("5")}
+
+	got, items := exchangeForProduct3(t, product, CreateExchangeItemRequest{Direction: DirectionOut, ProductID: uintPtr(3), Qty: 3})
+
+	require.True(t, d("1500").Equal(outLine(t, items).Tax), "31,500 x 5 / 105")
+	require.True(t, d("1500").Equal(got.TaxOut))
+	require.True(t, d("21000").Equal(got.NetDifference), "31,500 - 10,500")
+}
+
+func TestService_CreateExchange_ZeroPercentOutLine_HasNoTax(t *testing.T) {
+	product := &catalog.Product{ID: 3, OrgID: 7, Price: d("10500"), SalePrice: d("10500")}
+
+	got, items := exchangeForProduct3(t, product, CreateExchangeItemRequest{Direction: DirectionOut, ProductID: uintPtr(3), Qty: 1})
+
+	require.True(t, outLine(t, items).Tax.IsZero())
+	require.True(t, got.TaxOut.IsZero())
+	require.True(t, d("500").Equal(got.TaxIn))
+}
+
+// A product row that was never priced (sale_price 0, no percent) sells at its
+// price, same as at the till.
+func TestService_CreateExchange_OutLine_ProductWithoutAStoredSalePrice_SellsAtItsPrice(t *testing.T) {
+	product := &catalog.Product{ID: 3, OrgID: 7, Price: d("10500")}
+
+	_, items := exchangeForProduct3(t, product, CreateExchangeItemRequest{Direction: DirectionOut, ProductID: uintPtr(3), Qty: 1})
+
+	require.True(t, d("10500").Equal(outLine(t, items).UnitPrice))
+}
+
+func TestService_CreateExchange_InLine_RecordsItsStoredRateAndTheTaxInTheCredit(t *testing.T) {
+	product := &catalog.Product{ID: 3, OrgID: 7, Price: d("10500"), SalePrice: d("10500")}
+
+	_, items := exchangeForProduct3(t, product, CreateExchangeItemRequest{Direction: DirectionOut, ProductID: uintPtr(3), Qty: 1})
+
+	in := inLine(t, items)
+	require.True(t, d("5").Equal(in.TaxPercent))
+	require.True(t, d("500").Equal(in.Tax))
+}
+
+func TestService_CreateExchange_OutLine_UnknownProduct_PropagatesNotFound(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	salesRepo := NewMockSalesReader(t)
+	inv := NewMockInventoryWriter(t)
+	audW := NewMockAuditWriter(t)
+	svc := newTestService(repo, branches, salesRepo, inv, audW)
+	products := NewMockProductLookup(t)
+	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(99)).Return(nil, common.NotFoundError("product not found")).Once()
+	svc.products = products
+	saleID := uuid.New()
+	salesRepo.EXPECT().GetSaleWithLock(mock.Anything, uint(7), saleID).Return(&sales.Sale{ID: saleID, OrgID: 7, BranchID: 5, Status: sales.SaleStatusCompleted}, nil).Once()
+	salesRepo.EXPECT().ListSaleItemsTx(mock.Anything, saleID).Return([]sales.SaleItem{}, nil).Once()
+	// CreateExchange must never be called.
+
+	_, err := svc.CreateExchange(context.Background(), 7, Actor{StaffID: 30, CanApprove: true}, CreateExchangeRequest{
+		SaleID: saleID, Method: ExchangeMethodCash,
+		Items: []CreateExchangeItemRequest{{Direction: DirectionOut, ProductID: uintPtr(99), Qty: 1}},
+	})
+
+	requireRestErrorStatus(t, err, http.StatusNotFound)
 }

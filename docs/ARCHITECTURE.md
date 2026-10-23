@@ -95,9 +95,10 @@ state for the one request they authorise.
 
 - **Backend:** `decimal(10,2)` columns via `shopspring/decimal`. Money crosses
   the API as **decimal strings**, never floats.
-- **Server-derived totals.** `POST /sales` recomputes subtotal, discount, tax
-  and total from the items and rejects a sale whose payments don't add up
-  exactly.
+- **Server-derived totals.** `POST /sales` prices every line from its product
+  and recomputes subtotal, discount, tax and total (`total = subtotal -
+  discount`: tax is a % per product that is already inside the price, never
+  added) and rejects a sale whose payments don't add up exactly.
 - **Till:** works in **integer cents** (`shagan-retail/lib/pos/pricing.ts`) and
   converts only at the edges. An order discount is split across lines in
   proportion to their value, and the rounding remainder goes to the largest

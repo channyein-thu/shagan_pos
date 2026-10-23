@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 
 	"shagan_pos/internal/audit"
+	"shagan_pos/internal/catalog"
 	"shagan_pos/internal/common"
 	"shagan_pos/internal/inventory"
 	"shagan_pos/internal/sales"
@@ -18,13 +19,14 @@ type Service struct {
 	repo      Repository
 	branches  BranchLookup
 	salesRepo SalesReader
+	products  ProductLookup
 	inventory InventoryWriter
 	audit     AuditWriter
 	db        common.Transactioner
 }
 
-func NewService(repo Repository, branches BranchLookup, salesRepo SalesReader, inv InventoryWriter, auditWriter AuditWriter, db common.Transactioner) *Service {
-	return &Service{repo: repo, branches: branches, salesRepo: salesRepo, inventory: inv, audit: auditWriter, db: db}
+func NewService(repo Repository, branches BranchLookup, salesRepo SalesReader, products ProductLookup, inv InventoryWriter, auditWriter AuditWriter, db common.Transactioner) *Service {
+	return &Service{repo: repo, branches: branches, salesRepo: salesRepo, products: products, inventory: inv, audit: auditWriter, db: db}
 }
 
 var _ Interface = (*Service)(nil)
@@ -237,8 +239,10 @@ func (s *Service) ListVoids(ctx context.Context, orgID uint, branchID *uint) ([]
 // CreateReturn confirms the sale is completed and every item belongs to it
 // with enough not-yet-returned-or-exchanged-in qty remaining, computes
 // RefundTotal as each returned item's own original per-unit price (derived
-// from SaleItem.LineTotal, so it's already net of that line's own discount)
-// times the qty being returned, and restocks each Condition
+// from SaleItem.LineTotal, so it's already net of that line's own discount
+// and already contains its tax) times the qty being returned, records the tax
+// inside that refund (TaxRefunded, at the sale line's own stored rate - never
+// today's product), and restocks each Condition
 // ItemConditionSellable item at the sale's own branch - all atomically.
 func (s *Service) CreateReturn(ctx context.Context, orgID uint, actor Actor, in CreateReturnRequest) (*Return, error) {
 	if !actor.CanApprove {
@@ -263,7 +267,7 @@ func (s *Service) CreateReturn(ctx context.Context, orgID uint, actor Actor, in 
 			bySaleItemID[si.ID] = si
 		}
 
-		refundTotal := decimal.Zero
+		refundTotal, taxRefunded := decimal.Zero, decimal.Zero
 		returnItems := make([]ReturnItem, 0, len(in.Items))
 		creditByProduct := make(map[uint]int)
 		var writeoffProducts []uint
@@ -296,6 +300,9 @@ func (s *Service) CreateReturn(ctx context.Context, orgID uint, actor Actor, in 
 			unitRefund := saleItem.LineTotal.Div(decimal.NewFromInt(int64(saleItem.Qty)))
 			lineRefund := unitRefund.Mul(decimal.NewFromInt(int64(reqItem.Qty))).Round(2)
 			refundTotal = refundTotal.Add(lineRefund)
+			// The refund contains the tax the customer paid: report the part of
+			// it that is tax, per line, at the rate stored on the sale line.
+			taxRefunded = taxRefunded.Add(common.IncludedTax(unitRefund.Mul(decimal.NewFromInt(int64(reqItem.Qty))), saleItem.TaxPercent))
 
 			restocked := reqItem.Condition == ItemConditionSellable
 			returnItems = append(returnItems, ReturnItem{
@@ -322,6 +329,7 @@ func (s *Service) CreateReturn(ctx context.Context, orgID uint, actor Actor, in 
 			Explanation:  in.Explanation,
 			RefundMethod: in.RefundMethod,
 			RefundTotal:  refundTotal,
+			TaxRefunded:  taxRefunded,
 			ApprovedBy:   actor.StaffID,
 			ShiftID:      shiftID,
 		}
@@ -401,7 +409,10 @@ func (s *Service) GetReturn(ctx context.Context, orgID uint, id uint) (*Return, 
 // CreateExchange confirms the sale is completed, computes NetDifference as
 // (every "out" item's qty*unit_price) minus (every "in" item's own original
 // per-unit sale price*qty) - positive means the customer owes more,
-// negative means they're owed the difference - credits stock for every
+// negative means they're owed the difference. An "out" item is priced from the
+// PRODUCT (its sale price, tax already inside - never a client price, and no
+// tax added on top); each line records its tax rate and the tax inside it, and
+// the exchange totals them as TaxIn / TaxOut. Credits stock for every
 // "in" item and decrements it for every "out" item at the sale's own
 // branch, all atomically. Modeled as one combined transaction record
 // (Exchange/ExchangeItem), not a chained Return-then-Sale.
@@ -428,7 +439,8 @@ func (s *Service) CreateExchange(ctx context.Context, orgID uint, actor Actor, i
 			bySaleItemID[si.ID] = si
 		}
 
-		netDifference := decimal.Zero
+		netDifference, taxIn, taxOut := decimal.Zero, decimal.Zero, decimal.Zero
+		products := make(map[uint]*catalog.Product)
 		exchangeItems := make([]ExchangeItem, 0, len(in.Items))
 		creditByProduct := make(map[uint]int)
 		debitByProduct := make(map[uint]int)
@@ -459,6 +471,10 @@ func (s *Service) CreateExchange(ctx context.Context, orgID uint, actor Actor, i
 				unitPrice := saleItem.LineTotal.Div(decimal.NewFromInt(int64(saleItem.Qty))).Round(2)
 				lineValue := unitPrice.Mul(decimal.NewFromInt(int64(reqItem.Qty)))
 				netDifference = netDifference.Sub(lineValue)
+				// the credit contains the tax the customer paid, at the rate
+				// stored on the sale line
+				lineTax := common.IncludedTax(lineValue, saleItem.TaxPercent)
+				taxIn = taxIn.Add(lineTax)
 
 				// Same rule as a Return: only sellable goods go back on the
 				// shelf. An omitted condition is sellable (older clients
@@ -476,19 +492,33 @@ func (s *Service) CreateExchange(ctx context.Context, orgID uint, actor Actor, i
 				productID := saleItem.ProductID
 				exchangeItems = append(exchangeItems, ExchangeItem{
 					Direction: DirectionIn, SaleItemID: reqItem.SaleItemID, ProductID: &productID,
-					Qty: reqItem.Qty, UnitPrice: unitPrice, Condition: &condition,
+					Qty: reqItem.Qty, UnitPrice: unitPrice, TaxPercent: saleItem.TaxPercent, Tax: lineTax, Condition: &condition,
 				})
 			case DirectionOut:
-				if reqItem.ProductID == nil || reqItem.UnitPrice == nil {
-					return common.BadRequestError("product_id and unit_price are required for an \"out\" item")
+				if reqItem.ProductID == nil {
+					return common.BadRequestError("product_id is required for an \"out\" item")
 				}
-				lineValue := reqItem.UnitPrice.Mul(decimal.NewFromInt(int64(reqItem.Qty))).Round(2)
+				product, ok := products[*reqItem.ProductID]
+				if !ok {
+					var err error
+					if product, err = s.products.GetProduct(ctx, orgID, *reqItem.ProductID); err != nil {
+						return err
+					}
+					products[*reqItem.ProductID] = product
+				}
+				// Priced from the product, like a sale: its sale price (catalog
+				// discount applied) already contains the tax. A unit_price in
+				// the request is not read.
+				unitPrice := product.EffectiveSalePrice()
+				lineValue := unitPrice.Mul(decimal.NewFromInt(int64(reqItem.Qty))).Round(2)
 				netDifference = netDifference.Add(lineValue)
+				lineTax := common.IncludedTax(lineValue, product.TaxPercent)
+				taxOut = taxOut.Add(lineTax)
 				debitByProduct[*reqItem.ProductID] += reqItem.Qty
 
 				exchangeItems = append(exchangeItems, ExchangeItem{
 					Direction: DirectionOut, ProductID: reqItem.ProductID,
-					Qty: reqItem.Qty, UnitPrice: *reqItem.UnitPrice,
+					Qty: reqItem.Qty, UnitPrice: unitPrice, TaxPercent: product.TaxPercent, Tax: lineTax,
 				})
 			default:
 				return common.BadRequestError("direction must be \"in\" or \"out\"")
@@ -510,7 +540,7 @@ func (s *Service) CreateExchange(ctx context.Context, orgID uint, actor Actor, i
 			return err
 		}
 
-		ex = Exchange{SaleID: in.SaleID, NetDifference: netDifference, ApprovedBy: actor.StaffID, Method: method, ShiftID: shiftID}
+		ex = Exchange{SaleID: in.SaleID, NetDifference: netDifference, TaxIn: taxIn, TaxOut: taxOut, ApprovedBy: actor.StaffID, Method: method, ShiftID: shiftID}
 		if err := s.repo.CreateExchange(tx, &ex); err != nil {
 			return err
 		}
@@ -520,6 +550,8 @@ func (s *Service) CreateExchange(ctx context.Context, orgID uint, actor Actor, i
 		if err := s.repo.CreateExchangeItems(tx, exchangeItems); err != nil {
 			return err
 		}
+		// so the response shows what the "out" lines were priced at
+		ex.Items = exchangeItems
 
 		exchangeRef := strconv.FormatUint(uint64(ex.ID), 10)
 		for productID, qty := range creditByProduct {

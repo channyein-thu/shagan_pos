@@ -48,6 +48,13 @@ func allowOrg(b *MockBranchLookup) {
 		Return(&identity.Organization{Timezone: "Asia/Yangon"}, nil).Maybe()
 }
 
+// allowNoTax answers the tax-totals query with nothing but zeros - for tests
+// about other figures.
+func allowNoTax(r *MockRepository) {
+	r.EXPECT().TaxTotals(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(TaxTotals{}, nil).Maybe()
+}
+
 func TestResolveDateRange_NoBounds_DefaultsToLast30DaysEndingTodayInOrgZone(t *testing.T) {
 	loc := yangon(t)
 	start, end := resolveDateRange(loc, nil, nil)
@@ -154,6 +161,7 @@ func TestService_GetHomeSummary_ComposesTotalsAndLowStockCount(t *testing.T) {
 	repo := NewMockRepository(t)
 	branches := NewMockBranchLookup(t)
 	svc := NewService(repo, branches)
+	allowNoTax(repo)
 	allowOrg(branches)
 
 	repo.EXPECT().SalesAggregate(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).
@@ -207,6 +215,7 @@ func TestService_GetTodayReport_ComposesAllFourQueries(t *testing.T) {
 	repo := NewMockRepository(t)
 	branches := NewMockBranchLookup(t)
 	svc := NewService(repo, branches)
+	allowNoTax(repo)
 	allowOrg(branches)
 
 	repo.EXPECT().SalesAggregate(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).
@@ -265,6 +274,7 @@ func TestService_GetSalesSummary_ComposesTotalsAndAllThreeBreakdowns(t *testing.
 	repo := NewMockRepository(t)
 	branches := NewMockBranchLookup(t)
 	svc := NewService(repo, branches)
+	allowNoTax(repo)
 	allowOrg(branches)
 
 	repo.EXPECT().SalesAggregate(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).
@@ -442,6 +452,7 @@ func TestService_GetProfitAndLoss_OrgWide_ComposesAllFourFigures(t *testing.T) {
 	repo := NewMockRepository(t)
 	branches := NewMockBranchLookup(t)
 	svc := NewService(repo, branches)
+	allowNoTax(repo)
 	allowOrg(branches)
 
 	orgBranches := []identity.Branch{{ID: 5, OrgID: 7}, {ID: 6, OrgID: 7}}
@@ -471,6 +482,7 @@ func TestService_GetProfitAndLoss_ScopedToOneBranch(t *testing.T) {
 	repo := NewMockRepository(t)
 	branches := NewMockBranchLookup(t)
 	svc := NewService(repo, branches)
+	allowNoTax(repo)
 	allowOrg(branches)
 
 	branchID := uint(5)
@@ -495,6 +507,7 @@ func TestService_GetProfitAndLoss_PropagatesCOGSError(t *testing.T) {
 	repo := NewMockRepository(t)
 	branches := NewMockBranchLookup(t)
 	svc := NewService(repo, branches)
+	allowNoTax(repo)
 	allowOrg(branches)
 
 	repo.EXPECT().SalesAggregate(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).
@@ -536,6 +549,7 @@ func newZonedService(t *testing.T, tz string) (*Service, *MockRepository, *MockB
 // from 17:30 UTC on Oct 7 to 17:30 UTC on Oct 8, and that is what hits the queries.
 func TestService_GetSalesSummary_DatesAreOrgLocalDays(t *testing.T) {
 	svc, repo, _ := newZonedService(t, "Asia/Yangon")
+	allowNoTax(repo)
 	from := time.Date(2026, 10, 8, 0, 0, 0, 0, time.UTC)
 	to := time.Date(2026, 10, 8, 0, 0, 0, 0, time.UTC)
 	wantStart := time.Date(2026, 10, 7, 17, 30, 0, 0, time.UTC)
@@ -557,6 +571,7 @@ func TestService_GetSalesSummary_DatesAreOrgLocalDays(t *testing.T) {
 
 func TestService_GetTodayReport_BucketsHoursInTheOrgZone(t *testing.T) {
 	svc, repo, _ := newZonedService(t, "Asia/Bangkok")
+	allowNoTax(repo)
 	repo.EXPECT().SalesAggregate(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).Return(SalesAggregate{}, nil).Once()
 	repo.EXPECT().ReturnsTotal(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).Return(decimal.Zero, nil).Once()
 	repo.EXPECT().HourlyTrend(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything, "Asia/Bangkok").Return(nil, nil).Once()
@@ -581,6 +596,7 @@ func TestService_GetSalesTrend_DailyBucketsCutInTheOrgZone(t *testing.T) {
 // would read as Oct 7.
 func TestService_GetProfitAndLoss_ExpensesAreComparedAsCalendarDates(t *testing.T) {
 	svc, repo, branches := newZonedService(t, "Asia/Yangon")
+	allowNoTax(repo)
 	from := time.Date(2026, 10, 8, 0, 0, 0, 0, time.UTC)
 	to := time.Date(2026, 10, 8, 0, 0, 0, 0, time.UTC)
 
@@ -682,4 +698,130 @@ func TestService_GetDiscountsReport_RepositoryError_Propagates(t *testing.T) {
 	_, err := svc.GetDiscountsReport(context.Background(), 7, nil, nil, nil)
 
 	require.ErrorIs(t, err, boom)
+}
+
+// --- tax collected (Tax V1: tax is inside the price) ---
+
+// taxTotalsFor wires a sales-summary request over a period with the given sale
+// aggregate, refunds and tax totals, and returns the summary.
+func summaryWith(t *testing.T, agg SalesAggregate, returnsTotal string, tax TaxTotals) *SalesSummary {
+	t.Helper()
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	svc := NewService(repo, branches)
+	allowOrg(branches)
+	repo.EXPECT().SalesAggregate(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).Return(agg, nil).Once()
+	repo.EXPECT().ReturnsTotal(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).Return(d(returnsTotal), nil).Once()
+	repo.EXPECT().TaxTotals(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).Return(tax, nil).Once()
+	repo.EXPECT().BranchBreakdown(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil, nil).Once()
+	repo.EXPECT().PaymentMethodBreakdown(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil, nil).Once()
+	repo.EXPECT().CategoryBreakdown(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil, nil).Once()
+	got, err := svc.GetSalesSummary(context.Background(), 7, nil, nil, nil)
+	require.NoError(t, err)
+	return got
+}
+
+// A 5% sale (10,500, 500 of it tax) and a 0% sale (700), then 3,500 of the
+// first one handed back (166.67 of tax) and an exchange that took 100 more tax.
+// Net sales is what the shop took; tax collected is the tax inside it.
+func TestService_GetSalesSummary_TaxCollected_IsSaleTaxLessRefundedTaxPlusExchangeTax(t *testing.T) {
+	got := summaryWith(t, SalesAggregate{Gross: d("11200"), Count: 2}, "3500",
+		TaxTotals{SalesTax: d("500"), TaxRefunded: d("166.67"), ExchangeTaxDelta: d("100")})
+
+	require.True(t, d("7700").Equal(got.NetSales), "11,200 - 3,500: tax-inclusive, the shop's takings (got %s)", got.NetSales)
+	require.True(t, d("433.33").Equal(got.TaxCollected), "500 - 166.67 + 100 (got %s)", got.TaxCollected)
+	require.True(t, d("7266.67").Equal(got.NetSalesExclTax), "7,700 - 433.33 (got %s)", got.NetSalesExclTax)
+}
+
+// A sale from before added its tax on top, so its net sales (subtotal -
+// discount) never contained the tax: subtracting it again would understate the
+// figure. It still counts as tax collected.
+func TestService_GetSalesSummary_SaleFromBeforeInclusiveTax_IsNotSubtractedFromNetSalesAgain(t *testing.T) {
+	got := summaryWith(t, SalesAggregate{Gross: d("800"), Count: 1}, "0", TaxTotals{SalesTax: d("40"), AddedOnTopTax: d("40")})
+
+	require.True(t, d("800").Equal(got.NetSales))
+	require.True(t, d("40").Equal(got.TaxCollected), "the customer did pay it")
+	require.True(t, d("800").Equal(got.NetSalesExclTax), "net sales already excluded it")
+}
+
+func TestService_GetSalesSummary_MixOfOldAndNewSales_OnlyTheInclusivePartIsTakenOutOfNetSales(t *testing.T) {
+	got := summaryWith(t, SalesAggregate{Gross: d("11300"), Count: 2}, "0", TaxTotals{SalesTax: d("540"), AddedOnTopTax: d("40")})
+
+	require.True(t, d("540").Equal(got.TaxCollected))
+	require.True(t, d("10800").Equal(got.NetSalesExclTax), "11,300 - (540 - 40)")
+}
+
+func TestService_GetSalesSummary_EmptyPeriod_TaxFiguresAreZeroAndListsAreNotNull(t *testing.T) {
+	got := summaryWith(t, SalesAggregate{}, "0", TaxTotals{})
+
+	require.True(t, got.TaxCollected.IsZero())
+	require.True(t, got.NetSalesExclTax.IsZero())
+	body, err := json.Marshal(got)
+	require.NoError(t, err)
+	require.Contains(t, string(body), `"tax_collected":"0"`)
+	require.Contains(t, string(body), `"net_sales_excl_tax":"0"`)
+	require.Contains(t, string(body), `"by_branch":[]`, "lists are never null")
+	require.Contains(t, string(body), `"by_payment_method":[]`)
+	require.Contains(t, string(body), `"by_category":[]`)
+}
+
+func TestService_GetTodayReport_CarriesTaxCollected(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	svc := NewService(repo, branches)
+	allowOrg(branches)
+	repo.EXPECT().SalesAggregate(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).Return(SalesAggregate{Gross: d("10500"), Count: 1}, nil).Once()
+	repo.EXPECT().ReturnsTotal(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).Return(decimal.Zero, nil).Once()
+	repo.EXPECT().TaxTotals(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).Return(TaxTotals{SalesTax: d("500")}, nil).Once()
+	repo.EXPECT().HourlyTrend(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil, nil).Once()
+	repo.EXPECT().PaymentMethodBreakdown(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil, nil).Once()
+	repo.EXPECT().ProductSales(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil, nil).Once()
+
+	got, err := svc.GetTodayReport(context.Background(), 7, nil)
+
+	require.NoError(t, err)
+	require.True(t, d("500").Equal(got.TaxCollected))
+	require.True(t, d("10000").Equal(got.NetSalesExclTax))
+	body, err := json.Marshal(got)
+	require.NoError(t, err)
+	require.Contains(t, string(body), `"hourly_trend":[]`)
+	require.Contains(t, string(body), `"payment_methods":[]`)
+	require.Contains(t, string(body), `"top_products":[]`)
+}
+
+func TestService_GetSalesSummary_TaxQueryFails_PropagatesAsIs(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	svc := NewService(repo, branches)
+	allowOrg(branches)
+	boom := errors.New("db down")
+	repo.EXPECT().SalesAggregate(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(SalesAggregate{}, nil).Once()
+	repo.EXPECT().ReturnsTotal(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(decimal.Zero, nil).Once()
+	repo.EXPECT().TaxTotals(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(TaxTotals{}, boom).Once()
+
+	_, err := svc.GetSalesSummary(context.Background(), 7, nil, nil, nil)
+
+	require.ErrorIs(t, err, boom)
+}
+
+// Profit is worked out on revenue WITHOUT the tax: the tax inside a price is
+// the government's, not the shop's.
+func TestService_GetProfitAndLoss_GrossProfitIsTakenOnNetSalesWithoutTax(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	svc := NewService(repo, branches)
+	allowOrg(branches)
+	repo.EXPECT().SalesAggregate(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).Return(SalesAggregate{Gross: d("10500"), Count: 1}, nil).Once()
+	repo.EXPECT().ReturnsTotal(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).Return(decimal.Zero, nil).Once()
+	repo.EXPECT().TaxTotals(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).Return(TaxTotals{SalesTax: d("500")}, nil).Once()
+	repo.EXPECT().COGS(mock.Anything, uint(7), (*uint)(nil), mock.Anything, mock.Anything).Return(d("6000"), nil).Once()
+	branches.EXPECT().ListBranches(mock.Anything, uint(7)).Return([]identity.Branch{{ID: 5, OrgID: 7}}, nil).Once()
+	repo.EXPECT().Expenses(mock.Anything, []uint{5}, mock.Anything, mock.Anything).Return(d("1000"), nil).Once()
+
+	got, err := svc.GetProfitAndLoss(context.Background(), 7, nil, nil, nil)
+
+	require.NoError(t, err)
+	require.True(t, d("10500").Equal(got.NetSales))
+	require.True(t, d("4000").Equal(got.GrossProfit), "10,500 - 500 tax - 6,000 cost (got %s)", got.GrossProfit)
+	require.True(t, d("3000").Equal(got.NetProfit))
 }

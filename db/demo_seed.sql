@@ -16,6 +16,14 @@
 -- The same run backfills the demo products' discount percent / sale price from
 -- their old fixed discount amount (prices unchanged) and gives each Cashier the
 -- "may ask for a custom discount" permission.
+-- TAX: products here still carry the OLD fixed tax amount (e.g. 40.00 on an
+-- 800.00 drink) and tax_percent 0. The tax-percent conversion runs ONCE per
+-- database (recorded in data_migrations), so if this file is loaded into a
+-- database that has already started with the new code, convert them by hand:
+--   DELETE FROM data_migrations WHERE name = '2026-10-23-product-tax-percent';
+-- and restart `go run ./cmd` (the 5% demo products become tax_percent 5.00 with
+-- their prices untouched). The demo SALES keep their old added-on-top tax, which
+-- is correct for them (tax_inclusive = false).
 --
 -- SAFE TO RUN ON A NON-EMPTY DATABASE: ids are allocated after the current
 -- maximum, sequences are advanced afterwards, and the whole file is one

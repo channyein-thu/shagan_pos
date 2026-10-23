@@ -115,6 +115,32 @@ func TestService_GetCatalogSnapshot_ComboItemsChange_YieldsDifferentETag(t *test
 	require.NotEqual(t, etag1, etag2)
 }
 
+// A product's tax rate is part of what a till caches (it prices and taxes
+// offline from it), so a rate change must change the ETag - otherwise a till
+// would keep taxing at the old rate after a 304.
+func TestService_GetCatalogSnapshot_TaxPercentChange_YieldsDifferentETag(t *testing.T) {
+	repo := NewMockRepository(t)
+	branches := NewMockBranchLookup(t)
+	cat := NewMockCatalogReader(t)
+	sw := NewMockSalesWriter(t)
+	svc := newTestService(repo, branches, cat, sw)
+
+	rate := func(p string) []catalog.ProductResult {
+		return []catalog.ProductResult{{Product: catalog.Product{ID: 1, Name: "Cola", TaxPercent: decimal.RequireFromString(p)}}}
+	}
+	cat.EXPECT().ListProducts(mock.Anything, uint(7)).Return(rate("0"), nil).Once()
+	cat.EXPECT().ListProducts(mock.Anything, uint(7)).Return(rate("5"), nil).Once()
+	cat.EXPECT().ListCategories(mock.Anything, uint(7)).Return(nil, nil).Twice()
+	cat.EXPECT().ListCombos(mock.Anything, uint(7)).Return(nil, nil).Twice()
+
+	_, etag1, err := svc.GetCatalogSnapshot(context.Background(), 7)
+	require.NoError(t, err)
+	snap, etag2, err := svc.GetCatalogSnapshot(context.Background(), 7)
+	require.NoError(t, err)
+	require.NotEqual(t, etag1, etag2)
+	require.True(t, decimal.NewFromInt(5).Equal(snap.Products[0].TaxPercent), "the snapshot must carry the rate")
+}
+
 // TestService_GetCatalogSnapshot_DifferingOnlyByPresignedImageURL_YieldsSameETag
 // guards against a real bug caught in live testing: a presigned image URL
 // is freshly re-signed (different timestamp/signature) on every single
@@ -259,6 +285,38 @@ func TestService_IngestQueuedSales_StalePrice_IsAcceptedAndRecordedAsAConflict(t
 		CreateSyncConflict(mock.Anything, mock.MatchedBy(func(c *SyncConflict) bool {
 			return c.SaleID == saleID && c.Reason == SyncConflictReasonPriceMismatch &&
 				strings.Contains(string(c.Payload), `"product_id":1`) && strings.Contains(string(c.Payload), `"client_unit_price":"6000"`)
+		})).
+		Return(nil).Once()
+
+	got, err := svc.IngestQueuedSales(context.Background(), 7, 5, IngestQueuedSalesRequest{Sales: []sales.CreateSaleRequest{req}})
+
+	require.NoError(t, err)
+	require.True(t, got.Results[0].Success, "the sale is accepted, not rejected")
+}
+
+// A stale tax rate rides on the same price_mismatch conflict as a stale price
+// or discount: one conflict per line, carrying both rates.
+func TestService_IngestQueuedSales_StaleTaxRate_IsRecordedInThePriceMismatchConflict(t *testing.T) {
+	repo := NewMockRepository(t)
+	staff := NewMockStaffLookup(t)
+	sw := NewMockSalesWriter(t)
+	svc := newIngestService(repo, staff, sw)
+
+	saleID := uuid.New()
+	req := queuedSale(saleID)
+	mismatch := sales.PriceMismatch{
+		ProductID: 1, ClientUnitPrice: decimal.NewFromInt(10500), CurrentUnitPrice: decimal.NewFromInt(10500),
+		ClientTaxPercent: decimal.Zero, CurrentTaxPercent: decimal.NewFromInt(5),
+	}
+
+	notStored(sw, saleID)
+	staffOfBranch(staff, 14, 5)
+	sw.EXPECT().CreateSale(mock.Anything, uint(7), uint(5), mock.Anything, req, true).
+		Return(&sales.Sale{ID: saleID, PriceMismatches: []sales.PriceMismatch{mismatch}}, nil, nil).Once()
+	repo.EXPECT().
+		CreateSyncConflict(mock.Anything, mock.MatchedBy(func(c *SyncConflict) bool {
+			return c.SaleID == saleID && c.Reason == SyncConflictReasonPriceMismatch &&
+				strings.Contains(string(c.Payload), `"client_tax_percent":"0"`) && strings.Contains(string(c.Payload), `"current_tax_percent":"5"`)
 		})).
 		Return(nil).Once()
 

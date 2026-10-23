@@ -55,6 +55,50 @@ func (r *RepositoryImpl) ReturnsTotal(ctx context.Context, orgID uint, branchID 
 	return row.Total, nil
 }
 
+func (r *RepositoryImpl) TaxTotals(ctx context.Context, orgID uint, branchID *uint, from, to time.Time) (TaxTotals, error) {
+	var out TaxTotals
+
+	var salesRow struct{ SalesTax, AddedOnTopTax decimal.Decimal }
+	q := r.db.WithContext(ctx).Table("sales").
+		Select("COALESCE(SUM(tax), 0) AS sales_tax, "+
+			"COALESCE(SUM(CASE WHEN tax_inclusive THEN 0 ELSE tax END), 0) AS added_on_top_tax").
+		Where("org_id = ? AND "+completedSalesWhere, orgID, from, to)
+	if branchID != nil {
+		q = q.Where("branch_id = ?", *branchID)
+	}
+	if err := q.Scan(&salesRow).Error; err != nil {
+		return TaxTotals{}, err
+	}
+	out.SalesTax, out.AddedOnTopTax = salesRow.SalesTax, salesRow.AddedOnTopTax
+
+	var refunded struct{ Total decimal.Decimal }
+	q = r.db.WithContext(ctx).Table("returns").
+		Select("COALESCE(SUM(returns.tax_refunded), 0) AS total").
+		Joins("JOIN sales ON sales.id = returns.sale_id").
+		Where("sales.org_id = ? AND returns.created_at >= ? AND returns.created_at < ?", orgID, from, to)
+	if branchID != nil {
+		q = q.Where("sales.branch_id = ?", *branchID)
+	}
+	if err := q.Scan(&refunded).Error; err != nil {
+		return TaxTotals{}, err
+	}
+	out.TaxRefunded = refunded.Total
+
+	var exchanged struct{ Total decimal.Decimal }
+	q = r.db.WithContext(ctx).Table("exchanges").
+		Select("COALESCE(SUM(exchanges.tax_out - exchanges.tax_in), 0) AS total").
+		Joins("JOIN sales ON sales.id = exchanges.sale_id").
+		Where("sales.org_id = ? AND exchanges.created_at >= ? AND exchanges.created_at < ?", orgID, from, to)
+	if branchID != nil {
+		q = q.Where("sales.branch_id = ?", *branchID)
+	}
+	if err := q.Scan(&exchanged).Error; err != nil {
+		return TaxTotals{}, err
+	}
+	out.ExchangeTaxDelta = exchanged.Total
+	return out, nil
+}
+
 // safeTimezone returns timezone only if it is a plain IANA identifier
 // (letters, digits, '_', '+', '-', '/'), else "UTC". The name is interpolated
 // into SQL (GORM's Group/Order can't bind parameters), so this is the guard

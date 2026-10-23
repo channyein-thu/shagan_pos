@@ -1,6 +1,12 @@
 package catalog
 
-import "gorm.io/gorm"
+import (
+	"log/slog"
+
+	"gorm.io/gorm"
+
+	"shagan_pos/internal/common"
+)
 
 // AutoMigrate creates/updates the tables for the catalog domain's models.
 // It never drops or alters existing columns - see gorm's AutoMigrate docs -
@@ -20,13 +26,59 @@ func AutoMigrate(db *gorm.DB) error {
 		&Combo{},
 		&ComboItem{},
 		&ComboImage{},
+		&common.DataMigration{},
 	); err != nil {
 		return err
 	}
 	if err := dropStaleBranchScopeColumn(db); err != nil {
 		return err
 	}
-	return backfillProductDiscountPercent(db)
+	if err := backfillProductDiscountPercent(db); err != nil {
+		return err
+	}
+	// must come after the discount backfill: the per-unit tax it re-derives is
+	// taken from the sale price
+	return common.RunOnce(db, migrationProductTaxPercent, convertProductTaxToPercent)
+}
+
+const migrationProductTaxPercent = "2026-10-23-product-tax-percent"
+
+// convertProductTaxToPercent moves products from the old fixed per-unit tax
+// AMOUNT (which the till added on top of the price) to a RATE that the price
+// already contains. tax_percent = tax / price x 100 (2 dp, capped at 100) and
+// the price is deliberately LEFT ALONE: those customers paid price + tax
+// before and will pay just the price from now on, so the Owner has to review
+// every product converted here - each one is logged. The per-unit `tax` column
+// is then re-derived as the tax inside the sale price.
+//
+// Run once (data_migrations): a conversion that ran on every start would
+// overwrite a rate the Owner later chose with whatever the old amount implied.
+func convertProductTaxToPercent(tx *gorm.DB) error {
+	var converted []struct {
+		ID    uint
+		Name  string
+		Price string
+		Tax   string
+	}
+	if err := tx.Raw(`SELECT id, name, price, tax FROM products
+		WHERE tax > 0 AND price > 0 AND tax_percent = 0 ORDER BY id`).Scan(&converted).Error; err != nil {
+		return err
+	}
+	if err := tx.Exec(`UPDATE products
+		SET tax_percent = CASE WHEN tax * 100.0 / price > 100 THEN 100 ELSE ROUND(tax * 100.0 / price, 2) END
+		WHERE tax > 0 AND price > 0 AND tax_percent = 0`).Error; err != nil {
+		return err
+	}
+	if err := tx.Exec(`UPDATE products
+		SET tax = ROUND(sale_price * tax_percent * 1.0 / (100 + tax_percent), 2)
+		WHERE tax_percent > 0`).Error; err != nil {
+		return err
+	}
+	for _, p := range converted {
+		slog.Warn("product tax converted from a fixed amount to a percent already inside the price - review it",
+			"product_id", p.ID, "name", p.Name, "price", p.Price, "old_tax_amount", p.Tax)
+	}
+	return nil
 }
 
 // backfillProductDiscountPercent moves products from the old fixed per-unit

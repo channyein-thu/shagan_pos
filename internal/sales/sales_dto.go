@@ -40,20 +40,21 @@ type CreateHeldSaleRequest struct {
 //     approval and is not a manual discount). The client never gets to say how
 //     much was taken off a normal line.
 //   - PriceOverride is rejected (400).
+//   - there is no tax field: the product's tax % is inside its price, and the
+//     server works out each line's tax from the line total. A `tax` an older
+//     till still sends is not read.
 //
 // The same product may appear on several lines - the till can split 1 of 2
 // coffees onto its own discounted line.
 //
-// Tax is this line's own tax amount (already accounts for Qty, not a per-unit
-// rate) - Sale.Tax is the sum across all items. ComboID is set when the line is
-// one component of a Combo rung up as a group: the till expands the combo into
+// ComboID is set when the line is one component of a Combo rung up as a group: the till expands the combo into
 // one line per real product, each carrying a share of the bundle discount, so
 // every line stays structurally identical to a standalone product sale.
 //
-// CatalogDiscountPercent is read ONLY for an offline-queued sale (POST
-// /sync/sales): that sale was priced from the till's cached catalog, so its
-// UnitPrice and catalog % snapshot are taken as rung up (and a conflict raised
-// if they have gone stale). On a live sale it is ignored.
+// CatalogDiscountPercent and TaxPercent are read ONLY for an offline-queued
+// sale (POST /sync/sales): that sale was priced from the till's cached catalog,
+// so its UnitPrice, catalog % and tax % snapshot are taken as rung up (and a
+// conflict raised if any has gone stale). On a live sale they are ignored.
 type CreateSaleItemRequest struct {
 	ProductID              uint             `json:"product_id" binding:"required"`
 	ComboID                *uint            `json:"combo_id"`
@@ -62,9 +63,12 @@ type CreateSaleItemRequest struct {
 	PriceOverride          *decimal.Decimal `json:"price_override"`
 	Qty                    int              `json:"qty" binding:"required,gt=0"`
 	Discount               decimal.Decimal  `json:"discount"`
-	Tax                    decimal.Decimal  `json:"tax"`
 	DiscountApprovalID     *uuid.UUID       `json:"discount_approval_id"`
 	CatalogDiscountPercent *decimal.Decimal `json:"catalog_discount_percent"`
+	// TaxPercent is read ONLY for an offline-queued sale: the tax rate in the
+	// till's cached catalog when the line was rung up (0-100). Omitted = the
+	// product's current rate.
+	TaxPercent *decimal.Decimal `json:"tax_percent"`
 }
 
 // CreateSalePaymentRequest is one payment applied to a CreateSaleRequest -
@@ -83,9 +87,10 @@ type CreateSalePaymentRequest struct {
 // client input, same reasoning as identity's branch-scoped reads.
 //
 // Subtotal/Discount/Tax/Total are deliberately NOT accepted here - the
-// service derives Subtotal/Discount/Tax from Items (each item snapshots its
-// own Tax - see CreateSaleItemRequest) and validates Payments sum to the
-// derived Total, rather than trusting client-computed totals. Status and
+// service derives them from Items (each priced from its product - see
+// CreateSaleItemRequest) and validates Payments sum to the derived Total
+// (Subtotal - Discount: tax is inside the prices, never added), rather than
+// trusting client-computed totals. Status and
 // CompletedAt are also server-owned - creating a sale always completes it
 // immediately, same reasoning as identity.OpenShiftRequest's lifecycle
 // fields. StaffID isn't binding:"required" for the same reason it isn't on
@@ -169,15 +174,17 @@ type SalesPage struct {
 	TotalCount int64          `json:"total_count"`
 }
 
-// PriceMismatch is one line of an offline-queued sale whose till-cached price
-// or catalog % no longer matches the product. Raised as a sync conflict; the
-// sale is still accepted as it was rung up.
+// PriceMismatch is one line of an offline-queued sale whose till-cached price,
+// catalog % or tax % no longer matches the product. Raised as a sync conflict;
+// the sale is still accepted as it was rung up.
 type PriceMismatch struct {
-	ProductID        uint            `json:"product_id"`
-	ClientUnitPrice  decimal.Decimal `json:"client_unit_price"`
-	ClientPercent    decimal.Decimal `json:"client_percent"`
-	CurrentUnitPrice decimal.Decimal `json:"current_unit_price"`
-	CurrentPercent   decimal.Decimal `json:"current_percent"`
+	ProductID         uint            `json:"product_id"`
+	ClientUnitPrice   decimal.Decimal `json:"client_unit_price"`
+	ClientPercent     decimal.Decimal `json:"client_percent"`
+	ClientTaxPercent  decimal.Decimal `json:"client_tax_percent"`
+	CurrentUnitPrice  decimal.Decimal `json:"current_unit_price"`
+	CurrentPercent    decimal.Decimal `json:"current_percent"`
+	CurrentTaxPercent decimal.Decimal `json:"current_tax_percent"`
 }
 
 // CreateDiscountApprovalRequest is the request body for

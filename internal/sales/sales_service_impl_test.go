@@ -700,3 +700,47 @@ func TestService_GetSaleReceipt_JSONShape_CarriesTheDiscountFields(t *testing.T)
 	require.Equal(t, "Ko Zaw", got["manual_approved_by_name"])
 	require.NotContains(t, got, "unit_cost", "cost is never serialized")
 }
+
+// ---- receipts: tax is inside the price ----
+
+// A sale made since tax became a rate inside the price says so, so the till
+// prints "Includes tax: 500" instead of adding 500 to the total.
+func TestService_GetSaleReceipt_TaxInclusiveSale_SaysSoAndCarriesEachLinesRateAndTax(t *testing.T) {
+	svc, repo, activity := newReceiptService(t)
+	id := uuid.New()
+	sale := &Sale{ID: id, OrgID: 7, Subtotal: d("10500"), Tax: d("500"), Total: d("10500"), TaxInclusive: true}
+	items := []SaleItem{{ID: 1, SaleID: id, Qty: 1, UnitPrice: d("10500"), LineTotal: d("10500"), TaxPercent: d("5"), Tax: d("500")}}
+	repo.EXPECT().GetSale(mock.Anything, uint(7), id).Return(sale, nil).Once()
+	repo.EXPECT().ListSaleItems(mock.Anything, id).Return(items, nil).Once()
+	repo.EXPECT().ListPayments(mock.Anything, id).Return(nil, nil).Once()
+	activity.EXPECT().ReturnedQtyBySaleItems(mock.Anything, mock.Anything).Return(map[uint]int{}, nil).Once()
+	activity.EXPECT().ReturnSummaries(mock.Anything, []uuid.UUID{id}).Return(map[uuid.UUID]ReturnSummary{}, nil).Once()
+
+	got, err := svc.GetSaleReceipt(context.Background(), 7, id)
+
+	require.NoError(t, err)
+	require.Equal(t, true, got["tax_inclusive"])
+	require.True(t, got["sale"].(ReceiptSale).TaxInclusive)
+	item := receiptItems(t, got)[0]
+	require.True(t, d("5").Equal(item.TaxPercent))
+	require.True(t, d("500").Equal(item.Tax))
+}
+
+// A sale from before added its tax on top of the total; reprinting it must not
+// claim the prices included tax.
+func TestService_GetSaleReceipt_SaleFromBeforeInclusiveTax_IsNotMarkedInclusive(t *testing.T) {
+	svc, repo, activity := newReceiptService(t)
+	id := uuid.New()
+	sale := &Sale{ID: id, OrgID: 7, Subtotal: d("800"), Tax: d("40"), Total: d("840")}
+	repo.EXPECT().GetSale(mock.Anything, uint(7), id).Return(sale, nil).Once()
+	repo.EXPECT().ListSaleItems(mock.Anything, id).Return(nil, nil).Once()
+	repo.EXPECT().ListPayments(mock.Anything, id).Return(nil, nil).Once()
+	activity.EXPECT().ReturnedQtyBySaleItems(mock.Anything, mock.Anything).Return(map[uint]int{}, nil).Once()
+	activity.EXPECT().ReturnSummaries(mock.Anything, []uuid.UUID{id}).Return(map[uuid.UUID]ReturnSummary{}, nil).Once()
+
+	got, err := svc.GetSaleReceipt(context.Background(), 7, id)
+
+	require.NoError(t, err)
+	require.Equal(t, false, got["tax_inclusive"])
+	require.True(t, d("840").Equal(got["sale"].(ReceiptSale).Total), "stored totals are never recomputed")
+}

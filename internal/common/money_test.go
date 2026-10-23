@@ -74,3 +74,30 @@ func TestDiscountedUnitPrice_NeverAboveTheOriginal(t *testing.T) {
 		}
 	}
 }
+
+// Prices already contain their tax, so the tax is the part of the amount paid:
+// amount x p / (100 + p), to 2 decimals, half up. It is never added to anything.
+func TestIncludedTax(t *testing.T) {
+	cases := []struct{ amount, pct, want string }{
+		{"10500", "5", "500"},        // the spec example: K 10,500 at 5%
+		{"10500", "0", "0"},          // 0% product
+		{"5900", "5", "280.95"},      // 5900 x 5 / 105 = 280.952...
+		{"100", "5", "4.76"},         // 4.7619 rounds down
+		{"200", "5", "9.52"},         // 9.5238...
+		{"105", "5", "5"},            // exact
+		{"1", "5", "0.05"},           // 0.0476 -> 0.05 (half up at 2 dp)
+		{"0", "5", "0"},              // free line
+		{"1000", "100", "500"},       // 100% means half the price is tax
+		{"7777.77", "7.5", "542.64"}, // fractional rate
+	}
+	for _, tc := range cases {
+		got := IncludedTax(decimal.RequireFromString(tc.amount), decimal.RequireFromString(tc.pct))
+		require.True(t, decimal.RequireFromString(tc.want).Equal(got), "IncludedTax(%s, %s%%) = %s, want %s", tc.amount, tc.pct, got, tc.want)
+	}
+}
+
+// A negative or zero rate must never produce tax (and never divide oddly).
+func TestIncludedTax_NoRateNoTax(t *testing.T) {
+	require.True(t, IncludedTax(decimal.NewFromInt(500), decimal.NewFromInt(-5)).IsZero())
+	require.True(t, IncludedTax(decimal.NewFromInt(500), decimal.Zero).IsZero())
+}

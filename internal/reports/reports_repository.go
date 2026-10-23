@@ -18,6 +18,20 @@ type SalesAggregate struct {
 	Count     int
 }
 
+// TaxTotals is the raw tax figures behind SalesTotals.TaxCollected, for one
+// window: SalesTax is the tax of the window's sales (same population as
+// SalesAggregate), AddedOnTopTax the part of it from sales made before tax was
+// inside the price, TaxRefunded the tax inside the refunds of returns recorded
+// in the window, and ExchangeTaxDelta the tax of the new goods minus the tax of
+// the returned goods across exchanges recorded in the window (negative when
+// less tax came back than went out).
+type TaxTotals struct {
+	SalesTax         decimal.Decimal
+	AddedOnTopTax    decimal.Decimal
+	TaxRefunded      decimal.Decimal
+	ExchangeTaxDelta decimal.Decimal
+}
+
 // ProductCounts backs GetStockOverview directly - same shape as the
 // StockOverview response, so the service just returns it as-is.
 type ProductCounts = StockOverview
@@ -34,6 +48,9 @@ type Repository interface {
 	// CreatedAt, not the original sale's date) against sales in orgID/
 	// branchID, within [from, to).
 	ReturnsTotal(ctx context.Context, orgID uint, branchID *uint, from, to time.Time) (decimal.Decimal, error)
+	// TaxTotals backs SalesTotals.TaxCollected / NetSalesExclTax - see TaxTotals.
+	// Returns and exchanges are dated by their own CreatedAt, like ReturnsTotal.
+	TaxTotals(ctx context.Context, orgID uint, branchID *uint, from, to time.Time) (TaxTotals, error)
 	// HourlyTrend backs GetTodayReport only - Gross-Discounts bucketed by
 	// hour of day (as "HH:00"), for the single day [dayStart, dayEnd). The
 	// hour is the org's local hour: buckets are cut in timezone (an IANA

@@ -17,6 +17,7 @@ import (
 	"gorm.io/gorm/logger"
 
 	"shagan_pos/internal/identity"
+	"shagan_pos/internal/returns"
 	"shagan_pos/internal/sales"
 )
 
@@ -28,7 +29,7 @@ func newReportsRepoTestDB(t *testing.T) *gorm.DB {
 		&gorm.Config{Logger: logger.Default.LogMode(logger.Silent)},
 	)
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&sales.Sale{}, &sales.SaleItem{}, &sales.DiscountApproval{}, &identity.Staff{}))
+	require.NoError(t, db.AutoMigrate(&sales.Sale{}, &sales.SaleItem{}, &sales.DiscountApproval{}, &identity.Staff{}, &returns.Return{}, &returns.Exchange{}))
 	return db
 }
 
@@ -177,4 +178,90 @@ func TestRepository_DiscountsReport_CountsCancelledApprovalsInTheWindowAndBranch
 	one, err := repo.DiscountsReport(context.Background(), 7, &branch, periodStart, periodEnd)
 	require.NoError(t, err)
 	require.Equal(t, 2, one.CancelledCount)
+}
+
+// ---- TaxTotals ----
+
+func seedTaxedSale(t *testing.T, db *gorm.DB, orgID, branchID uint, status sales.SaleStatus, at time.Time, tax string, inclusive bool) uuid.UUID {
+	t.Helper()
+	sale := sales.Sale{
+		ID: uuid.New(), OrgID: orgID, BranchID: branchID, ShiftID: 1, StaffID: 14, DeviceID: 1,
+		Tax: d(tax), TaxInclusive: inclusive, Total: decimal.NewFromInt(100), Status: status, CompletedAt: &at,
+	}
+	require.NoError(t, db.Create(&sale).Error)
+	return sale.ID
+}
+
+func seedReturnWithTax(t *testing.T, db *gorm.DB, saleID uuid.UUID, at time.Time, taxRefunded string) {
+	t.Helper()
+	require.NoError(t, db.Create(&returns.Return{
+		SaleID: saleID, ReasonCode: returns.ReturnReasonCodeOther, RefundMethod: returns.RefundMethodCash,
+		RefundTotal: decimal.NewFromInt(100), TaxRefunded: d(taxRefunded), ApprovedBy: 1, CreatedAt: at,
+	}).Error)
+}
+
+func seedExchangeWithTax(t *testing.T, db *gorm.DB, saleID uuid.UUID, at time.Time, taxIn, taxOut string) {
+	t.Helper()
+	require.NoError(t, db.Create(&returns.Exchange{
+		SaleID: saleID, NetDifference: decimal.Zero, TaxIn: d(taxIn), TaxOut: d(taxOut), ApprovedBy: 1, CreatedAt: at,
+	}).Error)
+}
+
+// Tax collected is what the sales carried, less what returns gave back, plus
+// what exchanges added or took away. Only the period's own sales count, and a
+// voided sale never does.
+func TestRepository_TaxTotals_SalesLessReturnsPlusExchanges(t *testing.T) {
+	db := newReportsRepoTestDB(t)
+	completed := sales.SaleStatusCompleted
+	a := seedTaxedSale(t, db, 7, 1, completed, inPeriod, "500", true)
+	seedTaxedSale(t, db, 7, 1, completed, inPeriod, "0", true)   // a 0% sale
+	seedTaxedSale(t, db, 7, 1, completed, inPeriod, "40", false) // from before: tax was added on top
+	seedTaxedSale(t, db, 7, 1, sales.SaleStatusRefunded, inPeriod, "100", true)
+	seedReturnWithTax(t, db, a, inPeriod, "166.67")
+	seedExchangeWithTax(t, db, a, inPeriod, "500", "280.95")
+
+	got, err := NewRepository(db).TaxTotals(context.Background(), 7, nil, periodStart, periodEnd)
+
+	require.NoError(t, err)
+	require.True(t, d("640").Equal(got.SalesTax), "500 + 0 + 40 + 100 (got %s)", got.SalesTax)
+	require.True(t, d("40").Equal(got.AddedOnTopTax), "only the sale from before added its tax on top (got %s)", got.AddedOnTopTax)
+	require.True(t, d("166.67").Equal(got.TaxRefunded))
+	require.True(t, d("-219.05").Equal(got.ExchangeTaxDelta), "280.95 - 500 (got %s)", got.ExchangeTaxDelta)
+}
+
+func TestRepository_TaxTotals_LeavesOutVoidedOpenOutOfWindowOtherOrgAndOtherBranch(t *testing.T) {
+	db := newReportsRepoTestDB(t)
+	completed := sales.SaleStatusCompleted
+	seedTaxedSale(t, db, 7, 1, completed, inPeriod, "10", true)
+	seedTaxedSale(t, db, 7, 1, sales.SaleStatusVoided, inPeriod, "900", true)
+	seedTaxedSale(t, db, 7, 1, sales.SaleStatusOpen, inPeriod, "900", true)
+	seedTaxedSale(t, db, 7, 1, completed, periodStart.Add(-time.Hour), "900", true)
+	seedTaxedSale(t, db, 7, 1, completed, periodEnd, "900", true) // the upper bound is exclusive
+	seedTaxedSale(t, db, 8, 1, completed, inPeriod, "900", true)
+	other := seedTaxedSale(t, db, 7, 2, completed, inPeriod, "20", true)
+	// a return dated outside the window and one against another org's sale
+	inBranch1 := seedTaxedSale(t, db, 7, 1, completed, periodStart.Add(-24*time.Hour), "0", true)
+	seedReturnWithTax(t, db, inBranch1, periodStart.Add(-time.Hour), "900")
+	seedReturnWithTax(t, db, other, inPeriod, "5")
+	repo := NewRepository(db)
+	branch := uint(1)
+
+	all, err := repo.TaxTotals(context.Background(), 7, nil, periodStart, periodEnd)
+	require.NoError(t, err)
+	require.True(t, d("30").Equal(all.SalesTax), "both of the org's branches (got %s)", all.SalesTax)
+	require.True(t, d("5").Equal(all.TaxRefunded), "the return dated before the window is not counted (got %s)", all.TaxRefunded)
+
+	one, err := repo.TaxTotals(context.Background(), 7, &branch, periodStart, periodEnd)
+	require.NoError(t, err)
+	require.True(t, d("10").Equal(one.SalesTax))
+	require.True(t, one.TaxRefunded.IsZero(), "the return belongs to a branch-2 sale")
+}
+
+func TestRepository_TaxTotals_EmptyPeriod_IsAllZeros(t *testing.T) {
+	db := newReportsRepoTestDB(t)
+
+	got, err := NewRepository(db).TaxTotals(context.Background(), 7, nil, periodStart, periodEnd)
+
+	require.NoError(t, err)
+	require.True(t, got.SalesTax.IsZero() && got.AddedOnTopTax.IsZero() && got.TaxRefunded.IsZero() && got.ExchangeTaxDelta.IsZero())
 }

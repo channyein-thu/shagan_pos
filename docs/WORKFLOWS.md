@@ -419,7 +419,8 @@ enforced by its own permission: a role the Owner has stripped of, say,
    Platform, up to 5 per branch, one per bank). Server derives
    `Subtotal`/`Discount`/`Tax`/`Total`
    from the items — never trusts client-computed totals — and rejects if
-   payments don't sum to the derived total.
+   payments don't sum to the derived total (`Total = Subtotal − Discount`:
+   prices already include tax, it is never added).
 4. Can see current stock for their branch while ringing up a sale (same
    login/UI as Manager, just gated by which PIN was entered — see Section
    1).
@@ -427,14 +428,17 @@ enforced by its own permission: a role the Owner has stripped of, say,
    approval). A custom % on a line needs an approval obtained *when it is added*
    (`POST /sales/discount-approvals`: a manager's PIN, or self-approval for a
    seller who holds both approve permissions) - payment never asks for a PIN.
-   See "Discounts" in Section 8. Item tax must be `>= 0` (400 on negative).
-6. **Per-item tax**: each line item snapshots its own tax amount (from
-   `Product.Tax`, same offline-first client-caching reasoning as
-   `unit_price`/`name_snapshot`) - there's no separate sale-level tax
-   input, `Sale.Tax` is the sum across items.
+   See "Discounts" in Section 8.
+6. **Tax is inside the price** (see "Tax" in Section 8): each product has a
+   `tax_percent` (0-100, set by the Owner); the shelf price already contains
+   it, so a customer pays exactly the (discounted) price and the tax is **never
+   added**. The server works out every line's tax - `round(line_total x p /
+   (100 + p), 2)` on the line total **after** its catalog / custom / combo
+   discount - and stores the rate on the line. There is no tax input: a `tax`
+   a till sends is ignored. `Sale.Tax` is the sum across lines, informational.
 7. **Combos**: ringing up a Combo expands it into one `CreateSaleItemRequest`
-   per real product component (each with its own price/tax/a proportional
-   share of the discount), tagged with a shared `combo_id` purely for
+   per real product component (each with its own price and a proportional
+   share of the discount; the server adds each component's own tax %), tagged with a shared `combo_id` purely for
    receipt/report grouping - see Section 8's design writeup for why.
 8. Opens the drawer without a sale — only if their role grants
    `open_drawer_no_sale` (Manager and the migrated Super Staff by default), **or**
@@ -470,7 +474,7 @@ enforced by its own permission: a role the Owner has stripped of, say,
    feeds the Inventory Ledger as `purchase_receipt` entries and raises stock
    at the PO's branch).
 3. **Daily floor operation** (Staff/Manager) → PIN sign-in → open shift →
-   ring sales (cart, payments, optional customer, combos, per-item tax) →
+   ring sales (cart, payments, optional customer, combos; tax is inside the prices) →
    occasional drawer events / manager-approved exceptions → close shift
    with a real cash count.
 4. **Money & stock bookkeeping** → every event lands in one place: the
@@ -506,9 +510,10 @@ enforced by its own permission: a role the Owner has stripped of, say,
   anyone signed in may create one (always attributed to themselves).
 - **Sales discount**: catalog % automatic; custom % only with a discount
   approval got at add time (Section 8, "Discounts"); `price_override` is
-  rejected; item tax must be `>= 0`.
-- **Per-item tax**: snapshotted per line item, summed into `Sale.Tax` - no
-  sale-level tax input.
+  rejected.
+- **Tax**: a % per product, already inside its price, computed by the server
+  per line (after discounts) and summed into `Sale.Tax`. The total never adds
+  it, and a client `tax` is ignored. See Section 8, "Tax".
 - **Combos**: expanded client-side into normal per-product line items
   tagged with a shared `combo_id` - not a special server-side pricing path.
 - **Stock decrement**: same transaction as `CreateSale`; blocked outright on
@@ -563,9 +568,10 @@ interacts with `SaleItem`, which is always keyed to one real `ProductID`.
 
 **Decision: expand client-side, don't add server-side combo pricing
 logic.** When a POS device rings up a Combo, it expands it into one
-`CreateSaleItemRequest` per real component product — each carrying its own
-`UnitPrice` and `Tax` (snapshotted the same way any standalone product sale
-already works), plus a proportional share of the combo's bundle discount
+`CreateSaleItemRequest` per real component product — each priced from its
+product like any standalone product sale (the server also works out its tax
+from the product's own tax %, on the line total after its share), plus a
+proportional share of the combo's bundle discount
 (allocated by each component's normal price × qty, so the line items'
 combined total lands exactly on the combo's advertised price), and a shared
 `ComboID` tag purely for grouping on receipts/reports.
@@ -647,7 +653,8 @@ approval %)`. A combo line keeps the client's bundle share as `combo_discount`
 (needs no approval, is not a manual discount). The line stores
 `catalog_discount_percent/_discount`, `manual_discount_percent/_discount/_reason`,
 `combo_discount`, `discount_approval_id` and `manual_approved_by`; `discount` is
-still their sum, so totals, returns and reports are unchanged. The same product
+still their sum, so totals, returns and reports are unchanged. The line's tax
+is worked out last, after all of these (see "Tax" below). The same product
 may sit on several lines (1 of 2 coffees discounted). Payments must still equal
 the derived total exactly. Audit: `discount_approved` / `discount_cancelled`
 (entity `sale`, id of the approval) and `manual_discount` per spent approval.
@@ -660,6 +667,51 @@ discounts work. See Section 10.
 `manual_approved_by` and the approver's name. `GET /reports/discounts`
 (`view_reports`) returns catalog vs manual totals, `manual_count`, the lists by
 seller and by approver, and how many approvals were cancelled.
+
+### Tax — a % per product, inside the price (built 2026-10-23)
+
+Shops here sell at shelf prices that **already include** tax, so tax is never
+added to a total, and the till no longer tells the backend what the tax is.
+
+- **`tax_percent`** (0-100, default 0) is set by the Owner in the product form
+  (`POST/PATCH /products`; outside 0-100 is a 400). There is no org-wide rate.
+  A client `tax` *amount* on a product request is ignored.
+- **`product.tax`** is kept for old clients but is now computed and
+  informational: the tax inside one unit at the sale price,
+  `round(sale_price x p / (100 + p), 2)`, recomputed whenever price, discount %
+  or tax % changes. `/products/barcode/:code` and `/sync/catalog` carry
+  `tax_percent` (so the snapshot ETag changes with it).
+- **A line's tax** (`POST /sales`) = `round(line_total x p / (100 + p), 2)`
+  (half-up, per line), where `line_total` is **after** the catalog / custom /
+  combo discount - so a discount also lowers the tax. K 10,500 at 5% -> K 500 of
+  tax, and the customer pays K 10,500. A combo line uses its own component
+  product's %. The rate is stored on the line (`sale_items.tax_percent`), so a
+  receipt or return never depends on today's product. Tax **never changes a
+  price**: the K 100 rounding rule is for prices only; tax is rounded to 2 dp and
+  is for receipts and reports.
+- **Totals**: `Total = Subtotal - Discount`; `Sale.Tax` is the sum of the line
+  taxes and `Sale.TaxInclusive = true`. Payments must equal `Total` exactly, so
+  a till still paying price + tax gets a 400. The request's per-line `tax` is
+  not read.
+- **Past sales never change.** A sale from before has `tax_inclusive = false`:
+  its stored `total` already contains the tax that was added on top, and it is
+  never recomputed. Its lines have `tax_percent = 0` (and the old amount in
+  `tax`).
+- **Migration**: on first start after this change each product with an old
+  `tax > 0` gets `tax_percent = round(tax / price x 100, 2)` (capped at 100)
+  and its **price is left alone** (recorded once in `data_migrations`; each
+  converted product is logged as a warning). Its customers paid price + tax
+  before and pay just the price now, so the Owner must review those products.
+- **Returns**: the refund stays `line_total / qty x returned qty` (already
+  tax-inclusive). `Return.tax_refunded` = per returned line
+  `round(unit_refund x qty x p / (100 + p), 2)` at the sale line's stored rate.
+- **Exchanges**: "in" lines credit as before. "Out" lines are priced **from the
+  product** (its sale price, tax inside) - a `unit_price` in the request is not
+  read; each line records its `tax_percent` and included `tax`, and the exchange
+  records `tax_in` / `tax_out`. `net_difference` = out total - in credit.
+- **Receipts**: items carry `tax_percent` and `tax` (the included amount); the
+  receipt has `tax_inclusive: true` (print "Includes tax", don't add it). A
+  sale from before has `false` - its tax was added on top.
 
 ## 9. Returns / Void / Exchange — Standard Business Rules
 
@@ -785,9 +837,10 @@ The shape below is the design it follows, reusing what was already in place.
   identity the instant it's rung up, offline or not, with no server
   round-trip needed first. This also makes re-submission naturally
   idempotent: retrying a POST with the same ID is safe.
-- `NameSnapshot`/`UnitPrice`/`Tax` on each `SaleItem` are already
+- `NameSnapshot`/`UnitPrice` on each `SaleItem` are already
   client-cached values, not server lookups at sale time — the device
-  doesn't need to be online to know what it's selling.
+  doesn't need to be online to know what it's selling. (Tax is not one of
+  them: the server works it out from the rate - see the snapshot rule below.)
 - `Sale.SyncedAt` exists to mark when a locally-created record was
   confirmed received by the server.
 
@@ -809,11 +862,15 @@ The shape below is the design it follows, reusing what was already in place.
   lands.
 - **A queued sale is priced from the till's cached catalog.** Its `unit_price`
   and `catalog_discount_percent` snapshot are taken as rung up (percent
-  validated 0-100, line recomputed with the Kyat rounding rule). If either no
-  longer matches the product, the sale is still accepted and a `SyncConflict`
-  with reason `price_mismatch` is recorded per stale line (payload: product,
-  the till's price/percent, today's). The customer already paid what the till
-  showed.
+  validated 0-100, line recomputed with the Kyat rounding rule), and so is its
+  `tax_percent` (the tax rate in the till's cached catalog, 0-100; omitted = the
+  product's current rate). The line's tax is worked out from that rate on the
+  line total, like online. If the price, the catalog % or the tax % no longer
+  matches the product, the sale is still accepted and a `SyncConflict` with
+  reason `price_mismatch` is recorded per stale line (one conflict per line,
+  whichever of the three went stale; payload: product, the till's
+  price/percent/tax %, today's). The customer already paid what the till
+  showed. No tax **amount** is ever taken from the till.
 - **Known gap:** a sale with a *custom* discount rung up online whose response
   was lost and which then gets queued offline will be rejected on sync (its
   approval id) - retry it through `POST /sales` instead, which succeeds
@@ -833,7 +890,7 @@ The shape below is the design it follows, reusing what was already in place.
    retry only the failures.
 3. **Periodic reference-data download, server → device.** For a device to
    ring up sales offline at all, it needs a reasonably fresh local cache
-   of: Catalog (products/prices/tax, plus each combo's component items).
+   of: Catalog (products/prices/tax %, plus each combo's component items).
    This is a **read-sync** (`GET /sync/catalog`), refreshed opportunistically
    whenever the device has connectivity — not a live/real-time subscription.
    The snapshot does **not** include stock levels, customers or a staff PIN
@@ -877,6 +934,18 @@ or distributed conflict resolution beyond "let it go negative, flag it."
   added later if needed, just not in scope now.)
 - **Time granularity**: daily, weekly, and monthly views all supported —
   matches the prototype UI's Hourly/Daily/Weekly trend toggle.
+- **Tax collected** (built 2026-10-23; `tax_collected` and
+  `net_sales_excl_tax` on `/reports/sales-summary`, `/reports/today` and the
+  other reports that carry the headline totals): `tax_collected` = the tax of
+  the period's sales (voided sales excluded) - the tax inside what returns gave
+  back (`tax_refunded`) + the tax difference of exchanges (`tax_out - tax_in`).
+  **Net sales stays what the shop took** (subtotal - discount - returns), which
+  for a sale since tax became inclusive **includes** the tax; `net_sales_excl_tax`
+  = net sales - tax collected. A sale from before had its tax added on top of its
+  total, so its net sales never contained it: it counts as tax collected but is
+  not subtracted again. Profit & loss takes gross profit on `net_sales_excl_tax`
+  (tax inside a price is not the shop's revenue). The lists in these reports are
+  never null.
 
 ### Organization timezone — what "today" means (built 2026-10-08)
 Every org has an IANA `timezone` (default `Asia/Yangon`, UTC+6:30), set at

@@ -53,10 +53,10 @@ type CreateReturnRequest struct {
 // reference an original line on the sale, and its price is derived from
 // that SaleItem, never client input (UnitPrice is ignored for an "in"
 // line). Direction "out" is a new item the customer is taking instead -
-// ProductID and UnitPrice are required, same never-trust-client-price
-// reasoning as sales.CreateSaleItemRequest doesn't quite apply here since
-// there's no product catalog price snapshot step in this domain; the
-// approver is expected to enter the product's current price.
+// ProductID is required and it is priced from the product exactly as a sale
+// line is (its sale price, with the tax already inside it), never from the
+// client: UnitPrice is no longer read and is only kept so an older till that
+// still sends one doesn't fail.
 type CreateExchangeItemRequest struct {
 	Direction  Direction        `json:"direction" binding:"required,oneof=in out"`
 	SaleItemID *uint            `json:"sale_item_id"`

@@ -543,7 +543,6 @@ func validCreateProductRequest() CreateProductRequest {
 		Name:       "Iced Coffee",
 		Barcode:    "8850001234567",
 		Price:      decimal.NewFromInt(6500),
-		Tax:        decimal.NewFromFloat(0.20),
 		Threshold:  10,
 		IsActive:   true,
 		Modifier:   &modifier,
@@ -669,19 +668,24 @@ func TestService_CreateProduct_NegativeDiscountPercent_RejectsBeforeTouchingRepo
 	requireRestErrorStatus(t, err, http.StatusBadRequest)
 }
 
-func TestService_CreateProduct_NegativeTax_RejectsBeforeTouchingRepository(t *testing.T) {
-	repo := NewMockRepository(t)
-	store := NewMockStorage(t)
-	svc := NewService(repo, fakeTransactioner{}, store)
+func TestService_CreateProduct_TaxPercentOutOfRange_RejectsBeforeTouchingRepository(t *testing.T) {
+	for name, pct := range map[string]string{"negative": "-0.01", "over 100": "100.01"} {
+		t.Run(name, func(t *testing.T) {
+			repo := NewMockRepository(t)
+			store := NewMockStorage(t)
+			svc := NewService(repo, fakeTransactioner{}, store)
 
-	repo.EXPECT().GetCategory(mock.Anything, uint(7), uint(3)).Return(&Category{ID: 3, OrgID: 7}, nil).Once()
+			repo.EXPECT().GetCategory(mock.Anything, uint(7), uint(3)).Return(&Category{ID: 3, OrgID: 7}, nil).Once()
+			// CreateProduct must never be called - the rate fails validation first.
 
-	in := validCreateProductRequest()
-	in.Tax = decimal.NewFromFloat(-0.01)
+			in := validCreateProductRequest()
+			in.TaxPercent = decimal.RequireFromString(pct)
 
-	_, err := svc.CreateProduct(context.Background(), 7, in, bytes.NewReader(nil), 0, "image/png", "photo.png")
-	require.Error(t, err)
-	requireRestErrorStatus(t, err, http.StatusBadRequest)
+			_, err := svc.CreateProduct(context.Background(), 7, in, bytes.NewReader(nil), 0, "image/png", "photo.png")
+			require.Error(t, err)
+			requireRestErrorStatus(t, err, http.StatusBadRequest)
+		})
+	}
 }
 
 func TestService_CreateProduct_DiscountPercentOver100_RejectsBeforeTouchingRepository(t *testing.T) {
@@ -763,6 +767,40 @@ func TestService_CreateProduct_HundredPercent_IsFree(t *testing.T) {
 
 	require.True(t, got.SalePrice.IsZero())
 	require.True(t, got.Discount.Equal(got.Price))
+}
+
+// Shelf prices already contain tax, so the Owner types a rate and the server
+// works out the tax inside one unit (K 10,500 at 5% -> K 500).
+func TestService_CreateProduct_TaxPercent_StoresTheTaxIncludedInOneUnit(t *testing.T) {
+	in := validCreateProductRequest()
+	in.Price = decimal.NewFromInt(10500)
+	in.TaxPercent = decimal.NewFromInt(5)
+
+	got := createProductCapturing(t, in)
+
+	require.True(t, decimal.NewFromInt(5).Equal(got.TaxPercent))
+	require.True(t, decimal.NewFromInt(500).Equal(got.Tax), "K 10,500 at 5%% includes K 500 tax (got %s)", got.Tax)
+	require.True(t, decimal.NewFromInt(10500).Equal(got.SalePrice), "tax never changes the price (got %s)", got.SalePrice)
+}
+
+func TestService_CreateProduct_ZeroTaxPercent_HasNoTax(t *testing.T) {
+	got := createProductCapturing(t, validCreateProductRequest())
+
+	require.True(t, got.TaxPercent.IsZero())
+	require.True(t, got.Tax.IsZero())
+}
+
+// The tax is part of what the customer pays, and a catalog discount lowers
+// that - so the per-unit tax is taken from the sale price, not the list price.
+func TestService_CreateProduct_TaxIsTakenFromTheDiscountedSalePrice(t *testing.T) {
+	in := validCreateProductRequest() // price 6,500
+	in.DiscountPercent = decimal.NewFromInt(10)
+	in.TaxPercent = decimal.NewFromInt(5)
+
+	got := createProductCapturing(t, in)
+
+	require.True(t, decimal.NewFromInt(5900).Equal(got.SalePrice))
+	require.True(t, decimal.RequireFromString("280.95").Equal(got.Tax), "5,900 x 5 / 105 (got %s)", got.Tax)
 }
 
 func TestService_CreateProduct_DuplicateBarcode_ReturnsConflict(t *testing.T) {
@@ -853,7 +891,7 @@ func TestService_UpdateProduct_HappyPath_UpdatesAndReturns(t *testing.T) {
 	store := NewMockStorage(t)
 	svc := NewService(repo, fakeTransactioner{}, store)
 
-	existing := &Product{ID: 1, OrgID: 7, Price: decimal.NewFromInt(6500), Tax: decimal.NewFromFloat(0.20)}
+	existing := &Product{ID: 1, OrgID: 7, Price: decimal.NewFromInt(6500)}
 	updated := &Product{ID: 1, OrgID: 7, Name: "Hot Coffee"}
 	name := "Hot Coffee"
 	in := UpdateProductRequest{Name: &name}
@@ -1023,7 +1061,7 @@ func TestService_UpdateProduct_ChangingThePercent_RecomputesSalePriceAndDiscount
 
 	got := updateCapturing(t, existing, UpdateProductRequest{DiscountPercent: &pct})
 
-	requireUpdates(t, map[string]string{"discount_percent": "10", "sale_price": "5900", "discount": "600"}, got)
+	requireUpdates(t, map[string]string{"discount_percent": "10", "sale_price": "5900", "discount": "600", "tax": "0"}, got)
 }
 
 // A price change keeps the product's percent and moves the sale price with it.
@@ -1033,7 +1071,7 @@ func TestService_UpdateProduct_ChangingThePrice_RecomputesSalePriceFromTheExisti
 
 	got := updateCapturing(t, existing, UpdateProductRequest{Price: &price})
 
-	requireUpdates(t, map[string]string{"price": "7000", "sale_price": "6300", "discount": "700"}, got) // the percent itself is unchanged
+	requireUpdates(t, map[string]string{"price": "7000", "sale_price": "6300", "discount": "700", "tax": "0"}, got) // the percent itself is unchanged
 }
 
 func TestService_UpdateProduct_PriceAndPercentTogether_UseBothNewValues(t *testing.T) {
@@ -1042,7 +1080,7 @@ func TestService_UpdateProduct_PriceAndPercentTogether_UseBothNewValues(t *testi
 
 	got := updateCapturing(t, existing, UpdateProductRequest{Price: &price, DiscountPercent: &pct})
 
-	requireUpdates(t, map[string]string{"price": "7000", "discount_percent": "50", "sale_price": "3500", "discount": "3500"}, got)
+	requireUpdates(t, map[string]string{"price": "7000", "discount_percent": "50", "sale_price": "3500", "discount": "3500", "tax": "0"}, got)
 }
 
 func TestService_UpdateProduct_PercentBackToZero_SalePriceEqualsPrice(t *testing.T) {
@@ -1051,7 +1089,7 @@ func TestService_UpdateProduct_PercentBackToZero_SalePriceEqualsPrice(t *testing
 
 	got := updateCapturing(t, existing, UpdateProductRequest{DiscountPercent: &zero})
 
-	requireUpdates(t, map[string]string{"discount_percent": "0", "sale_price": "6500", "discount": "0"}, got)
+	requireUpdates(t, map[string]string{"discount_percent": "0", "sale_price": "6500", "discount": "0", "tax": "0"}, got)
 }
 
 // Editing something unrelated must not touch a legacy product's pricing -
@@ -1063,6 +1101,63 @@ func TestService_UpdateProduct_UnrelatedField_LeavesPricingColumnsAlone(t *testi
 	got := updateCapturing(t, existing, UpdateProductRequest{Name: &name})
 
 	require.Equal(t, map[string]any{"name": "Renamed"}, got)
+}
+
+func TestService_UpdateProduct_TaxPercentOutOfRange_RejectsBeforeWriting(t *testing.T) {
+	for name, pct := range map[string]string{"negative": "-1", "over 100": "100.5"} {
+		t.Run(name, func(t *testing.T) {
+			repo := NewMockRepository(t)
+			store := NewMockStorage(t)
+			svc := NewService(repo, fakeTransactioner{}, store)
+			existing := &Product{ID: 1, OrgID: 7, Price: decimal.NewFromInt(6500)}
+			value := decimal.RequireFromString(pct)
+			repo.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(existing, nil).Once()
+			// UpdateProduct must never be called
+
+			_, err := svc.UpdateProduct(context.Background(), 7, 1, UpdateProductRequest{TaxPercent: &value}, nil, 0, "", "")
+			require.Error(t, err)
+			requireRestErrorStatus(t, err, http.StatusBadRequest)
+		})
+	}
+}
+
+// Changing only the rate re-derives the per-unit tax from the stored sale price.
+func TestService_UpdateProduct_ChangingTheTaxPercent_RecomputesTheTax(t *testing.T) {
+	existing := &Product{ID: 1, OrgID: 7, Price: decimal.NewFromInt(10500), SalePrice: decimal.NewFromInt(10500)}
+	pct := decimal.NewFromInt(5)
+
+	got := updateCapturing(t, existing, UpdateProductRequest{TaxPercent: &pct})
+
+	requireUpdates(t, map[string]string{"tax_percent": "5", "tax": "500"}, got)
+}
+
+func TestService_UpdateProduct_TaxPercentBackToZero_ClearsTheTax(t *testing.T) {
+	existing := &Product{ID: 1, OrgID: 7, Price: decimal.NewFromInt(10500), SalePrice: decimal.NewFromInt(10500), TaxPercent: decimal.NewFromInt(5), Tax: decimal.NewFromInt(500)}
+	zero := decimal.Zero
+
+	got := updateCapturing(t, existing, UpdateProductRequest{TaxPercent: &zero})
+
+	requireUpdates(t, map[string]string{"tax_percent": "0", "tax": "0"}, got)
+}
+
+// The tax inside a unit follows the sale price: a new price moves it.
+func TestService_UpdateProduct_ChangingThePrice_RecomputesTheTaxFromTheExistingRate(t *testing.T) {
+	existing := &Product{ID: 1, OrgID: 7, Price: decimal.NewFromInt(10500), SalePrice: decimal.NewFromInt(10500), TaxPercent: decimal.NewFromInt(5), Tax: decimal.NewFromInt(500)}
+	price := decimal.NewFromInt(21000)
+
+	got := updateCapturing(t, existing, UpdateProductRequest{Price: &price})
+
+	requireUpdates(t, map[string]string{"price": "21000", "sale_price": "21000", "discount": "0", "tax": "1000"}, got)
+}
+
+// ...and so does a catalog discount: tax is taken from what the customer pays.
+func TestService_UpdateProduct_ChangingTheDiscountPercent_RecomputesTheTax(t *testing.T) {
+	existing := &Product{ID: 1, OrgID: 7, Price: decimal.NewFromInt(6500), SalePrice: decimal.NewFromInt(6500), TaxPercent: decimal.NewFromInt(5), Tax: decimal.RequireFromString("309.52")}
+	pct := decimal.NewFromInt(10)
+
+	got := updateCapturing(t, existing, UpdateProductRequest{DiscountPercent: &pct})
+
+	requireUpdates(t, map[string]string{"discount_percent": "10", "sale_price": "5900", "discount": "600", "tax": "280.95"}, got)
 }
 
 func TestService_UpdateProduct_WithImage_ReplacesOldImageAfterCommit(t *testing.T) {

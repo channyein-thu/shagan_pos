@@ -42,6 +42,12 @@ func insertLegacy(t *testing.T, db *gorm.DB, barcode, price, discount string) {
 		VALUES (1, 1, ?, ?, ?, ?, 0, 1, 1)`, barcode, barcode, price, discount).Error)
 }
 
+func insertLegacyWithTax(t *testing.T, db *gorm.DB, barcode, price, discount, tax string) {
+	t.Helper()
+	require.NoError(t, db.Exec(`INSERT INTO products (org_id, category_id, name, barcode, price, discount, tax, threshold, is_active)
+		VALUES (1, 1, ?, ?, ?, ?, ?, 1, 1)`, barcode, barcode, price, discount, tax).Error)
+}
+
 func loadProduct(t *testing.T, db *gorm.DB, barcode string) Product {
 	t.Helper()
 	var p Product
@@ -98,4 +104,70 @@ func TestAutoMigrate_OnAFreshDatabaseIsANoOpBackfill(t *testing.T) {
 
 	require.NoError(t, AutoMigrate(db))
 	require.NoError(t, AutoMigrate(db))
+}
+
+// Tax V1: a product's old fixed tax amount becomes a rate (tax / price x 100),
+// and the PRICE IS LEFT ALONE - the shelf price now simply contains the tax.
+// A tax-free product gets 0%. The informational per-unit tax is re-derived as
+// the part of the sale price that is tax.
+func TestAutoMigrate_ConvertsTheOldTaxAmountToAPercentWithoutTouchingPrices(t *testing.T) {
+	db := newMigrateTestDB(t)
+	legacyProductsTable(t, db)
+	insertLegacyWithTax(t, db, "A", "800.00", "0.00", "40.00")     // 5.00%
+	insertLegacyWithTax(t, db, "B", "6500.00", "300.00", "325.00") // 5.00% of the LIST price; sells at 6,200
+	insertLegacyWithTax(t, db, "C", "1250.50", "0.00", "100.00")   // 8.00% (7.9968 -> 8.00)
+	insertLegacyWithTax(t, db, "D", "400.00", "100.00", "0.00")    // tax-free
+
+	require.NoError(t, AutoMigrate(db))
+
+	a, b, c, d := loadProduct(t, db, "A"), loadProduct(t, db, "B"), loadProduct(t, db, "C"), loadProduct(t, db, "D")
+	require.True(t, decimal.RequireFromString("5").Equal(a.TaxPercent), "A rate %s", a.TaxPercent)
+	require.True(t, decimal.RequireFromString("5").Equal(b.TaxPercent), "B rate %s", b.TaxPercent)
+	require.True(t, decimal.RequireFromString("8").Equal(c.TaxPercent), "C rate %s", c.TaxPercent)
+	require.True(t, d.TaxPercent.IsZero())
+
+	// prices (and the sale price Discount V1 derived) did not move
+	require.True(t, decimal.RequireFromString("800").Equal(a.Price))
+	require.True(t, decimal.RequireFromString("800").Equal(a.SalePrice))
+	require.True(t, decimal.RequireFromString("6500").Equal(b.Price))
+	require.True(t, decimal.RequireFromString("6200").Equal(b.SalePrice))
+	require.True(t, decimal.RequireFromString("300").Equal(d.SalePrice))
+
+	// the informational per-unit tax is now the tax INSIDE the sale price
+	require.True(t, decimal.RequireFromString("38.10").Equal(a.Tax), "A tax %s", a.Tax)  // 800 x 5 / 105
+	require.True(t, decimal.RequireFromString("295.24").Equal(b.Tax), "B tax %s", b.Tax) // 6,200 x 5 / 105
+	require.True(t, d.Tax.IsZero())
+}
+
+// It must not run again: after the Owner edits the rate, a restart cannot
+// turn it back into whatever the old amount implied.
+func TestAutoMigrate_TaxConversionRunsOnlyOnce(t *testing.T) {
+	db := newMigrateTestDB(t)
+	legacyProductsTable(t, db)
+	insertLegacyWithTax(t, db, "A", "800.00", "0.00", "40.00")
+	require.NoError(t, AutoMigrate(db))
+	// the Owner sets 7% and the server stores 800 x 7 / 107
+	require.NoError(t, db.Model(&Product{}).Where("barcode = ?", "A").Updates(map[string]any{"tax_percent": 7, "tax": "52.34"}).Error)
+	// and a product still holding an old amount appears later (e.g. a demo-data load)
+	insertLegacyWithTax(t, db, "B", "800.00", "0.00", "40.00")
+
+	require.NoError(t, AutoMigrate(db))
+	require.NoError(t, AutoMigrate(db))
+
+	a, b := loadProduct(t, db, "A"), loadProduct(t, db, "B")
+	require.True(t, decimal.NewFromInt(7).Equal(a.TaxPercent), "the Owner's 7%% survives a restart (got %s)", a.TaxPercent)
+	require.True(t, decimal.RequireFromString("52.34").Equal(a.Tax))
+	require.True(t, b.TaxPercent.IsZero(), "a later row is not converted by a second pass (got %s)", b.TaxPercent)
+}
+
+// An old amount bigger than the price would be a rate over 100%: it is capped
+// rather than stored as nonsense the product form would then reject.
+func TestAutoMigrate_TaxConversionCapsAtOneHundredPercent(t *testing.T) {
+	db := newMigrateTestDB(t)
+	legacyProductsTable(t, db)
+	insertLegacyWithTax(t, db, "A", "100.00", "0.00", "250.00")
+
+	require.NoError(t, AutoMigrate(db))
+
+	require.True(t, decimal.NewFromInt(100).Equal(loadProduct(t, db, "A").TaxPercent))
 }

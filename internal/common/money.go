@@ -36,3 +36,15 @@ func DiscountedUnitPrice(original, percent decimal.Decimal) decimal.Decimal {
 	}
 	return discounted
 }
+
+// IncludedTax is the tax inside an amount whose price already contains it:
+// amount x p / (100 + p), rounded half up to 2 decimals. It is what a receipt
+// and the reports show as "Includes tax" - it is NEVER added to a total, and it
+// never changes a price (the K 100 rounding rule is for prices only).
+// A rate of 0 or less has no tax.
+func IncludedTax(amount, percent decimal.Decimal) decimal.Decimal {
+	if !percent.IsPositive() {
+		return decimal.Zero
+	}
+	return amount.Mul(percent).Div(decimal.NewFromInt(100).Add(percent)).Round(2)
+}

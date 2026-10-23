@@ -32,20 +32,30 @@ const (
 
 // Sale maps to the "Sales" table in the ERD.
 type Sale struct {
-	ID          uuid.UUID       `gorm:"primaryKey;type:uuid" json:"id"`
-	OrgID       uint            `gorm:"index;not null" json:"org_id"`
-	BranchID    uint            `gorm:"index;not null" json:"branch_id"`
-	ShiftID     uint            `gorm:"index;not null" json:"shift_id"`
-	StaffID     uint            `gorm:"index;not null" json:"staff_id"`
-	DeviceID    uint            `gorm:"index;not null" json:"device_id"`
-	CustomerID  *uint           `gorm:"index" json:"customer_id"`
-	Subtotal    decimal.Decimal `gorm:"type:decimal(10,2);not null" json:"subtotal"`
-	Discount    decimal.Decimal `gorm:"type:decimal(10,2);not null" json:"discount"`
-	Tax         decimal.Decimal `gorm:"type:decimal(10,2);not null" json:"tax"`
-	Total       decimal.Decimal `gorm:"type:decimal(10,2);not null" json:"total"`
-	Status      SaleStatus      `gorm:"type:varchar(30);not null" json:"status"` // one of SaleStatus* constants below (TODO: confirm real values)
-	CompletedAt *time.Time      `json:"completed_at"`
-	SyncedAt    *time.Time      `json:"synced_at"`
+	ID         uuid.UUID       `gorm:"primaryKey;type:uuid" json:"id"`
+	OrgID      uint            `gorm:"index;not null" json:"org_id"`
+	BranchID   uint            `gorm:"index;not null" json:"branch_id"`
+	ShiftID    uint            `gorm:"index;not null" json:"shift_id"`
+	StaffID    uint            `gorm:"index;not null" json:"staff_id"`
+	DeviceID   uint            `gorm:"index;not null" json:"device_id"`
+	CustomerID *uint           `gorm:"index" json:"customer_id"`
+	Subtotal   decimal.Decimal `gorm:"type:decimal(10,2);not null" json:"subtotal"`
+	Discount   decimal.Decimal `gorm:"type:decimal(10,2);not null" json:"discount"`
+	// Tax is the sum of the lines' tax. On a sale made since tax became a
+	// rate inside the price (TaxInclusive) it is informational: Total is
+	// Subtotal - Discount and Tax is the part of it that is tax. On an older
+	// sale it is the amount that was ADDED on top: Total = Subtotal - Discount
+	// + Tax. Past sales are never recomputed.
+	Tax decimal.Decimal `gorm:"type:decimal(10,2);not null" json:"tax"`
+	// TaxInclusive tells a receipt which of the two it is looking at: true
+	// means "the prices include the tax" (print "Includes tax"), false is a
+	// sale from before, whose tax was added to the total. default:false is
+	// what every existing row gets when the column is added.
+	TaxInclusive bool            `gorm:"not null;default:false" json:"tax_inclusive"`
+	Total        decimal.Decimal `gorm:"type:decimal(10,2);not null" json:"total"`
+	Status       SaleStatus      `gorm:"type:varchar(30);not null" json:"status"` // one of SaleStatus* constants below (TODO: confirm real values)
+	CompletedAt  *time.Time      `json:"completed_at"`
+	SyncedAt     *time.Time      `json:"synced_at"`
 	// Replayed is never stored or serialized: Service.CreateSale sets it
 	// when the call matched an already-stored sale from the same branch and
 	// device (an idempotent retry) instead of creating a new one, so the
@@ -100,13 +110,18 @@ type SaleItem struct {
 	// no manual discount.
 	DiscountApprovalID *uuid.UUID `gorm:"type:uuid;index" json:"discount_approval_id"`
 	ManualApprovedBy   *uint      `gorm:"index" json:"manual_approved_by"`
-	// Tax is this line's own tax amount (qty already accounted for), snapshotted
-	// by the client from Product.Tax at ring-up time - same offline-first
-	// reasoning as UnitPrice/NameSnapshot. Summed into Sale.Tax rather than
-	// the caller supplying one flat sale-level tax figure.
-	Tax decimal.Decimal `gorm:"type:decimal(10,2);not null;default:0" json:"tax"`
+	// TaxPercent is the product's tax rate at the time of sale, stored on the
+	// line so a receipt or a return never depends on today's product. Tax is
+	// the tax INCLUDED in this line's total (qty and discounts already
+	// accounted for): common.IncludedTax(LineTotal, TaxPercent), worked out by
+	// the server - never client input. The price already contains it, so it is
+	// never added to anything. Summed into Sale.Tax. Lines sold before tax was
+	// a rate have TaxPercent 0 and the (added-on-top) amount they were sold
+	// with, which is left as it was.
+	TaxPercent decimal.Decimal `gorm:"type:decimal(5,2);not null;default:0" json:"tax_percent"`
+	Tax        decimal.Decimal `gorm:"type:decimal(10,2);not null;default:0" json:"tax"`
 	// UnitCost is a snapshot of Product.CostPrice taken server-side at sale
-	// time (never client-supplied, unlike UnitPrice/NameSnapshot/Tax - cost
+	// time (never client-supplied, unlike NameSnapshot - cost
 	// is business-sensitive and a till has no business knowing it - see
 	// catalog.Product.CostPrice's own doc). Snapshotting it here, not just
 	// reading Product.CostPrice at report time, keeps a past sale's

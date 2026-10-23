@@ -138,9 +138,11 @@ func (a *CatalogAPI) CreateProduct(c *gin.Context) {
 		common.HandleError(c, common.BadRequestError("invalid discount_percent"))
 		return
 	}
-	tax, err := decimal.NewFromString(c.DefaultPostForm("tax", "0"))
+	// tax_percent is the only tax input (the tax is inside the price); a
+	// client-sent `tax` amount is ignored - the server computes it.
+	taxPercent, err := decimal.NewFromString(c.DefaultPostForm("tax_percent", "0"))
 	if err != nil {
-		common.HandleError(c, common.BadRequestError("invalid tax"))
+		common.HandleError(c, common.BadRequestError("invalid tax_percent"))
 		return
 	}
 	threshold, err := strconv.Atoi(c.PostForm("threshold"))
@@ -174,7 +176,7 @@ func (a *CatalogAPI) CreateProduct(c *gin.Context) {
 		Barcode:         barcode,
 		Price:           price,
 		DiscountPercent: discountPercent,
-		Tax:             tax,
+		TaxPercent:      taxPercent,
 		Threshold:       threshold,
 		IsActive:        isActive,
 		Modifier:        modifier,
@@ -246,13 +248,13 @@ func (a *CatalogAPI) UpdateProduct(c *gin.Context) {
 		}
 		in.DiscountPercent = &discountPercent
 	}
-	if v, ok := c.GetPostForm("tax"); ok {
-		tax, err := decimal.NewFromString(v)
+	if v, ok := c.GetPostForm("tax_percent"); ok {
+		taxPercent, err := decimal.NewFromString(v)
 		if err != nil {
-			common.HandleError(c, common.BadRequestError("invalid tax"))
+			common.HandleError(c, common.BadRequestError("invalid tax_percent"))
 			return
 		}
-		in.Tax = &tax
+		in.TaxPercent = &taxPercent
 	}
 	if v, ok := c.GetPostForm("cost_price"); ok {
 		costPrice, err := decimal.NewFromString(v)

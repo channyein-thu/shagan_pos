@@ -3,9 +3,10 @@ package identity
 import (
 	"fmt"
 	"slices"
-	"time"
 
 	"gorm.io/gorm"
+
+	"shagan_pos/internal/common"
 )
 
 // EnsurePermissionCatalogue makes the permissions table match
@@ -138,37 +139,7 @@ func MigrateAccessRights(db *gorm.DB) error {
 			return fmt.Errorf("migrate roles of org %d: %w", orgID, err)
 		}
 	}
-	return runOnce(db, migrationCashierMayAskForDiscounts, grantCashierApplyManualDiscount)
-}
-
-// DataMigration records a one-off data change that has already been applied, so
-// it is not applied again on the next start. Unlike MigrateAccessRights' other
-// steps - which only create what is missing and so are safe to repeat - a
-// change that GRANTS a permission would undo an Owner's later removal of it if
-// it ran every start.
-type DataMigration struct {
-	Name      string    `gorm:"primaryKey;size:100"`
-	AppliedAt time.Time `gorm:"autoCreateTime;not null"`
-}
-
-func (DataMigration) TableName() string { return "data_migrations" }
-
-// runOnce runs fn in a transaction and records name, unless name is already
-// recorded.
-func runOnce(db *gorm.DB, name string, fn func(tx *gorm.DB) error) error {
-	return db.Transaction(func(tx *gorm.DB) error {
-		var done int64
-		if err := tx.Model(&DataMigration{}).Where("name = ?", name).Count(&done).Error; err != nil {
-			return err
-		}
-		if done > 0 {
-			return nil
-		}
-		if err := fn(tx); err != nil {
-			return fmt.Errorf("%s: %w", name, err)
-		}
-		return tx.Create(&DataMigration{Name: name}).Error
-	})
+	return common.RunOnce(db, migrationCashierMayAskForDiscounts, grantCashierApplyManualDiscount)
 }
 
 const migrationCashierMayAskForDiscounts = "2026-10-23-cashier-apply-manual-discount"

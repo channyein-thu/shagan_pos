@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 
 	"shagan_pos/internal/audit"
+	"shagan_pos/internal/catalog"
 	"shagan_pos/internal/common"
 	"shagan_pos/internal/identity"
 	"shagan_pos/internal/inventory"
@@ -28,6 +29,7 @@ func NewReturnsAPI(db *gorm.DB, jwtSecret []byte) *ReturnsAPI {
 			returns.NewRepository(db),
 			identity.NewRepository(db),
 			sales.NewRepository(db),
+			catalog.NewRepository(db),
 			inventory.NewRepository(db),
 			audit.NewRepository(db),
 			db,

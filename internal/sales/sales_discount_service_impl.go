@@ -19,18 +19,6 @@ import (
 
 var hundred = decimal.NewFromInt(100)
 
-// catalogSalePrice is what the till charges for a product with no custom
-// discount: its stored sale_price (the catalog % already applied, rounded when
-// the Owner set it). A product row that was never priced - sale_price 0 with no
-// percent - has no catalog discount, so it sells at its price; a 100% product
-// (sale_price 0, percent 100) is genuinely free.
-func catalogSalePrice(p *catalog.Product) decimal.Decimal {
-	if p.SalePrice.IsZero() && p.DiscountPercent.IsZero() {
-		return p.Price
-	}
-	return p.SalePrice
-}
-
 // priceLines prices every request line from its product - see
 // CreateSaleItemRequest for the rules - and validates the discount approvals
 // the lines carry. Nothing it returns has touched the database.
@@ -46,9 +34,6 @@ func (s *Service) priceLines(ctx context.Context, orgID, branchID uint, actor Sa
 		}
 		if item.Discount.IsNegative() {
 			return nil, common.BadRequestError("item discount must be zero or greater")
-		}
-		if item.Tax.IsNegative() {
-			return nil, common.BadRequestError("item tax must be zero or greater")
 		}
 		isCombo := item.ComboID != nil
 		if item.DiscountApprovalID != nil {
@@ -78,10 +63,13 @@ func (s *Service) priceLines(ctx context.Context, orgID, branchID uint, actor Sa
 		original := product.Price
 		line := SaleItem{
 			SaleID: in.ID, ProductID: item.ProductID, ComboID: item.ComboID, NameSnapshot: item.NameSnapshot,
-			Qty: item.Qty, Tax: item.Tax, UnitCost: product.CostPrice,
+			Qty: item.Qty, UnitCost: product.CostPrice,
 		}
 		var mismatch *PriceMismatch
 		unitSale := original
+		// The tax rate printed on the product. Only an offline-queued line may
+		// bring its own (the till's cached one).
+		taxPct := product.TaxPercent
 
 		switch {
 		case queued:
@@ -101,10 +89,16 @@ func (s *Service) priceLines(ctx context.Context, orgID, branchID uint, actor Sa
 				line.CatalogDiscountPercent = pct
 				unitSale = common.DiscountedUnitPrice(original, pct)
 			}
-			if !original.Equal(product.Price) || !pct.Equal(product.DiscountPercent) {
+			if item.TaxPercent != nil {
+				taxPct = *item.TaxPercent
+			}
+			if taxPct.IsNegative() || taxPct.GreaterThan(hundred) {
+				return nil, common.BadRequestError("tax_percent must be between 0 and 100")
+			}
+			if !original.Equal(product.Price) || !pct.Equal(product.DiscountPercent) || !taxPct.Equal(product.TaxPercent) {
 				mismatch = &PriceMismatch{
-					ProductID: item.ProductID, ClientUnitPrice: original, ClientPercent: pct,
-					CurrentUnitPrice: product.Price, CurrentPercent: product.DiscountPercent,
+					ProductID: item.ProductID, ClientUnitPrice: original, ClientPercent: pct, ClientTaxPercent: taxPct,
+					CurrentUnitPrice: product.Price, CurrentPercent: product.DiscountPercent, CurrentTaxPercent: product.TaxPercent,
 				}
 			}
 		default:
@@ -112,7 +106,7 @@ func (s *Service) priceLines(ctx context.Context, orgID, branchID uint, actor Sa
 				return nil, common.ConflictError("price changed, refresh the catalog")
 			}
 			if !isCombo && item.DiscountApprovalID == nil {
-				unitSale = catalogSalePrice(product)
+				unitSale = product.EffectiveSalePrice()
 				line.CatalogDiscountPercent = product.DiscountPercent
 			}
 		}
@@ -134,15 +128,30 @@ func (s *Service) priceLines(ctx context.Context, orgID, branchID uint, actor Sa
 		}
 		line.Discount = line.CatalogDiscount.Add(line.ComboDiscount)
 		line.LineTotal = gross.Sub(line.Discount)
+		line.TaxPercent = taxPct
 		lines[i] = pricedLine{item: line, mismatch: mismatch}
 	}
 
-	if len(approvalIDs) == 0 {
-		return lines, nil
+	if len(approvalIDs) > 0 {
+		if err := s.applyApprovals(ctx, orgID, branchID, actor, in, lines, approvalIDs); err != nil {
+			return nil, err
+		}
 	}
+	// Tax comes last, after every discount (catalog, custom, combo) is known:
+	// it is the tax inside what the customer actually pays for the line.
+	for i := range lines {
+		lines[i].item.Tax = common.IncludedTax(lines[i].item.LineTotal, lines[i].item.TaxPercent)
+	}
+	return lines, nil
+}
+
+// applyApprovals validates every discount approval the request's lines carry
+// and, for each, replaces that line's catalog discount with the approval's %
+// (taken from the ORIGINAL price).
+func (s *Service) applyApprovals(ctx context.Context, orgID, branchID uint, actor SaleActor, in CreateSaleRequest, lines []pricedLine, approvalIDs []uuid.UUID) error {
 	approvals, err := s.repo.ListDiscountApprovals(ctx, orgID, approvalIDs)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	byID := make(map[uuid.UUID]*DiscountApproval, len(approvals))
 	for i := range approvals {
@@ -155,7 +164,7 @@ func (s *Service) priceLines(ctx context.Context, orgID, branchID uint, actor Sa
 		}
 		approval := byID[*item.DiscountApprovalID]
 		if err := checkApproval(approval, branchID, in.ShiftID, actor.StaffID, item, now); err != nil {
-			return nil, err
+			return err
 		}
 		line := &lines[i].item
 		qty := decimal.NewFromInt(int64(item.Qty))
@@ -170,7 +179,7 @@ func (s *Service) priceLines(ctx context.Context, orgID, branchID uint, actor Sa
 		line.LineTotal = line.UnitPrice.Mul(qty).Sub(line.Discount)
 		lines[i].approval = approval
 	}
-	return lines, nil
+	return nil
 }
 
 // checkApproval is every condition a custom discount must meet to be spent on

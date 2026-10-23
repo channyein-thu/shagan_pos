@@ -2,6 +2,7 @@ package sales
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"testing"
@@ -46,6 +47,13 @@ func catalogProduct(id uint, price, percent string) *catalog.Product {
 		ID: id, OrgID: 7, Price: p, DiscountPercent: pct,
 		SalePrice: common.DiscountedUnitPrice(p, pct), CostPrice: d("100.00"),
 	}
+}
+
+// taxed sets the tax rate printed on a product: its shelf price already
+// contains that tax.
+func taxed(p *catalog.Product, rate string) *catalog.Product {
+	p.TaxPercent = d(rate)
+	return p
 }
 
 func (fx *saleFixture) hasProducts(ps ...*catalog.Product) {
@@ -159,13 +167,13 @@ func TestService_CreateSale_NoDiscountProduct_SellsAtItsPrice(t *testing.T) {
 	fx.hasProducts(catalogProduct(1, "1000", "0"))
 	got := fx.expectPersist()
 
-	_, err := fx.create(oneSale([]CreateSaleItemRequest{{ProductID: 1, NameSnapshot: "Rice", Qty: 2, Tax: d("100")}}, "2100"))
+	_, err := fx.create(oneSale([]CreateSaleItemRequest{{ProductID: 1, NameSnapshot: "Rice", Qty: 2}}, "2000"))
 
 	require.NoError(t, err)
 	require.True(t, d("2000").Equal(got.sale.Subtotal))
 	require.True(t, got.sale.Discount.IsZero())
-	require.True(t, d("100").Equal(got.sale.Tax))
-	require.True(t, d("2100").Equal(got.sale.Total))
+	require.True(t, got.sale.Tax.IsZero(), "a 0%% product carries no tax")
+	require.True(t, d("2000").Equal(got.sale.Total))
 	require.True(t, d("100.00").Equal(got.items[0].UnitCost), "cost is snapshotted from the product, never the client")
 }
 
@@ -258,17 +266,6 @@ func TestService_CreateSale_PayingTheOriginalPriceOfADiscountedLine_IsAMismatch(
 	requireRestErrorStatus(t, err, http.StatusBadRequest)
 }
 
-func TestService_CreateSale_NegativeItemTax_Rejected(t *testing.T) {
-	fx := newSaleFixture(t)
-	fx.expectNothingWritten()
-	item := line(1, 1)
-	item.Tax = d("-5")
-
-	_, err := fx.create(oneSale([]CreateSaleItemRequest{item}, "995"))
-
-	requireRestErrorStatus(t, err, http.StatusBadRequest)
-}
-
 func TestService_CreateSale_NegativeItemDiscount_Rejected(t *testing.T) {
 	fx := newSaleFixture(t)
 	fx.expectNothingWritten()
@@ -293,26 +290,25 @@ func TestService_CreateSale_UnknownProduct_PropagatesNotFound(t *testing.T) {
 // ---- combo lines ----
 
 // The client's bundle share on a combo line is kept as combo_discount: it needs
-// no approval and is not a manual discount. Tax of each component sums into the
-// sale's tax.
+// no approval and is not a manual discount.
 func TestService_CreateSale_ComboLines_KeepTheClientsBundleShareAsComboDiscount(t *testing.T) {
 	fx := newSaleFixture(t)
 	fx.hasProducts(catalogProduct(1, "600", "0"), catalogProduct(2, "400", "0"))
 	got := fx.expectPersist()
 	combo := uint(5)
-	a := CreateSaleItemRequest{ProductID: 1, ComboID: &combo, NameSnapshot: "Rice", Qty: 1, Discount: d("40"), Tax: d("20")}
-	b := CreateSaleItemRequest{ProductID: 2, ComboID: &combo, NameSnapshot: "Oil", Qty: 1, Discount: d("10"), Tax: d("10")}
+	a := CreateSaleItemRequest{ProductID: 1, ComboID: &combo, NameSnapshot: "Rice", Qty: 1, Discount: d("40")}
+	b := CreateSaleItemRequest{ProductID: 2, ComboID: &combo, NameSnapshot: "Oil", Qty: 1, Discount: d("10")}
 
-	_, err := fx.create(oneSale([]CreateSaleItemRequest{a, b}, "980")) // 1000 - 50 + 30
+	_, err := fx.create(oneSale([]CreateSaleItemRequest{a, b}, "950")) // 1000 - 50
 
 	require.NoError(t, err)
 	require.True(t, d("40").Equal(got.items[0].ComboDiscount))
 	require.True(t, d("40").Equal(got.items[0].Discount))
 	require.True(t, got.items[0].CatalogDiscount.IsZero())
 	require.True(t, got.items[0].ManualDiscount.IsZero())
-	require.True(t, d("30").Equal(got.sale.Tax))
+	require.True(t, got.sale.Tax.IsZero())
 	require.True(t, d("50").Equal(got.sale.Discount))
-	require.True(t, d("980").Equal(got.sale.Total))
+	require.True(t, d("950").Equal(got.sale.Total))
 }
 
 // A combo is priced as a bundle: the product's own catalog % does not stack on
@@ -812,6 +808,99 @@ func TestService_CreateSale_Queued_PercentOutOfRange_IsBadRequest(t *testing.T) 
 	}
 }
 
+// Offline, the till taxed the line from the rate in its cached catalog, and
+// that rate is used - the customer already paid what the till showed.
+func TestService_CreateSale_Queued_UsesTheTillsCachedTaxRate(t *testing.T) {
+	fx := newSaleFixture(t)
+	fx.hasProducts(taxed(catalogProduct(1, "10500", "0"), "5")) // the rate has not changed
+	got := fx.expectPersist()
+	rate := d("5")
+	item := line(1, 1)
+	item.UnitPrice = d("10500")
+	item.TaxPercent = &rate
+
+	sale, _, err := fx.createQueued(oneSale([]CreateSaleItemRequest{item}, "10500"))
+
+	require.NoError(t, err)
+	require.True(t, d("500").Equal(got.items[0].Tax))
+	require.True(t, d("5").Equal(got.items[0].TaxPercent))
+	require.True(t, d("10500").Equal(got.sale.Total), "tax is inside the price offline too")
+	require.Empty(t, sale.PriceMismatches, "nothing is stale")
+}
+
+// The Owner changed the rate after the till cached it: the sale keeps the
+// till's 0%, and the SAME price_mismatch report (not a new kind of conflict)
+// carries both rates. It is never rejected for it.
+func TestService_CreateSale_Queued_StaleTaxRate_IsAcceptedAndReportedAsAMismatch(t *testing.T) {
+	fx := newSaleFixture(t)
+	fx.hasProducts(taxed(catalogProduct(1, "10500", "0"), "5")) // now 5%
+	got := fx.expectPersist()
+	rate := d("0") // the till still had 0%
+	item := line(1, 1)
+	item.UnitPrice = d("10500")
+	item.TaxPercent = &rate
+
+	sale, _, err := fx.createQueued(oneSale([]CreateSaleItemRequest{item}, "10500"))
+
+	require.NoError(t, err)
+	require.True(t, got.items[0].Tax.IsZero(), "taxed at the till's rate")
+	require.Len(t, sale.PriceMismatches, 1)
+	m := sale.PriceMismatches[0]
+	require.True(t, d("0").Equal(m.ClientTaxPercent))
+	require.True(t, d("5").Equal(m.CurrentTaxPercent))
+	require.True(t, d("10500").Equal(m.ClientUnitPrice), "the price itself was not stale")
+}
+
+// A till that predates tax rates sends none: the product's current rate is used
+// (and, with nothing claimed, nothing can be stale).
+func TestService_CreateSale_Queued_NoTaxRateSent_UsesTheProductsCurrentRate(t *testing.T) {
+	fx := newSaleFixture(t)
+	fx.hasProducts(taxed(catalogProduct(1, "10500", "0"), "5"))
+	got := fx.expectPersist()
+	item := line(1, 1)
+	item.UnitPrice = d("10500")
+
+	sale, _, err := fx.createQueued(oneSale([]CreateSaleItemRequest{item}, "10500"))
+
+	require.NoError(t, err)
+	require.True(t, d("500").Equal(got.items[0].Tax))
+	require.Empty(t, sale.PriceMismatches)
+}
+
+func TestService_CreateSale_Queued_TaxRateOutOfRange_IsBadRequest(t *testing.T) {
+	for name, pct := range map[string]string{"negative": "-1", "over 100": "100.5"} {
+		t.Run(name, func(t *testing.T) {
+			fx := newSaleFixture(t)
+			fx.expectNothingWritten()
+			fx.hasProducts(catalogProduct(1, "6500", "0"))
+			value := d(pct)
+			item := line(1, 1)
+			item.UnitPrice = d("6500")
+			item.TaxPercent = &value
+
+			_, _, err := fx.createQueued(oneSale([]CreateSaleItemRequest{item}, "6500"))
+
+			requireRestErrorStatus(t, err, http.StatusBadRequest)
+		})
+	}
+}
+
+// A live sale ignores a tax_percent the till sends: only a queued sale is taxed
+// from the till's snapshot.
+func TestService_CreateSale_Live_IgnoresTheTillsTaxPercentSnapshot(t *testing.T) {
+	fx := newSaleFixture(t)
+	fx.hasProducts(taxed(catalogProduct(1, "10500", "0"), "5"))
+	got := fx.expectPersist()
+	rate := d("0")
+	item := line(1, 1)
+	item.TaxPercent = &rate
+
+	_, err := fx.create(oneSale([]CreateSaleItemRequest{item}, "10500"))
+
+	require.NoError(t, err)
+	require.True(t, d("500").Equal(got.items[0].Tax))
+}
+
 // There is no approval offline: a PIN can't be checked.
 func TestService_CreateSale_Queued_ApprovalIdIsRejected(t *testing.T) {
 	fx := newSaleFixture(t)
@@ -838,4 +927,132 @@ func TestService_CreateSale_Live_IgnoresTheTillsCatalogPercentSnapshot(t *testin
 
 	require.NoError(t, err)
 	require.True(t, d("10").Equal(got.items[0].CatalogDiscountPercent), "the product's own 10%%")
+}
+
+// ---- tax: inside the price, worked out by the server ----
+
+// The shelf price already contains the tax, so the customer pays exactly the
+// price and the tax is just the part of it that is tax: K 10,500 at 5% -> K 500.
+func TestService_CreateSale_FivePercentLine_TotalIsThePriceAndTaxIsTheIncludedPart(t *testing.T) {
+	fx := newSaleFixture(t)
+	fx.hasProducts(taxed(catalogProduct(1, "10500", "0"), "5"))
+	got := fx.expectPersist()
+
+	_, err := fx.create(oneSale([]CreateSaleItemRequest{line(1, 1)}, "10500"))
+
+	require.NoError(t, err)
+	require.True(t, d("10500").Equal(got.sale.Total), "tax is never added on top")
+	require.True(t, d("500").Equal(got.sale.Tax))
+	require.True(t, d("500").Equal(got.items[0].Tax))
+	require.True(t, d("5").Equal(got.items[0].TaxPercent), "the rate is stored on the line, so a later return doesn't depend on today's product")
+	require.True(t, d("10500").Equal(got.items[0].LineTotal))
+}
+
+// The old till paid price + tax. That is now an overpayment and is refused.
+func TestService_CreateSale_PayingPricePlusTax_IsAMismatch(t *testing.T) {
+	fx := newSaleFixture(t)
+	fx.expectNothingWritten()
+	fx.hasProducts(taxed(catalogProduct(1, "10500", "0"), "5"))
+
+	_, err := fx.create(oneSale([]CreateSaleItemRequest{line(1, 1)}, "11000")) // 10,500 + 500
+
+	requireRestErrorStatus(t, err, http.StatusBadRequest)
+	fx.repo.AssertNotCalled(t, "CreateSale", mock.Anything, mock.Anything)
+}
+
+func TestService_CreateSale_ZeroPercentProduct_HasNoTax(t *testing.T) {
+	fx := newSaleFixture(t)
+	fx.hasProducts(catalogProduct(1, "10500", "0"))
+	got := fx.expectPersist()
+
+	_, err := fx.create(oneSale([]CreateSaleItemRequest{line(1, 1)}, "10500"))
+
+	require.NoError(t, err)
+	require.True(t, got.sale.Tax.IsZero())
+	require.True(t, got.items[0].Tax.IsZero())
+	require.True(t, got.items[0].TaxPercent.IsZero())
+}
+
+// A discount lowers what is paid, so it lowers the tax inside it: the tax is
+// taken from the line total AFTER the catalog discount.
+func TestService_CreateSale_CatalogDiscount_LowersTheTax(t *testing.T) {
+	fx := newSaleFixture(t)
+	fx.hasProducts(taxed(catalogProduct(1, "6500", "10"), "5")) // sells at 5,900
+	got := fx.expectPersist()
+
+	_, err := fx.create(oneSale([]CreateSaleItemRequest{line(1, 2)}, "11800"))
+
+	require.NoError(t, err)
+	require.True(t, d("11800").Equal(got.sale.Total))
+	require.True(t, d("561.90").Equal(got.items[0].Tax), "11,800 x 5 / 105, not 13,000 x 5 / 105 (got %s)", got.items[0].Tax)
+	require.True(t, d("561.90").Equal(got.sale.Tax))
+}
+
+// Same for a custom discount: the approval's % replaces the catalog %, and the
+// tax follows the price actually paid.
+func TestService_CreateSale_CustomDiscount_LowersTheTax(t *testing.T) {
+	fx := newSaleFixture(t)
+	fx.hasProducts(taxed(catalogProduct(1, "6500", "0"), "5"))
+	got := fx.expectPersist()
+	a := validApproval() // 10% off product 1, up to 2 units
+	fx.hasApprovals(a)
+
+	_, err := fx.create(oneSale([]CreateSaleItemRequest{withApproval(line(1, 1), a)}, "5900"))
+
+	require.NoError(t, err)
+	require.True(t, d("5900").Equal(got.sale.Total))
+	require.True(t, d("280.95").Equal(got.items[0].Tax), "5,900 x 5 / 105 (got %s)", got.items[0].Tax)
+	require.True(t, d("5").Equal(got.items[0].TaxPercent))
+}
+
+// A combo line is taxed with its own product's rate on what is left after its
+// share of the bundle discount.
+func TestService_CreateSale_ComboLine_IsTaxedOnItsTotalAfterTheBundleShare(t *testing.T) {
+	fx := newSaleFixture(t)
+	fx.hasProducts(taxed(catalogProduct(1, "600", "0"), "5"), catalogProduct(2, "400", "0"))
+	got := fx.expectPersist()
+	combo := uint(5)
+	a := CreateSaleItemRequest{ProductID: 1, ComboID: &combo, NameSnapshot: "Rice", Qty: 1, Discount: d("40")}
+	b := CreateSaleItemRequest{ProductID: 2, ComboID: &combo, NameSnapshot: "Oil", Qty: 1, Discount: d("10")}
+
+	_, err := fx.create(oneSale([]CreateSaleItemRequest{a, b}, "950"))
+
+	require.NoError(t, err)
+	require.True(t, d("26.67").Equal(got.items[0].Tax), "(600 - 40) x 5 / 105 (got %s)", got.items[0].Tax)
+	require.True(t, got.items[1].Tax.IsZero(), "the oil is a 0%% product")
+	require.True(t, d("26.67").Equal(got.sale.Tax))
+	require.True(t, d("950").Equal(got.sale.Total))
+}
+
+// Each line uses its own product's rate; the sale's tax is the sum of the
+// per-line (already rounded) taxes.
+func TestService_CreateSale_LinesWithDifferentRates_EachUseTheirOwn(t *testing.T) {
+	fx := newSaleFixture(t)
+	fx.hasProducts(taxed(catalogProduct(1, "10500", "0"), "5"), taxed(catalogProduct(2, "1100", "0"), "10"), catalogProduct(3, "700", "0"))
+	got := fx.expectPersist()
+
+	_, err := fx.create(oneSale([]CreateSaleItemRequest{line(1, 1), line(2, 1), line(3, 1)}, "12300"))
+
+	require.NoError(t, err)
+	require.True(t, d("500").Equal(got.items[0].Tax))
+	require.True(t, d("100").Equal(got.items[1].Tax))
+	require.True(t, got.items[2].Tax.IsZero())
+	require.True(t, d("600").Equal(got.sale.Tax))
+	require.True(t, d("12300").Equal(got.sale.Total))
+}
+
+// The client no longer says what the tax is: a `tax` field on a line (an old
+// till still sends one) is simply not read.
+func TestService_CreateSale_ClientTaxOnALine_IsIgnored(t *testing.T) {
+	fx := newSaleFixture(t)
+	fx.hasProducts(taxed(catalogProduct(1, "10500", "0"), "5"))
+	got := fx.expectPersist()
+	var item CreateSaleItemRequest
+	require.NoError(t, json.Unmarshal([]byte(`{"product_id":1,"name_snapshot":"Rice","qty":1,"tax":"9999"}`), &item))
+
+	_, err := fx.create(oneSale([]CreateSaleItemRequest{item}, "10500"))
+
+	require.NoError(t, err)
+	require.True(t, d("500").Equal(got.items[0].Tax), "the server's 500, not the client's 9,999")
+	require.True(t, d("10500").Equal(got.sale.Total))
 }

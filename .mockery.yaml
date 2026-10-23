@@ -137,6 +137,9 @@ packages:
       SalesReader:
         config:
           filename: "mock_returns_sales_reader_test.go"
+      ProductLookup:
+        config:
+          filename: "mock_returns_product_lookup_test.go"
       AuditWriter:
         config:
           filename: "mock_returns_audit_writer_test.go"

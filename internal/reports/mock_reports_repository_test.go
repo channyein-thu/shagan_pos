@@ -826,6 +826,66 @@ func (_c *MockRepository_SalesAggregate_Call) RunAndReturn(run func(context.Cont
 	return _c
 }
 
+// TaxTotals provides a mock function with given fields: ctx, orgID, branchID, from, to
+func (_m *MockRepository) TaxTotals(ctx context.Context, orgID uint, branchID *uint, from time.Time, to time.Time) (TaxTotals, error) {
+	ret := _m.Called(ctx, orgID, branchID, from, to)
+
+	if len(ret) == 0 {
+		panic("no return value specified for TaxTotals")
+	}
+
+	var r0 TaxTotals
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, uint, *uint, time.Time, time.Time) (TaxTotals, error)); ok {
+		return rf(ctx, orgID, branchID, from, to)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, uint, *uint, time.Time, time.Time) TaxTotals); ok {
+		r0 = rf(ctx, orgID, branchID, from, to)
+	} else {
+		r0 = ret.Get(0).(TaxTotals)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, uint, *uint, time.Time, time.Time) error); ok {
+		r1 = rf(ctx, orgID, branchID, from, to)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// MockRepository_TaxTotals_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'TaxTotals'
+type MockRepository_TaxTotals_Call struct {
+	*mock.Call
+}
+
+// TaxTotals is a helper method to define mock.On call
+//   - ctx context.Context
+//   - orgID uint
+//   - branchID *uint
+//   - from time.Time
+//   - to time.Time
+func (_e *MockRepository_Expecter) TaxTotals(ctx interface{}, orgID interface{}, branchID interface{}, from interface{}, to interface{}) *MockRepository_TaxTotals_Call {
+	return &MockRepository_TaxTotals_Call{Call: _e.mock.On("TaxTotals", ctx, orgID, branchID, from, to)}
+}
+
+func (_c *MockRepository_TaxTotals_Call) Run(run func(ctx context.Context, orgID uint, branchID *uint, from time.Time, to time.Time)) *MockRepository_TaxTotals_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(uint), args[2].(*uint), args[3].(time.Time), args[4].(time.Time))
+	})
+	return _c
+}
+
+func (_c *MockRepository_TaxTotals_Call) Return(_a0 TaxTotals, _a1 error) *MockRepository_TaxTotals_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *MockRepository_TaxTotals_Call) RunAndReturn(run func(context.Context, uint, *uint, time.Time, time.Time) (TaxTotals, error)) *MockRepository_TaxTotals_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Trend provides a mock function with given fields: ctx, orgID, branchID, from, to, granularity, timezone
 func (_m *MockRepository) Trend(ctx context.Context, orgID uint, branchID *uint, from time.Time, to time.Time, granularity Granularity, timezone string) ([]TrendBucket, error) {
 	ret := _m.Called(ctx, orgID, branchID, from, to, granularity, timezone)

@@ -32,10 +32,19 @@ type Product struct {
 	DiscountPercent decimal.Decimal `gorm:"type:decimal(5,2);not null;default:0" json:"discount_percent"`
 	SalePrice       decimal.Decimal `gorm:"type:decimal(10,2);not null;default:0" json:"sale_price"`
 	Discount        decimal.Decimal `gorm:"type:decimal(10,2);not null" json:"discount"`
-	Tax             decimal.Decimal `gorm:"type:decimal(10,2);not null" json:"tax"`
-	Threshold       int             `gorm:"not null" json:"threshold"`
-	IsActive        bool            `gorm:"not null" json:"is_active"`
-	Modifier        *string         `gorm:"size:255" json:"modifier"`
+	// TaxPercent (0-100) is the tax rate the Owner sets. Prices already
+	// CONTAIN the tax - it is never added on top. Tax is server-computed and
+	// informational: the tax inside one unit at SalePrice,
+	// common.IncludedTax(SalePrice, TaxPercent), recomputed whenever the price,
+	// the catalog discount % or this rate changes. A client-sent tax amount is
+	// ignored; the field stays in the JSON so older clients keep working.
+	// default:0 lets AutoMigrate add the column to a table that has rows (see
+	// the one-time conversion in AutoMigrate).
+	TaxPercent decimal.Decimal `gorm:"type:decimal(5,2);not null;default:0" json:"tax_percent"`
+	Tax        decimal.Decimal `gorm:"type:decimal(10,2);not null" json:"tax"`
+	Threshold  int             `gorm:"not null" json:"threshold"`
+	IsActive   bool            `gorm:"not null" json:"is_active"`
+	Modifier   *string         `gorm:"size:255" json:"modifier"`
 	// CostPrice is this product's current cost basis, blended via weighted
 	// average across however it enters stock (a Procurement goods receipt,
 	// or an Inventory stock adjustment that supplies its own unit_cost -
@@ -47,6 +56,19 @@ type Product struct {
 	CostPrice decimal.Decimal `gorm:"type:decimal(10,2);not null;default:0" json:"-"`
 	CreatedAt time.Time       `gorm:"autoCreateTime;not null" json:"created_at"`
 	UpdatedAt time.Time       `gorm:"autoUpdateTime;not null" json:"updated_at"`
+}
+
+// EffectiveSalePrice is what a till charges for one unit before any custom
+// discount: the stored sale_price (the catalog % already applied, rounded when
+// the Owner set it). A row that was never priced - sale_price 0 with no percent
+// - has no catalog discount, so it sells at its price; a 100% product
+// (sale_price 0, percent 100) is genuinely free. Sales and exchanges both price
+// from this, so the two can never disagree.
+func (p *Product) EffectiveSalePrice() decimal.Decimal {
+	if p.SalePrice.IsZero() && p.DiscountPercent.IsZero() {
+		return p.Price
+	}
+	return p.SalePrice
 }
 
 // Category maps to the "categories" table in the ERD. NameI18n is unique per

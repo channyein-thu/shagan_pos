@@ -7,6 +7,7 @@ import (
 	"gorm.io/gorm"
 
 	"shagan_pos/internal/audit"
+	"shagan_pos/internal/catalog"
 	"shagan_pos/internal/identity"
 	"shagan_pos/internal/inventory"
 	"shagan_pos/internal/sales"
@@ -19,6 +20,13 @@ import (
 type BranchLookup interface {
 	GetBranch(ctx context.Context, orgID uint, id uint) (*identity.Branch, error)
 	ListBranches(ctx context.Context, orgID uint) ([]identity.Branch, error)
+}
+
+// ProductLookup is what returns needs from catalog: pricing an exchange's "out"
+// lines from the product (its sale price and tax rate), never from the client.
+// catalog.Repository already satisfies this signature - no adapter needed.
+type ProductLookup interface {
+	GetProduct(ctx context.Context, orgID uint, id uint) (*catalog.Product, error)
 }
 
 // InventoryWriter is what returns needs from inventory: crediting a

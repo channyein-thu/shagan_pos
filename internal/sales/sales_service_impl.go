@@ -33,7 +33,7 @@ func NewService(repo Repository, inv InventoryWriter, products ProductLookup, au
 var _ Interface = (*Service)(nil)
 
 // pricedLine is one request line after the server has priced it from the
-// product: nothing in it comes from the client except qty and tax.
+// product: nothing in it comes from the client except qty.
 type pricedLine struct {
 	item     SaleItem
 	approval *DiscountApproval // the approval this line spends, if any
@@ -96,7 +96,9 @@ func (s *Service) CreateSale(ctx context.Context, orgID uint, branchID uint, act
 		discountTotal = discountTotal.Add(line.item.Discount)
 		taxTotal = taxTotal.Add(line.item.Tax)
 	}
-	total := subtotal.Sub(discountTotal).Add(taxTotal)
+	// Prices already contain their tax, so it is never added: the customer pays
+	// exactly the discounted price. taxTotal is just the part that is tax.
+	total := subtotal.Sub(discountTotal)
 
 	payments := make([]Payment, 0, len(in.Payments))
 	paymentsTotal := decimal.Zero
@@ -116,19 +118,20 @@ func (s *Service) CreateSale(ctx context.Context, orgID uint, branchID uint, act
 
 	now := time.Now()
 	sale := &Sale{
-		ID:          in.ID,
-		OrgID:       orgID,
-		BranchID:    branchID,
-		ShiftID:     in.ShiftID,
-		StaffID:     actor.StaffID,
-		DeviceID:    in.DeviceID,
-		CustomerID:  in.CustomerID,
-		Subtotal:    subtotal,
-		Discount:    discountTotal,
-		Tax:         taxTotal,
-		Total:       total,
-		Status:      SaleStatusCompleted,
-		CompletedAt: &now,
+		ID:           in.ID,
+		OrgID:        orgID,
+		BranchID:     branchID,
+		ShiftID:      in.ShiftID,
+		StaffID:      actor.StaffID,
+		DeviceID:     in.DeviceID,
+		CustomerID:   in.CustomerID,
+		Subtotal:     subtotal,
+		Discount:     discountTotal,
+		Tax:          taxTotal,
+		TaxInclusive: true,
+		Total:        total,
+		Status:       SaleStatusCompleted,
+		CompletedAt:  &now,
 	}
 	// allowNegativeStock is only ever true for datasync.Service.IngestQueuedSales
 	// re-submitting an offline-queued sale - stamp SyncedAt to mark it as
@@ -416,6 +419,9 @@ func (s *Service) GetSaleReceipt(ctx context.Context, orgID uint, id uuid.UUID) 
 		"sale":     ReceiptSale{Sale: *sale, ReturnSummary: summaries[id]},
 		"items":    receiptItems,
 		"payments": payments,
+		// true: the prices include the tax (print "Includes tax"). false is a
+		// sale from before, whose tax was added on top of its total.
+		"tax_inclusive": sale.TaxInclusive,
 	}, nil
 }
 

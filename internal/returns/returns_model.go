@@ -108,6 +108,11 @@ type Return struct {
 	ReasonCode   ReturnReasonCode `gorm:"type:varchar(30);not null" json:"reason_code"`   // one of ReturnReasonCode* constants below (TODO: confirm real values)
 	RefundMethod RefundMethod     `gorm:"type:varchar(30);not null" json:"refund_method"` // one of RefundMethod* constants below (TODO: confirm real values)
 	RefundTotal  decimal.Decimal  `gorm:"type:decimal(10,2);not null" json:"refund_total"`
+	// TaxRefunded is the tax given back inside RefundTotal: for each returned
+	// line, the tax in the refund at that sale line's stored rate. Informational
+	// - RefundTotal is already tax-inclusive and is what leaves the drawer. 0 for
+	// returns from before tax was a rate inside the price.
+	TaxRefunded decimal.Decimal `gorm:"type:decimal(10,2);not null;default:0" json:"tax_refunded"`
 	// Explanation is the free-text "reason for return" the cashier types at
 	// the till, kept alongside the coarse ReasonCode. "" for older rows.
 	Explanation string `gorm:"type:text;not null;default:''" json:"explanation"`
@@ -136,7 +141,17 @@ type Exchange struct {
 	ID            uint            `gorm:"primaryKey;autoIncrement" json:"id"`
 	SaleID        uuid.UUID       `gorm:"type:uuid;index;not null" json:"sale_id"`
 	NetDifference decimal.Decimal `gorm:"type:decimal(10,2);not null" json:"net_difference"`
-	ApprovedBy    uint            `gorm:"index;not null" json:"approved_by"`
+	// TaxIn is the tax inside the credit for the goods that came back, TaxOut
+	// the tax inside the price of the new goods (both at the lines' own stored
+	// rates). Informational: NetDifference is already tax-inclusive, and the
+	// tax the shop keeps changes by TaxOut - TaxIn. 0 for exchanges from before.
+	TaxIn  decimal.Decimal `gorm:"type:decimal(10,2);not null;default:0" json:"tax_in"`
+	TaxOut decimal.Decimal `gorm:"type:decimal(10,2);not null;default:0" json:"tax_out"`
+	// Items is only filled on the response to the request that CREATED the
+	// exchange (so the till can show what the "out" lines were priced at); it
+	// is never stored on this row.
+	Items      []ExchangeItem `gorm:"-" json:"items,omitempty"`
+	ApprovedBy uint           `gorm:"index;not null" json:"approved_by"`
 	// Method is how NetDifference was settled (cash/QR); nil when it was
 	// zero, and for rows from before this column existed.
 	Method *ExchangeMethod `gorm:"type:varchar(30)" json:"method"`
@@ -155,6 +170,12 @@ type ExchangeItem struct {
 	ProductID  *uint           `gorm:"index" json:"product_id"`
 	Qty        int             `gorm:"not null" json:"qty"`
 	UnitPrice  decimal.Decimal `gorm:"type:decimal(10,2);not null" json:"unit_price"`
+	// TaxPercent is the line's tax rate - the product's current one for an
+	// "out" line, the original sale line's stored one for an "in" line - and
+	// Tax is the tax inside Qty x UnitPrice at that rate. Prices contain their
+	// tax, so neither changes what is paid. 0 on rows from before.
+	TaxPercent decimal.Decimal `gorm:"type:decimal(5,2);not null;default:0" json:"tax_percent"`
+	Tax        decimal.Decimal `gorm:"type:decimal(10,2);not null;default:0" json:"tax"`
 	// Condition is the state an "in" line came back in; only sellable goes
 	// back on the shelf. Nil for "out" lines and for rows from before this
 	// column existed (those were all restocked, i.e. sellable).

@@ -35,15 +35,26 @@ type Filter struct {
 
 // SalesTotals is the shared Gross/Discounts/Returns/Net breakdown behind
 // every report that surfaces a headline revenue figure. NetSales = GrossSales
-// - Discounts - Returns; tax is deliberately excluded from all three (tax is
-// a pass-through, not revenue), and a Voided sale never enters GrossSales at
-// all (a void erases the whole transaction, per docs/WORKFLOWS.md's Void
+// - Discounts - Returns: what the shop took. Prices contain their tax, so for
+// a sale made since tax became a rate inside the price that figure INCLUDES the
+// tax (customers pay exactly the price); TaxCollected is the tax inside it and
+// NetSalesExclTax is NetSales without it. A Voided sale never enters GrossSales
+// at all (a void erases the whole transaction, per docs/WORKFLOWS.md's Void
 // rule) rather than being counted and subtracted back out.
+//
+// TaxCollected = the tax of the period's sales - the tax inside what returns
+// gave back + the tax difference of exchanges (what the new goods carry minus
+// what the returned goods carried). A sale from before tax was inside the price
+// had its tax added ON TOP of its total, so its subtotal - discount never
+// contained it: it counts as tax collected but is not taken out of NetSales a
+// second time in NetSalesExclTax.
 type SalesTotals struct {
 	GrossSales       decimal.Decimal `json:"gross_sales"`
 	Discounts        decimal.Decimal `json:"discounts"`
 	Returns          decimal.Decimal `json:"returns"`
 	NetSales         decimal.Decimal `json:"net_sales"`
+	TaxCollected     decimal.Decimal `json:"tax_collected"`
+	NetSalesExclTax  decimal.Decimal `json:"net_sales_excl_tax"`
 	TransactionCount int             `json:"transaction_count"`
 }
 
@@ -82,7 +93,7 @@ type HourlyPoint struct {
 // TodayReport, SalesSummary.ByPaymentMethod, and PaymentMethodsReport.
 // Amount is the actual amount collected (Payment.Amount, tax-inclusive -
 // this answers "how much came in via this channel", a different question
-// from the tax-excluded NetSales revenue figure used elsewhere).
+// from the NetSales revenue figure used elsewhere).
 type PaymentMethodBreakdown struct {
 	Method     string          `json:"method"`
 	Amount     decimal.Decimal `json:"amount"`
@@ -92,8 +103,8 @@ type PaymentMethodBreakdown struct {
 
 // ProductRevenue is one product's qty/revenue - reused by TodayReport,
 // ProductSalesReport, and TopProductsReport. Revenue is
-// SUM(SaleItem.LineTotal) (already net of that line's own discount,
-// excludes tax) - not netted against Returns (see
+// SUM(SaleItem.LineTotal) (already net of that line's own discount; for a
+// sale since tax became inclusive that includes the tax) - not netted against Returns (see
 // Service.GetProductSalesReport's doc).
 type ProductRevenue struct {
 	ProductID uint            `json:"product_id"`

@@ -524,12 +524,12 @@
                   "type": "text"
                 },
                 {
-                  "key": "discount",
+                  "key": "discount_percent",
                   "value": "0",
                   "type": "text"
                 },
                 {
-                  "key": "tax",
+                  "key": "tax_percent",
                   "value": "0",
                   "type": "text"
                 },
@@ -975,7 +975,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"id\": \"{{uatSaleAId}}\",\n  \"shift_id\": {{uatShiftId}},\n  \"device_id\": {{uatDeviceId}},\n  \"items\": [\n    {\n      \"product_id\": {{uatProductId}},\n      \"name_snapshot\": \"Instant Noodles\",\n      \"unit_price\": \"500.00\",\n      \"qty\": 1,\n      \"discount\": \"0\",\n      \"tax\": \"0\"\n    }\n  ],\n  \"payments\": [\n    {\n      \"method\": \"cash\",\n      \"amount\": \"500.00\",\n      \"amount_received\": \"500.00\"\n    }\n  ]\n}",
+              "raw": "{\n  \"id\": \"{{uatSaleAId}}\",\n  \"shift_id\": {{uatShiftId}},\n  \"device_id\": {{uatDeviceId}},\n  \"items\": [\n    {\n      \"product_id\": {{uatProductId}},\n      \"name_snapshot\": \"Instant Noodles\",\n      \"unit_price\": \"500.00\",\n      \"qty\": 1\n    }\n  ],\n  \"payments\": [\n    {\n      \"method\": \"cash\",\n      \"amount\": \"500.00\",\n      \"amount_received\": \"500.00\"\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1139,7 +1139,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"id\": \"{{uatSaleBId}}\",\n  \"shift_id\": {{uatShiftId}},\n  \"device_id\": {{uatDeviceId}},\n  \"items\": [\n    {\n      \"product_id\": {{uatProductId}},\n      \"name_snapshot\": \"Instant Noodles\",\n      \"unit_price\": \"500.00\",\n      \"qty\": 3,\n      \"discount\": \"0\",\n      \"tax\": \"0\"\n    }\n  ],\n  \"payments\": [\n    {\n      \"method\": \"cash\",\n      \"amount\": \"1000.00\",\n      \"amount_received\": \"1000.00\"\n    },\n    {\n      \"method\": \"qr\",\n      \"amount\": \"500.00\"\n    }\n  ]\n}",
+              "raw": "{\n  \"id\": \"{{uatSaleBId}}\",\n  \"shift_id\": {{uatShiftId}},\n  \"device_id\": {{uatDeviceId}},\n  \"items\": [\n    {\n      \"product_id\": {{uatProductId}},\n      \"name_snapshot\": \"Instant Noodles\",\n      \"unit_price\": \"500.00\",\n      \"qty\": 3\n    }\n  ],\n  \"payments\": [\n    {\n      \"method\": \"cash\",\n      \"amount\": \"1000.00\",\n      \"amount_received\": \"1000.00\"\n    },\n    {\n      \"method\": \"qr\",\n      \"amount\": \"500.00\"\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3493,7 +3493,7 @@
                     }
                   ]
                 },
-                "description": "Exact-match barcode lookup, scoped to the caller's org - returns the product plus its \"images\" array (see ListProducts), same presigned-URL/15-minute-TTL reasoning. Products are org-wide, and barcode is unique per org, so this resolves unambiguously with no branch needed."
+                "description": "Exact-match barcode lookup, scoped to the caller's org - returns the product plus its \"images\" array (see ListProducts), same presigned-URL/15-minute-TTL reasoning. Products are org-wide, and barcode is unique per org, so this resolves unambiguously with no branch needed. The product carries tax_percent (the tax already inside the price) and the computed per-unit tax."
               },
               "response": []
             },
@@ -3563,8 +3563,8 @@
                       "type": "text"
                     },
                     {
-                      "key": "tax",
-                      "value": "0.20",
+                      "key": "tax_percent",
+                      "value": "5",
                       "type": "text"
                     },
                     {
@@ -3594,7 +3594,7 @@
                   "host": ["{{baseUrl}}"],
                   "path": ["api", "v1", "products"]
                 },
-                "description": "Multipart upload: every product field as a form field, plus \"image\" (required product photo - attach it yourself, no default file is set). Products are org-wide - no branch_id. category_id must belong to your own org. modifier is optional - leave blank for null. Back Office write: an Owner / Service Center, or a till's X-Staff-Token carrying access_backoffice AND manage_catalog (403 with only one of them, 401 with no staff token). discount_percent (0-100, default 0) is the catalog discount: the server computes and stores sale_price (price less the %, rounded UP to the next K 100, never above price) and the per-unit discount (price - sale_price); a client-sent discount amount is ignored. The catalog discount is automatic at the till - no approval, no permission, online or offline."
+                "description": "Multipart upload: every product field as a form field, plus \"image\" (required product photo - attach it yourself, no default file is set). Products are org-wide - no branch_id. category_id must belong to your own org. modifier is optional - leave blank for null. Back Office write: an Owner / Service Center, or a till's X-Staff-Token carrying access_backoffice AND manage_catalog (403 with only one of them, 401 with no staff token). discount_percent (0-100, default 0) is the catalog discount: the server computes and stores sale_price (price less the %, rounded UP to the next K 100, never above price) and the per-unit discount (price - sale_price); a client-sent discount amount is ignored. The catalog discount is automatic at the till - no approval, no permission, online or offline. tax_percent (0-100, default 0) is the tax already INSIDE the price: the server never adds it to a total and stores tax (informational) = the tax inside one unit at the sale price, round(sale_price x p / (100 + p), 2) - K 10,500 at 5% -> tax 500. A client-sent tax amount is ignored; a tax_percent outside 0-100 is 400."
               },
               "response": []
             },
@@ -3645,7 +3645,7 @@
                     }
                   ]
                 },
-                "description": "Multipart upload, scoped to the caller's org (org_id can never be reassigned via this endpoint). Every field is optional - only send what you want to change, remove any row you don't need (an unselected \"image\" file row causes a Postman bug - EISDIR - so delete it entirely rather than leaving it empty). Products are org-wide - no branch_id. category_id, if sent, must belong to your own org. price/discount/tax are validated against the resulting combined state (existing values fill in for anything not sent), not just the fields in this request. image, if attached, entirely replaces the product's existing photo. modifier can't be cleared back to null via PATCH yet - omitting it just leaves it unchanged. cost_price lets you set the cost basis directly (e.g. for stock never received through a real Procurement goods receipt) - it never appears in GET /products or GET /products/:id (business-sensitive, only readable via GET /reports/profit-loss). Back Office write: an Owner / Service Center, or a till's X-Staff-Token carrying access_backoffice AND manage_catalog (403 with only one of them, 401 with no staff token). discount_percent (0-100) is the only way to change a product's discount; changing it or the price recomputes sale_price and discount (a price change keeps the existing percent). A client-sent discount amount is ignored; a percent outside 0-100 is 400."
+                "description": "Multipart upload, scoped to the caller's org (org_id can never be reassigned via this endpoint). Every field is optional - only send what you want to change, remove any row you don't need (an unselected \"image\" file row causes a Postman bug - EISDIR - so delete it entirely rather than leaving it empty). Products are org-wide - no branch_id. category_id, if sent, must belong to your own org. price/discount_percent/tax_percent are validated against the resulting combined state (existing values fill in for anything not sent), not just the fields in this request. image, if attached, entirely replaces the product's existing photo. modifier can't be cleared back to null via PATCH yet - omitting it just leaves it unchanged. cost_price lets you set the cost basis directly (e.g. for stock never received through a real Procurement goods receipt) - it never appears in GET /products or GET /products/:id (business-sensitive, only readable via GET /reports/profit-loss). Back Office write: an Owner / Service Center, or a till's X-Staff-Token carrying access_backoffice AND manage_catalog (403 with only one of them, 401 with no staff token). discount_percent (0-100) is the only way to change a product's discount; changing it or the price recomputes sale_price and discount (a price change keeps the existing percent). A client-sent discount amount is ignored; a percent outside 0-100 is 400. tax_percent (0-100) is the only way to change a product's tax: it is already inside the price, and changing it, the price or discount_percent recomputes the informational tax (round(sale_price x p / (100 + p), 2)). A client-sent tax amount is ignored; tax_percent outside 0-100 is 400."
               },
               "response": []
             },
@@ -4199,7 +4199,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"id\": \"11111111-1111-1111-1111-111111111111\",\n  \"shift_id\": 1,\n  \"device_id\": 1,\n  \"items\": [\n    {\n      \"product_id\": 1,\n      \"name_snapshot\": \"Rice 5kg\",\n      \"unit_price\": \"1000\",\n      \"qty\": 2,\n      \"discount_approval_id\": \"{{discountApprovalId}}\",\n      \"tax\": \"40\"\n    },\n    {\n      \"product_id\": 2,\n      \"combo_id\": null,\n      \"name_snapshot\": \"Cooking Oil 1L\",\n      \"unit_price\": \"7200\",\n      \"qty\": 1,\n      \"tax\": \"0\"\n    }\n  ],\n  \"payments\": [\n    {\n      \"method\": \"cash\",\n      \"amount\": \"9190\",\n      \"amount_received\": \"9190\"\n    }\n  ]\n}",
+              "raw": "{\n  \"id\": \"11111111-1111-1111-1111-111111111111\",\n  \"shift_id\": 1,\n  \"device_id\": 1,\n  \"items\": [\n    {\n      \"product_id\": 1,\n      \"name_snapshot\": \"Rice 5kg\",\n      \"unit_price\": \"1000\",\n      \"qty\": 2,\n      \"discount_approval_id\": \"{{discountApprovalId}}\"\n    },\n    {\n      \"product_id\": 2,\n      \"combo_id\": null,\n      \"name_snapshot\": \"Cooking Oil 1L\",\n      \"unit_price\": \"7200\",\n      \"qty\": 1\n    }\n  ],\n  \"payments\": [\n    {\n      \"method\": \"cash\",\n      \"amount\": \"9000\",\n      \"amount_received\": \"9000\"\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4211,7 +4211,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "sales"]
             },
-            "description": "Requires a branch-bound pos-device token (org_id and branch_id both come from it, never the body) AND X-Staff-Token (run VerifyStaffPIN first - it auto-saves into {{staffToken}}). id is a client-generated UUID and the idempotency key: re-sending a sale this same device already recorded (e.g. after a lost response) returns the original sale with 200 instead of 201, creates nothing and decrements no stock again, and needs no fresh manager approval; the same id from a different branch/device is 409. Subtotal/Discount/Tax/Total are NOT accepted at the sale level - each item snapshots its own tax (from Product.Tax, same offline-first reasoning as unit_price/name_snapshot); the server sums Subtotal/Discount/Tax from items and derives Total = Subtotal - Discount + Tax, then rejects the request (400) if payments don't add up to that Total. combo_id is optional - set it to tag several line items as components of the same Combo rung up together (purely a grouping label for receipts/reporting; each component is still priced/taxed/discounted as its own normal line item). shift_id must be a currently-open shift belonging to this branch, else 404. Status/completed_at are always server-set to completed/now(). Any item's discount or tax must be zero or greater (400 otherwise). A positive item discount requires the calling staff's role to grant apply_manual_discount (only super_staff/manager have it by default) OR a valid X-Manager-Approval-Token granting it (enable that header and run VerifyManagerPIN with permission=apply_manual_discount first, as the target staff) - 403 without either. Stock decrement/inventory-ledger writes are deliberately deferred until the Inventory domain exists. Needs accept_payments on the X-Staff-Token (403 without it). DISCOUNTS (Discount V1): every line is priced from the PRODUCT. unit_price is only checked - a different value is 409 'price changed, refresh the catalog'; leave it out freely. With no discount_approval_id the line gets the product's catalog % (sale_price). With one (from POST /sales/discount-approvals, obtained when the discount was ADDED) the approval's % comes off the original price and replaces the catalog %. A client discount is ignored except on a combo line (combo_id set), where it is the bundle share (combo_discount, needs no approval). price_override is 400. Approval errors are 409: already used, cancelled, expired, a different seller / product / shift, qty above max_qty, or the same approval on two lines. Payments must equal the derived total exactly. X-Manager-Approval-Token is NOT used for discounts any more, and payment never asks for a PIN."
+            "description": "Requires a branch-bound pos-device token (org_id and branch_id both come from it, never the body) AND X-Staff-Token (run VerifyStaffPIN first - it auto-saves into {{staffToken}}). id is a client-generated UUID and the idempotency key: re-sending a sale this same device already recorded (e.g. after a lost response) returns the original sale with 200 instead of 201, creates nothing and decrements no stock again, and needs no fresh manager approval; the same id from a different branch/device is 409. Subtotal/Discount/Tax/Total are NOT accepted at the sale level - the server prices every line from its product, sums Subtotal/Discount/Tax from the lines and derives Total = Subtotal - Discount (tax is a % per product that is already INSIDE the price and is never added), then rejects the request (400) if payments don't add up to that Total - so a till still paying price + tax gets a 400. TAX (Tax V1): there is no tax field on a line any more - a tax the client sends is ignored; each line gets round(line_total x p / (100 + p), 2) from its product's tax_percent, taken on the line total AFTER its catalog / custom / combo discount, and stores tax_percent on the line; the sale gets tax_inclusive true and tax = the sum (informational). combo_id is optional - set it to tag several line items as components of the same Combo rung up together (purely a grouping label for receipts/reporting; each component is still priced/taxed/discounted as its own normal line item). shift_id must be a currently-open shift belonging to this branch, else 404. Status/completed_at are always server-set to completed/now(). An item's discount must be zero or greater (400 otherwise). Needs accept_payments on the X-Staff-Token (403 without it). DISCOUNTS (Discount V1): every line is priced from the PRODUCT. unit_price is only checked - a different value is 409 'price changed, refresh the catalog'; leave it out freely. With no discount_approval_id the line gets the product's catalog % (sale_price). With one (from POST /sales/discount-approvals, obtained when the discount was ADDED) the approval's % comes off the original price and replaces the catalog %. A client discount is ignored except on a combo line (combo_id set), where it is the bundle share (combo_discount, needs no approval). price_override is 400. Approval errors are 409: already used, cancelled, expired, a different seller / product / shift, qty above max_qty, or the same approval on two lines. Payments must equal the derived total exactly. X-Manager-Approval-Token is NOT used for discounts any more, and payment never asks for a PIN."
           },
           "response": []
         },
@@ -4344,7 +4344,7 @@
                 }
               ]
             },
-            "description": "Structured receipt data (sale + items + payments) - not printer-specific ESC/POS byte formatting, which belongs to Platform's printer integration, not here. sale also carries has_return, has_exchange and refunded_total (decimal string); every item also carries returned_qty (qty on return lines plus exchange 'in' lines) and returnable_qty (qty - returned_qty, never below 0) so the till can cap its Return/Exchange steppers before asking for a manager PIN. Needs view_sales only when called with a Back Office staff token (X-Staff-Token carrying access_backoffice); an Owner always passes and plain till reads are unchanged. Each item also carries the discount breakdown: unit_price (the ORIGINAL price), unit_sale_price (after the catalog or manual discount), catalog_discount_percent / catalog_discount, manual_discount_percent / manual_discount / manual_discount_reason, combo_discount, discount_approval_id, manual_approved_by and manual_approved_by_name. discount is still their sum. A line sold before the split shows only discount."
+            "description": "Structured receipt data (sale + items + payments) - not printer-specific ESC/POS byte formatting, which belongs to Platform's printer integration, not here. sale also carries has_return, has_exchange and refunded_total (decimal string); every item also carries returned_qty (qty on return lines plus exchange 'in' lines) and returnable_qty (qty - returned_qty, never below 0) so the till can cap its Return/Exchange steppers before asking for a manager PIN. Needs view_sales only when called with a Back Office staff token (X-Staff-Token carrying access_backoffice); an Owner always passes and plain till reads are unchanged. Each item also carries the discount breakdown: unit_price (the ORIGINAL price), unit_sale_price (after the catalog or manual discount), catalog_discount_percent / catalog_discount, manual_discount_percent / manual_discount / manual_discount_reason, combo_discount, discount_approval_id, manual_approved_by and manual_approved_by_name. discount is still their sum. A line sold before the split shows only discount. TAX: each item carries tax_percent and tax (the amount INCLUDED in its line_total), and the receipt has tax_inclusive (also on sale): true means the prices include the tax - print \"Includes tax\", do not add it; false is a sale from before, whose tax was added on top of its total."
           },
           "response": []
         },
@@ -4370,7 +4370,7 @@
                 }
               ]
             },
-            "description": "Returns the same bundle as GetSaleReceipt (including has_return/has_exchange/refunded_total on sale and returned_qty/returnable_qty on each item, which reflect returns made up to now). Needs reprint_receipt on the X-Staff-Token (an Owner / Service Center may reprint with no staff token); a till with no staff token gets 401. Same discount fields on each item as GetSaleReceipt."
+            "description": "Returns the same bundle as GetSaleReceipt (including has_return/has_exchange/refunded_total on sale and returned_qty/returnable_qty on each item, which reflect returns made up to now). Needs reprint_receipt on the X-Staff-Token (an Owner / Service Center may reprint with no staff token); a till with no staff token gets 401. Same discount and tax fields (tax_percent, tax, tax_inclusive) as GetSaleReceipt."
           },
           "response": []
         },
@@ -4578,7 +4578,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "returns"]
             },
-            "description": "Also writes return_items. Requires X-Staff-Token; the acting staff needs approve_return themselves, OR X-Manager-Approval-Token grants it instead. Confirms the sale is completed (not voided) and every item belongs to it with enough not-yet-returned-or-exchanged qty remaining, computes refund_total server-side from each item's own original per-unit price (never client-supplied), and restocks each condition=\"sellable\" item at the sale's own branch - all atomically. condition is one of sellable, damaged, opened, defective, expired, other (400 otherwise) - only sellable restocks. explanation is optional free text (the till's typed reason for return); it is stored on the return and shown in ListReturns/GetReturn. When every line of the sale has been returned through returns alone, the sale's status becomes refunded (see ListSales/GetSaleReceipt). Each non-restocked line also writes an inventory ledger row of type return_writeoff (qty 0, balance_after = current balance, reference_type return). No fixed return time window in v1 - any completed sale can be returned regardless of age. The return is stamped with the till's open shift (shift_id, null if none); a cash refund_method reduces that shift's expected cash at Close Shift."
+            "description": "Also writes return_items. Requires X-Staff-Token; the acting staff needs approve_return themselves, OR X-Manager-Approval-Token grants it instead. Confirms the sale is completed (not voided) and every item belongs to it with enough not-yet-returned-or-exchanged qty remaining, computes refund_total server-side from each item's own original per-unit price (never client-supplied), and restocks each condition=\"sellable\" item at the sale's own branch - all atomically. condition is one of sellable, damaged, opened, defective, expired, other (400 otherwise) - only sellable restocks. explanation is optional free text (the till's typed reason for return); it is stored on the return and shown in ListReturns/GetReturn. When every line of the sale has been returned through returns alone, the sale's status becomes refunded (see ListSales/GetSaleReceipt). Each non-restocked line also writes an inventory ledger row of type return_writeoff (qty 0, balance_after = current balance, reference_type return). No fixed return time window in v1 - any completed sale can be returned regardless of age. The return is stamped with the till's open shift (shift_id, null if none); a cash refund_method reduces that shift's expected cash at Close Shift. refund_total is what the customer paid for the returned units (tax already inside); tax_refunded is the part of it that is tax, per line round(unit_refund x qty x p / (100 + p), 2) at the sale line's stored tax_percent (0 for a sale from before tax was inclusive)."
           },
           "response": []
         },
@@ -4664,7 +4664,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"sale_id\": \"11111111-1111-1111-1111-111111111111\",\n  \"method\": \"cash\",\n  \"items\": [\n    {\"direction\": \"in\", \"sale_item_id\": 1, \"qty\": 1, \"condition\": \"sellable\"},\n    {\"direction\": \"out\", \"product_id\": 5, \"qty\": 1, \"unit_price\": 2.00}\n  ]\n}",
+              "raw": "{\n  \"sale_id\": \"11111111-1111-1111-1111-111111111111\",\n  \"method\": \"cash\",\n  \"items\": [\n    {\"direction\": \"in\", \"sale_item_id\": 1, \"qty\": 1, \"condition\": \"sellable\"},\n    {\"direction\": \"out\", \"product_id\": 5, \"qty\": 1}\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4676,7 +4676,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "exchanges"]
             },
-            "description": "Also writes exchange_items. Requires X-Staff-Token; the acting staff needs approve_exchange themselves, OR X-Manager-Approval-Token grants it instead. Modeled as one combined transaction (not a chained Return-then-Sale). An \"in\" item (sale_item_id) is something the customer is returning - its price is derived from the original sale, never client input. An \"out\" item (product_id + unit_price) is a new item the customer is taking instead. net_difference is computed server-side (out total minus in total) - positive means the customer owes more, negative means they're owed the difference. Credits stock for sellable \"in\" items and decrements it for \"out\" items at the sale's own branch, atomically. An \"in\" item's optional condition (sellable, damaged, opened, defective, expired, other; 400 otherwise) decides restocking - only sellable goes back on the shelf, and an omitted condition means sellable; it is ignored on \"out\" items; a non-sellable \"in\" item writes an inventory ledger row of type return_writeoff (qty 0, reference_type exchange). method (cash or qr) is how a non-zero net_difference was settled - required then (400 otherwise), optional for an even swap; a cash difference moves the shift's expected cash (positive in, negative out). The exchange is stamped with the till's open shift (shift_id, null if none)."
+            "description": "Also writes exchange_items. Requires X-Staff-Token; the acting staff needs approve_exchange themselves, OR X-Manager-Approval-Token grants it instead. Modeled as one combined transaction (not a chained Return-then-Sale). An \"in\" item (sale_item_id) is something the customer is returning - its price is derived from the original sale, never client input. An \"out\" item (product_id + unit_price) is a new item the customer is taking instead. net_difference is computed server-side (out total minus in total) - positive means the customer owes more, negative means they're owed the difference. Credits stock for sellable \"in\" items and decrements it for \"out\" items at the sale's own branch, atomically. An \"in\" item's optional condition (sellable, damaged, opened, defective, expired, other; 400 otherwise) decides restocking - only sellable goes back on the shelf, and an omitted condition means sellable; it is ignored on \"out\" items; a non-sellable \"in\" item writes an inventory ledger row of type return_writeoff (qty 0, reference_type exchange). method (cash or qr) is how a non-zero net_difference was settled - required then (400 otherwise), optional for an even swap; a cash difference moves the shift's expected cash (positive in, negative out). The exchange is stamped with the till's open shift (shift_id, null if none). TAX: an \"out\" item is priced FROM THE PRODUCT (its sale price, tax already inside - never a client price, and no tax added on top); a unit_price in the request is no longer read, and an unknown product_id is 404. Each line records tax_percent and the tax inside it; the exchange records tax_in (tax inside the credit for the goods that came back, at each sale line's stored rate) and tax_out, and the response carries items with the priced lines. net_difference = out total - in credit, as before."
           },
           "response": []
         },
@@ -5433,7 +5433,7 @@
                 }
               ]
             },
-            "description": "Snapshot + ETag for offline caching (products/categories/combos) - everything a device needs cached locally to ring up sales offline. Send the ETag response header back as If-None-Match on a later call - a 304 with no body means the device's cached copy is still current, saving the re-download. The ETag is stable across calls even though each image's URL is a freshly re-signed link every time (it hashes a redacted copy with URLs blanked out, not the raw response)."
+            "description": "Snapshot + ETag for offline caching (products/categories/combos) - everything a device needs cached locally to ring up sales offline. Send the ETag response header back as If-None-Match on a later call - a 304 with no body means the device's cached copy is still current, saving the re-download. The ETag is stable across calls even though each image's URL is a freshly re-signed link every time (it hashes a redacted copy with URLs blanked out, not the raw response). Each product carries tax_percent, so the ETag changes when an Owner changes a rate - cache it per product and tax offline lines from it."
           },
           "response": []
         },
@@ -5455,7 +5455,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"sales\": [\n    {\n      \"id\": \"11111111-1111-1111-1111-111111111111\",\n      \"shift_id\": 1,\n      \"staff_id\": 14,\n      \"device_id\": 3,\n      \"items\": [\n        {\"product_id\": 1, \"name_snapshot\": \"Cola 500ml\", \"unit_price\": \"1500\", \"catalog_discount_percent\": \"10\", \"qty\": 2, \"tax\": 0}\n      ],\n      \"payments\": [\n        {\"method\": \"cash\", \"amount\": 3.00, \"amount_received\": 3.00, \"change_given\": 0}\n      ]\n    }\n  ]\n}",
+              "raw": "{\n  \"sales\": [\n    {\n      \"id\": \"11111111-1111-1111-1111-111111111111\",\n      \"shift_id\": 1,\n      \"staff_id\": 14,\n      \"device_id\": 3,\n      \"items\": [\n        {\"product_id\": 1, \"name_snapshot\": \"Cola 500ml\", \"unit_price\": \"1500\", \"catalog_discount_percent\": \"10\", \"tax_percent\": \"5\", \"qty\": 2}\n      ],\n      \"payments\": [\n        {\"method\": \"cash\", \"amount\": 2800, \"amount_received\": 2800, \"change_given\": 0}\n      ]\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5467,7 +5467,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "sync", "sales"]
             },
-            "description": "Batch-uploads a device's offline-queued sales - each shaped exactly like a normal POST /sales body. branch_id comes from the caller's own pos-device token, never client input. Idempotent by each sale's own client-generated id - resubmitting an already-arrived sale is a safe no-op reported as success, not an error. Queued sales get NO manual-discount authority (an offline till cannot get a manager approval): any item discount fails that sale. Each sale's staff_id (client-supplied - a replayed sale carries no staff token) must be a staff member of the calling device's own branch or that sale fails. A sale id already stored by a different branch/device is reported as a failed item (already exists), not as a silent success. If it would take a product's stock negative, it's let through anyway (not rejected) and a SyncConflict is recorded instead - see GetSyncStatus/ListSyncConflicts. A sale that fails for another reason (e.g. its shift has since closed) is reported as a failed item in the response, not silently dropped. Catalog discounts work offline: send each line's cached unit_price and catalog_discount_percent (0-100) - the line is priced from them with the K 100 rounding rule. If either no longer matches the product the sale is still accepted and a sync conflict with reason price_mismatch is recorded. A line carrying discount_approval_id fails that sale (custom discounts need approval and can't be queued offline) - there is no approval offline."
+            "description": "Batch-uploads a device's offline-queued sales - each shaped exactly like a normal POST /sales body. branch_id comes from the caller's own pos-device token, never client input. Idempotent by each sale's own client-generated id - resubmitting an already-arrived sale is a safe no-op reported as success, not an error. Queued sales get NO manual-discount authority (an offline till cannot get a manager approval): any item discount fails that sale. Each sale's staff_id (client-supplied - a replayed sale carries no staff token) must be a staff member of the calling device's own branch or that sale fails. A sale id already stored by a different branch/device is reported as a failed item (already exists), not as a silent success. If it would take a product's stock negative, it's let through anyway (not rejected) and a SyncConflict is recorded instead - see GetSyncStatus/ListSyncConflicts. A sale that fails for another reason (e.g. its shift has since closed) is reported as a failed item in the response, not silently dropped. Catalog discounts work offline: send each line's cached unit_price and catalog_discount_percent (0-100) - the line is priced from them with the K 100 rounding rule. Also send tax_percent (0-100) - the tax rate in the till's cached catalog (omitted = the product's current rate); the line's tax is round(line_total x p / (100 + p), 2) from it, inside the price (never added), and no tax amount is ever read from the till. If the price, the catalog % or the tax % no longer matches the product the sale is still accepted and ONE sync conflict with reason price_mismatch is recorded per stale line (payload has client_/current_ unit_price, percent and tax_percent). A line carrying discount_approval_id fails that sale (custom discounts need approval and can't be queued offline) - there is no approval offline."
           },
           "response": []
         },
@@ -5579,7 +5579,7 @@
                 }
               ]
             },
-            "description": "Dashboard header cards for today only (no date range). net_sales = gross_sales - discounts - returns, tax excluded, and a voided sale never counts at all (erased, not counted-then-subtracted). low_stock_count mirrors StockOverview's own figure as a convenience. Needs view_reports only when called with a Back Office staff token (X-Staff-Token carrying access_backoffice); an Owner always passes and plain till reads are unchanged."
+            "description": "Dashboard header cards for today only (no date range). net_sales = gross_sales - discounts - returns: what the shop took, and now INCLUDING the tax that is inside each price. tax_collected = tax of the period's sales - tax_refunded on returns + (tax_out - tax_in) of exchanges; net_sales_excl_tax = net_sales - tax_collected. A voided sale never counts at all (erased, not counted-then-subtracted). low_stock_count mirrors StockOverview's own figure as a convenience. Needs view_reports only when called with a Back Office staff token (X-Staff-Token carrying access_backoffice); an Owner always passes and plain till reads are unchanged."
           },
           "response": []
         },
@@ -5633,7 +5633,7 @@
                 }
               ]
             },
-            "description": "Bundles a full \"Today\" tab in one call - headline totals (same gross/discounts/returns/net formula as SalesSummary), an hourly Net Sales trend, a payment-method split (amount actually collected, tax-inclusive), and the top 5 products by revenue - so the frontend's default Reports view doesn't need four separate round trips. Needs view_reports only when called with a Back Office staff token (X-Staff-Token carrying access_backoffice); an Owner always passes and plain till reads are unchanged."
+            "description": "Bundles a full \"Today\" tab in one call - headline totals (same gross/discounts/returns/net/tax_collected/net_sales_excl_tax formulas as SalesSummary), an hourly Net Sales trend, a payment-method split (amount actually collected, tax-inclusive), and the top 5 products by revenue - so the frontend's default Reports view doesn't need four separate round trips. Needs view_reports only when called with a Back Office staff token (X-Staff-Token carrying access_backoffice); an Owner always passes and plain till reads are unchanged."
           },
           "response": []
         },
@@ -5684,7 +5684,7 @@
                 {"key": "to", "value": "2026-09-27", "description": "Optional, YYYY-MM-DD, inclusive."}
               ]
             },
-            "description": "The confirmed spec's core breakdown: headline net_sales = gross_sales - discounts - returns (tax excluded, a voided sale never counted at all), plus by_branch/by_payment_method/by_category views, over from/to (default: the last 30 days). Needs view_reports only when called with a Back Office staff token (X-Staff-Token carrying access_backoffice); an Owner always passes and plain till reads are unchanged."
+            "description": "The confirmed spec's core breakdown: headline net_sales = gross_sales - discounts - returns (what the shop took, tax inside the prices INCLUDED; a voided sale never counted at all), tax_collected (sale tax - tax_refunded on returns + exchange tax_out - tax_in) and net_sales_excl_tax = net_sales - tax_collected (a sale from before tax was inclusive is not subtracted twice), plus by_branch/by_payment_method/by_category views, over from/to (default: the last 30 days). Needs view_reports only when called with a Back Office staff token (X-Staff-Token carrying access_backoffice); an Owner always passes and plain till reads are unchanged."
           },
           "response": []
         },
@@ -5735,7 +5735,7 @@
                 {"key": "to", "value": "2026-09-27", "description": "Optional, YYYY-MM-DD, inclusive."}
               ]
             },
-            "description": "Each payment method's share of the amount actually collected (Payment.Amount, tax-inclusive - a different question from the tax-excluded Net Sales revenue figure used elsewhere), over from/to (default: the last 30 days). Needs view_reports only when called with a Back Office staff token (X-Staff-Token carrying access_backoffice); an Owner always passes and plain till reads are unchanged."
+            "description": "Each payment method's share of the amount actually collected (Payment.Amount, tax-inclusive - a different question from the Net Sales revenue figure used elsewhere), over from/to (default: the last 30 days). Needs view_reports only when called with a Back Office staff token (X-Staff-Token carrying access_backoffice); an Owner always passes and plain till reads are unchanged."
           },
           "response": []
         },
@@ -5864,7 +5864,7 @@
                 {"key": "to", "value": "2026-09-27", "description": "Optional, YYYY-MM-DD, inclusive."}
               ]
             },
-            "description": "A real P&L statement over from/to (default: the last 30 days): Net Sales (same Gross-Discounts-Returns formula as SalesSummary) minus COGS (SUM(SaleItem.UnitCost * Qty), a per-sale snapshot of Product.CostPrice taken at sale time - never client-supplied) equals Gross Profit; minus Expenses (shift.Expense, already real per-branch data) equals Net Profit. COGS is only as reliable as the product's own cost basis - a product that's never been through a real Procurement goods receipt or a manual cost_price edit (see UpdateProduct) reads as cost 0, overstating margin until one happens. Returns naturally reduce COGS too (via ReturnItem's own link back to the original SaleItem), no separate tracking needed. Needs view_reports only when called with a Back Office staff token (X-Staff-Token carrying access_backoffice); an Owner always passes and plain till reads are unchanged. cogs, gross_profit and net_profit are OMITTED from the response unless the caller is an Owner / Service Center or holds view_item_cost."
+            "description": "A real P&L statement over from/to (default: the last 30 days): Net Sales WITHOUT the tax (net_sales_excl_tax = net_sales - tax_collected; tax inside a price is not the shop's revenue - the response also carries net_sales, tax_collected and the other SalesSummary totals) minus COGS (SUM(SaleItem.UnitCost * Qty), a per-sale snapshot of Product.CostPrice taken at sale time - never client-supplied) equals Gross Profit; minus Expenses (shift.Expense, already real per-branch data) equals Net Profit. COGS is only as reliable as the product's own cost basis - a product that's never been through a real Procurement goods receipt or a manual cost_price edit (see UpdateProduct) reads as cost 0, overstating margin until one happens. Returns naturally reduce COGS too (via ReturnItem's own link back to the original SaleItem), no separate tracking needed. Needs view_reports only when called with a Back Office staff token (X-Staff-Token carrying access_backoffice); an Owner always passes and plain till reads are unchanged. cogs, gross_profit and net_profit are OMITTED from the response unless the caller is an Owner / Service Center or holds view_item_cost."
           },
           "response": []
         },
