@@ -23,10 +23,13 @@ type BranchLookup interface {
 }
 
 // ProductLookup is what returns needs from catalog: pricing an exchange's "out"
-// lines from the product (its sale price and tax rate), never from the client.
+// lines from the product (its sale price and tax rate), never from the client -
+// at the till's branch, so it also reads that branch's price override
+// (catalog.BranchPriceReader, used through catalog.ResolveBranchPricing).
 // catalog.Repository already satisfies this signature - no adapter needed.
 type ProductLookup interface {
 	GetProduct(ctx context.Context, orgID uint, id uint) (*catalog.Product, error)
+	catalog.BranchPriceReader
 }
 
 // InventoryWriter is what returns needs from inventory: crediting a

@@ -98,14 +98,20 @@ var routePermissions = map[string]routeRule{
 	"POST /api/v1/products":              backOfficePerm(identity.PermManageCatalog),
 	"PATCH /api/v1/products/:id":         backOfficePerm(identity.PermManageCatalog),
 	"DELETE /api/v1/products/:id":        backOfficePerm(identity.PermManageCatalog),
-	"GET /api/v1/categories":             open(),
-	"POST /api/v1/categories":            backOfficePerm(identity.PermManageCatalog),
-	"PATCH /api/v1/categories/:id":       backOfficePerm(identity.PermManageCatalog),
-	"DELETE /api/v1/categories/:id":      backOfficePerm(identity.PermManageCatalog),
-	"GET /api/v1/combos":                 open(),
-	"POST /api/v1/combos":                backOfficePerm(identity.PermManageCatalog),
-	"PATCH /api/v1/combos/:id":           backOfficePerm(identity.PermManageCatalog),
-	"DELETE /api/v1/combos/:id":          backOfficePerm(identity.PermManageCatalog),
+	// branch price overrides: reading needs Back Office + manage_catalog (a till's
+	// manager sees only their own branch); writing needs manage_branch_prices (a
+	// till's manager may write only their own branch - the service checks it)
+	"GET /api/v1/products/:id/branch-prices":              backOfficePerm(identity.PermManageCatalog),
+	"PUT /api/v1/products/:id/branch-prices/:branchId":    backOfficePerm(identity.PermManageBranchPrices),
+	"DELETE /api/v1/products/:id/branch-prices/:branchId": backOfficePerm(identity.PermManageBranchPrices),
+	"GET /api/v1/categories":                              open(),
+	"POST /api/v1/categories":                             backOfficePerm(identity.PermManageCatalog),
+	"PATCH /api/v1/categories/:id":                        backOfficePerm(identity.PermManageCatalog),
+	"DELETE /api/v1/categories/:id":                       backOfficePerm(identity.PermManageCatalog),
+	"GET /api/v1/combos":                                  open(),
+	"POST /api/v1/combos":                                 backOfficePerm(identity.PermManageCatalog),
+	"PATCH /api/v1/combos/:id":                            backOfficePerm(identity.PermManageCatalog),
+	"DELETE /api/v1/combos/:id":                           backOfficePerm(identity.PermManageCatalog),
 	// procurement
 	"GET /api/v1/suppliers":                     open(),
 	"POST /api/v1/suppliers":                    backOfficePerm(identity.PermManageSuppliers),

@@ -509,3 +509,141 @@ func TestMigrateAccessRights_LegacyOrgMigratedAfterTheOneTimeGrant_StillGetsACas
 	require.Contains(t, effectiveCodes(t, db, staff[0].ID), PermApplyManualDiscount)
 	require.NotContains(t, effectiveCodes(t, db, staff[0].ID), PermApproveManualDiscount, "asking is not approving")
 }
+
+// ---- manage_branch_prices ----
+
+func managerOf(t *testing.T, db *gorm.DB, orgID uint) Role {
+	t.Helper()
+	var role Role
+	require.NoError(t, db.Where("org_id = ? AND code = ?", orgID, RoleCodeManager).First(&role).Error)
+	return role
+}
+
+func removeGrant(t *testing.T, db *gorm.DB, roleID uint, code string) {
+	t.Helper()
+	require.NoError(t, db.Exec(`DELETE FROM org_role_permission WHERE role_id = ? AND permission_id = (SELECT id FROM permissions WHERE code = ?)`,
+		roleID, code).Error)
+}
+
+func TestManageBranchPricesPermission_IsInTheCatalogueUnderBackOffice(t *testing.T) {
+	for _, def := range PermissionCatalogue {
+		if def.Code == PermManageBranchPrices {
+			require.Equal(t, "manage_branch_prices", def.Code)
+			require.Equal(t, "Set their branch's prices", def.Name)
+			require.Equal(t, CategoryBackOffice, def.Category)
+			return
+		}
+	}
+	t.Fatal("manage_branch_prices missing from the catalogue")
+}
+
+// A new org's Manager holds it; Cashier does not.
+func TestDefaultRoles_ManagerHoldsManageBranchPrices_CashierDoesNot(t *testing.T) {
+	require.Contains(t, DefaultRoles[0].Grants, PermManageBranchPrices)
+	require.NotContains(t, DefaultRoles[1].Grants, PermManageBranchPrices)
+	require.NotContains(t, SuperStaffRole.Grants, PermManageBranchPrices)
+}
+
+// An org whose roles exist already (made before branch prices) has a Manager
+// without the permission; the next start grants it - to the Manager only.
+func TestMigrateAccessRights_GrantsManageBranchPricesToExistingManagersOnly(t *testing.T) {
+	db := newAccessTestDB(t)
+	require.NoError(t, EnsurePermissionCatalogue(db))
+	var orgs []Organization
+	for _, name := range []string{"Old Org A", "Old Org B"} {
+		org := Organization{Name: name, Timezone: "Asia/Yangon"}
+		require.NoError(t, db.Create(&org).Error)
+		require.NoError(t, ProvisionDefaultRoles(db, org.ID))
+		orgs = append(orgs, org)
+	}
+	permIDs, err := permissionIDsByCode(db)
+	require.NoError(t, err)
+	custom, err := createOrgRole(db, orgs[0].ID, "stock_clerk", "Stock Clerk", false, []string{PermAccessPOSPortal, PermAccessBackOffice}, permIDs)
+	require.NoError(t, err)
+	// roll both orgs back to how Manager looked before this change
+	for _, org := range orgs {
+		removeGrant(t, db, managerOf(t, db, org.ID).ID, PermManageBranchPrices)
+	}
+	require.NoError(t, db.Exec(`DELETE FROM data_migrations`).Error)
+	before := map[uint][]string{}
+	for _, org := range orgs {
+		for _, r := range []Role{cashierOf(t, db, org.ID)} {
+			before[r.ID] = grantedCodes(t, db, r.ID)
+		}
+	}
+	before[custom.ID] = grantedCodes(t, db, custom.ID)
+
+	require.NoError(t, MigrateAccessRights(db))
+
+	for _, org := range orgs {
+		require.True(t, hasGrant(t, db, org.ID, managerOf(t, db, org.ID).ID, PermManageBranchPrices), "every org's Manager")
+		require.False(t, hasGrant(t, db, org.ID, cashierOf(t, db, org.ID).ID, PermManageBranchPrices))
+	}
+	for roleID, codes := range before {
+		require.Equal(t, codes, grantedCodes(t, db, roleID), "other roles are untouched")
+	}
+}
+
+func grantedCodes(t *testing.T, db *gorm.DB, roleID uint) []string {
+	t.Helper()
+	var codes []string
+	require.NoError(t, db.Table("org_role_permission").
+		Joins("JOIN permissions ON permissions.id = org_role_permission.permission_id").
+		Where("org_role_permission.role_id = ?", roleID).Order("permissions.code").Pluck("permissions.code", &codes).Error)
+	return codes
+}
+
+// Re-running is a no-op: nothing is duplicated, and an Owner who switched it off
+// for Manager does not get it handed back on the next restart.
+func TestMigrateAccessRights_ManageBranchPricesGrantRunsOnce(t *testing.T) {
+	db := newAccessTestDB(t)
+	org := Organization{Name: "Org", Timezone: "Asia/Yangon"}
+	require.NoError(t, db.Create(&org).Error)
+	require.NoError(t, MigrateAccessRights(db))
+	manager := managerOf(t, db, org.ID)
+	require.True(t, hasGrant(t, db, org.ID, manager.ID, PermManageBranchPrices))
+
+	require.NoError(t, MigrateAccessRights(db))
+	var n int64
+	require.NoError(t, db.Table("org_role_permission").
+		Where("role_id = ? AND permission_id = (SELECT id FROM permissions WHERE code = ?)", manager.ID, PermManageBranchPrices).
+		Count(&n).Error)
+	require.Equal(t, int64(1), n, "re-running changes nothing")
+
+	removeGrant(t, db, manager.ID, PermManageBranchPrices) // the Owner turns it off
+	require.NoError(t, MigrateAccessRights(db))
+	require.NoError(t, MigrateAccessRights(db))
+	require.False(t, hasGrant(t, db, org.ID, manager.ID, PermManageBranchPrices))
+}
+
+// Even with the marker lost, a Manager that already has it isn't granted twice.
+func TestMigrateAccessRights_ManageBranchPricesGrantDoesNotDuplicate(t *testing.T) {
+	db := newAccessTestDB(t)
+	org := Organization{Name: "Org", Timezone: "Asia/Yangon"}
+	require.NoError(t, db.Create(&org).Error)
+	require.NoError(t, MigrateAccessRights(db))
+	manager := managerOf(t, db, org.ID)
+	require.NoError(t, db.Exec(`DELETE FROM data_migrations`).Error)
+
+	require.NoError(t, MigrateAccessRights(db))
+
+	var n int64
+	require.NoError(t, db.Table("org_role_permission").
+		Where("role_id = ? AND permission_id = (SELECT id FROM permissions WHERE code = ?)", manager.ID, PermManageBranchPrices).
+		Count(&n).Error)
+	require.Equal(t, int64(1), n)
+}
+
+// A legacy org that is migrated only after the one-time grant already ran gets
+// a Manager that has the permission from its defaults.
+func TestMigrateAccessRights_LegacyOrgMigratedLater_ManagerHasManageBranchPrices(t *testing.T) {
+	db := newAccessTestDB(t)
+	world := seedLegacyWorld(t, db)
+	require.NoError(t, MigrateAccessRights(db))
+	org, _ := seedOrgWithStaff(t, db, "Late Org", world.roleIDs["manager"])
+
+	require.NoError(t, MigrateAccessRights(db))
+
+	require.True(t, hasGrant(t, db, org.ID, managerOf(t, db, org.ID).ID, PermManageBranchPrices))
+	require.False(t, hasGrant(t, db, org.ID, cashierOf(t, db, org.ID).ID, PermManageBranchPrices))
+}

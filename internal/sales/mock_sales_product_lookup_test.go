@@ -22,6 +22,67 @@ func (_m *MockProductLookup) EXPECT() *MockProductLookup_Expecter {
 	return &MockProductLookup_Expecter{mock: &_m.Mock}
 }
 
+// GetBranchPrice provides a mock function with given fields: ctx, orgID, branchID, productID
+func (_m *MockProductLookup) GetBranchPrice(ctx context.Context, orgID uint, branchID uint, productID uint) (*catalog.ProductBranchPrice, error) {
+	ret := _m.Called(ctx, orgID, branchID, productID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetBranchPrice")
+	}
+
+	var r0 *catalog.ProductBranchPrice
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, uint, uint, uint) (*catalog.ProductBranchPrice, error)); ok {
+		return rf(ctx, orgID, branchID, productID)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, uint, uint, uint) *catalog.ProductBranchPrice); ok {
+		r0 = rf(ctx, orgID, branchID, productID)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*catalog.ProductBranchPrice)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, uint, uint, uint) error); ok {
+		r1 = rf(ctx, orgID, branchID, productID)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// MockProductLookup_GetBranchPrice_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetBranchPrice'
+type MockProductLookup_GetBranchPrice_Call struct {
+	*mock.Call
+}
+
+// GetBranchPrice is a helper method to define mock.On call
+//   - ctx context.Context
+//   - orgID uint
+//   - branchID uint
+//   - productID uint
+func (_e *MockProductLookup_Expecter) GetBranchPrice(ctx interface{}, orgID interface{}, branchID interface{}, productID interface{}) *MockProductLookup_GetBranchPrice_Call {
+	return &MockProductLookup_GetBranchPrice_Call{Call: _e.mock.On("GetBranchPrice", ctx, orgID, branchID, productID)}
+}
+
+func (_c *MockProductLookup_GetBranchPrice_Call) Run(run func(ctx context.Context, orgID uint, branchID uint, productID uint)) *MockProductLookup_GetBranchPrice_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(uint), args[2].(uint), args[3].(uint))
+	})
+	return _c
+}
+
+func (_c *MockProductLookup_GetBranchPrice_Call) Return(_a0 *catalog.ProductBranchPrice, _a1 error) *MockProductLookup_GetBranchPrice_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *MockProductLookup_GetBranchPrice_Call) RunAndReturn(run func(context.Context, uint, uint, uint) (*catalog.ProductBranchPrice, error)) *MockProductLookup_GetBranchPrice_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetProduct provides a mock function with given fields: ctx, orgID, id
 func (_m *MockProductLookup) GetProduct(ctx context.Context, orgID uint, id uint) (*catalog.Product, error) {
 	ret := _m.Called(ctx, orgID, id)
@@ -78,6 +139,67 @@ func (_c *MockProductLookup_GetProduct_Call) Return(_a0 *catalog.Product, _a1 er
 }
 
 func (_c *MockProductLookup_GetProduct_Call) RunAndReturn(run func(context.Context, uint, uint) (*catalog.Product, error)) *MockProductLookup_GetProduct_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ListBranchPricesForBranch provides a mock function with given fields: ctx, orgID, branchID, productIDs
+func (_m *MockProductLookup) ListBranchPricesForBranch(ctx context.Context, orgID uint, branchID uint, productIDs []uint) ([]catalog.ProductBranchPrice, error) {
+	ret := _m.Called(ctx, orgID, branchID, productIDs)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListBranchPricesForBranch")
+	}
+
+	var r0 []catalog.ProductBranchPrice
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, uint, uint, []uint) ([]catalog.ProductBranchPrice, error)); ok {
+		return rf(ctx, orgID, branchID, productIDs)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, uint, uint, []uint) []catalog.ProductBranchPrice); ok {
+		r0 = rf(ctx, orgID, branchID, productIDs)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]catalog.ProductBranchPrice)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, uint, uint, []uint) error); ok {
+		r1 = rf(ctx, orgID, branchID, productIDs)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// MockProductLookup_ListBranchPricesForBranch_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListBranchPricesForBranch'
+type MockProductLookup_ListBranchPricesForBranch_Call struct {
+	*mock.Call
+}
+
+// ListBranchPricesForBranch is a helper method to define mock.On call
+//   - ctx context.Context
+//   - orgID uint
+//   - branchID uint
+//   - productIDs []uint
+func (_e *MockProductLookup_Expecter) ListBranchPricesForBranch(ctx interface{}, orgID interface{}, branchID interface{}, productIDs interface{}) *MockProductLookup_ListBranchPricesForBranch_Call {
+	return &MockProductLookup_ListBranchPricesForBranch_Call{Call: _e.mock.On("ListBranchPricesForBranch", ctx, orgID, branchID, productIDs)}
+}
+
+func (_c *MockProductLookup_ListBranchPricesForBranch_Call) Run(run func(ctx context.Context, orgID uint, branchID uint, productIDs []uint)) *MockProductLookup_ListBranchPricesForBranch_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(uint), args[2].(uint), args[3].([]uint))
+	})
+	return _c
+}
+
+func (_c *MockProductLookup_ListBranchPricesForBranch_Call) Return(_a0 []catalog.ProductBranchPrice, _a1 error) *MockProductLookup_ListBranchPricesForBranch_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *MockProductLookup_ListBranchPricesForBranch_Call) RunAndReturn(run func(context.Context, uint, uint, []uint) ([]catalog.ProductBranchPrice, error)) *MockProductLookup_ListBranchPricesForBranch_Call {
 	_c.Call.Return(run)
 	return _c
 }

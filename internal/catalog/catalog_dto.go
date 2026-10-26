@@ -152,6 +152,53 @@ type ProductImageResult struct {
 type ProductResult struct {
 	Product
 	Images []ProductImageResult `json:"images"`
+	// PriceSource says whose price/discount_percent/sale_price this is when
+	// the product was resolved for a branch: "branch" (that branch has an
+	// override) or "catalog". Absent when no branch was given - the plain
+	// catalog row.
+	PriceSource string `json:"price_source,omitempty"`
+}
+
+// SetBranchPriceRequest is the body of `PUT /products/:id/branch-prices/:branchId`.
+// The PUT replaces the branch's whole override: a field sent as null (or left
+// out) inherits the catalog value. Both null clears the override, same as
+// DELETE. Price must be > 0 and DiscountPercent within 0-100, like the
+// product's own - the service enforces it (decimal has no binding tags).
+type SetBranchPriceRequest struct {
+	Price           *decimal.Decimal `json:"price"`
+	DiscountPercent *decimal.Decimal `json:"discount_percent"`
+}
+
+// BranchPriceActor is who writes a branch price: an org-wide account (UserID,
+// no branch) or a staff member at a till (StaffID, plus the POS token's
+// BranchID, which bounds what they may change). Exactly one of UserID / StaffID
+// is set; BranchID is set exactly when StaffID is.
+type BranchPriceActor struct {
+	UserID   *uint
+	StaffID  *uint
+	BranchID *uint
+}
+
+// BranchPriceResult is one branch's row of `GET /products/:id/branch-prices`
+// (and the response of the PUT). Price / DiscountPercent are the override
+// itself - null where the branch inherits the catalog value; Effective* are
+// what the branch actually charges. CatalogPrice / CatalogDiscountPercent are
+// the product's own org-wide values - what a blank override field falls back
+// to - because a till token never reads them elsewhere (GET /products is
+// always resolved for its branch). UpdatedAt is null for a branch with no
+// override.
+type BranchPriceResult struct {
+	BranchID                 uint             `json:"branch_id"`
+	BranchName               string           `json:"branch_name"`
+	CatalogPrice             decimal.Decimal  `json:"catalog_price"`
+	CatalogDiscountPercent   decimal.Decimal  `json:"catalog_discount_percent"`
+	Price                    *decimal.Decimal `json:"price"`
+	DiscountPercent          *decimal.Decimal `json:"discount_percent"`
+	EffectivePrice           decimal.Decimal  `json:"effective_price"`
+	EffectiveDiscountPercent decimal.Decimal  `json:"effective_discount_percent"`
+	EffectiveSalePrice       decimal.Decimal  `json:"effective_sale_price"`
+	PriceSource              string           `json:"price_source"`
+	UpdatedAt                *time.Time       `json:"updated_at"`
 }
 
 // ComboImageResult is one image attached to a combo, as returned by

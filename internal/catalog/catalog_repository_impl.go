@@ -5,7 +5,9 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"shagan_pos/internal/common"
 )
@@ -274,4 +276,66 @@ func (r *RepositoryImpl) DeleteComboItemsByComboID(db *gorm.DB, comboID uint) er
 // DeleteCombo backs `DELETE /combos/:id`. Hard delete.
 func (r *RepositoryImpl) DeleteCombo(db *gorm.DB, id uint) error {
 	return db.Delete(&Combo{}, id).Error
+}
+
+// GetBranchPrice backs the pricing resolver. nil, nil when there is no override.
+func (r *RepositoryImpl) GetBranchPrice(ctx context.Context, orgID, branchID, productID uint) (*ProductBranchPrice, error) {
+	var rows []ProductBranchPrice
+	err := r.db.WithContext(ctx).
+		Where("org_id = ? AND branch_id = ? AND product_id = ?", orgID, branchID, productID).
+		Limit(1).Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	return &rows[0], nil
+}
+
+// ListBranchPricesForBranch backs the batch resolver.
+func (r *RepositoryImpl) ListBranchPricesForBranch(ctx context.Context, orgID, branchID uint, productIDs []uint) ([]ProductBranchPrice, error) {
+	var rows []ProductBranchPrice
+	if len(productIDs) == 0 {
+		return rows, nil
+	}
+	err := r.db.WithContext(ctx).
+		Where("org_id = ? AND branch_id = ? AND product_id IN ?", orgID, branchID, productIDs).
+		Find(&rows).Error
+	return rows, err
+}
+
+// ListBranchPricesByProduct backs `GET /products/:id/branch-prices`.
+func (r *RepositoryImpl) ListBranchPricesByProduct(ctx context.Context, orgID, productID uint) ([]ProductBranchPrice, error) {
+	var rows []ProductBranchPrice
+	err := r.db.WithContext(ctx).
+		Where("org_id = ? AND product_id = ?", orgID, productID).
+		Order("branch_id").Find(&rows).Error
+	return rows, err
+}
+
+// UpsertBranchPrice inserts the override or, on the unique (product_id,
+// branch_id), replaces its price fields. GORM sets ID/UpdatedAt on row from
+// the returned row.
+func (r *RepositoryImpl) UpsertBranchPrice(db *gorm.DB, row *ProductBranchPrice) error {
+	return db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "product_id"}, {Name: "branch_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{"price", "discount_percent", "sale_price", "updated_by_user_id", "updated_by_staff_id", "updated_at"}),
+	}).Create(row).Error
+}
+
+// UpdateBranchPriceSalePrice recomputes one override's stored sale price.
+func (r *RepositoryImpl) UpdateBranchPriceSalePrice(db *gorm.DB, id uint, salePrice decimal.Decimal) error {
+	return db.Model(&ProductBranchPrice{}).Where("id = ?", id).Update("sale_price", salePrice).Error
+}
+
+// DeleteBranchPrice removes one override; a row that isn't there is not an error.
+func (r *RepositoryImpl) DeleteBranchPrice(db *gorm.DB, orgID, productID, branchID uint) error {
+	return db.Where("org_id = ? AND product_id = ? AND branch_id = ?", orgID, productID, branchID).
+		Delete(&ProductBranchPrice{}).Error
+}
+
+// DeleteBranchPricesByProductID removes every override of a product.
+func (r *RepositoryImpl) DeleteBranchPricesByProductID(db *gorm.DB, productID uint) error {
+	return db.Where("product_id = ?", productID).Delete(&ProductBranchPrice{}).Error
 }

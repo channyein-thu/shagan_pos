@@ -24,6 +24,8 @@ var hundred = decimal.NewFromInt(100)
 // the lines carry. Nothing it returns has touched the database.
 func (s *Service) priceLines(ctx context.Context, orgID, branchID uint, actor SaleActor, in CreateSaleRequest, queued bool) ([]pricedLine, error) {
 	products := make(map[uint]*catalog.Product, len(in.Items))
+	// what each product costs at THIS branch (its override, else the catalog)
+	pricings := make(map[uint]catalog.Pricing, len(in.Items))
 	lines := make([]pricedLine, len(in.Items))
 	var approvalIDs []uuid.UUID
 	seenApproval := make(map[uuid.UUID]bool)
@@ -58,9 +60,17 @@ func (s *Service) priceLines(ctx context.Context, orgID, branchID uint, actor Sa
 			}
 			products[item.ProductID] = product
 		}
+		pricing, ok := pricings[item.ProductID]
+		if !ok {
+			var err error
+			if pricing, err = catalog.ResolveBranchPricing(ctx, s.products, orgID, branchID, product); err != nil {
+				return nil, err
+			}
+			pricings[item.ProductID] = pricing
+		}
 
 		qty := decimal.NewFromInt(int64(item.Qty))
-		original := product.Price
+		original := pricing.Price
 		line := SaleItem{
 			SaleID: in.ID, ProductID: item.ProductID, ComboID: item.ComboID, NameSnapshot: item.NameSnapshot,
 			Qty: item.Qty, UnitCost: product.CostPrice,
@@ -95,10 +105,10 @@ func (s *Service) priceLines(ctx context.Context, orgID, branchID uint, actor Sa
 			if taxPct.IsNegative() || taxPct.GreaterThan(hundred) {
 				return nil, common.BadRequestError("tax_percent must be between 0 and 100")
 			}
-			if !original.Equal(product.Price) || !pct.Equal(product.DiscountPercent) || !taxPct.Equal(product.TaxPercent) {
+			if !original.Equal(pricing.Price) || !pct.Equal(pricing.DiscountPercent) || !taxPct.Equal(product.TaxPercent) {
 				mismatch = &PriceMismatch{
 					ProductID: item.ProductID, ClientUnitPrice: original, ClientPercent: pct, ClientTaxPercent: taxPct,
-					CurrentUnitPrice: product.Price, CurrentPercent: product.DiscountPercent, CurrentTaxPercent: product.TaxPercent,
+					CurrentUnitPrice: pricing.Price, CurrentPercent: pricing.DiscountPercent, CurrentTaxPercent: product.TaxPercent,
 				}
 			}
 		default:
@@ -106,8 +116,8 @@ func (s *Service) priceLines(ctx context.Context, orgID, branchID uint, actor Sa
 				return nil, common.ConflictError("price changed, refresh the catalog")
 			}
 			if !isCombo && item.DiscountApprovalID == nil {
-				unitSale = product.EffectiveSalePrice()
-				line.CatalogDiscountPercent = product.DiscountPercent
+				unitSale = pricing.SalePrice
+				line.CatalogDiscountPercent = pricing.DiscountPercent
 			}
 		}
 		if unitSale.GreaterThan(original) {
@@ -240,6 +250,12 @@ func (s *Service) CreateDiscountApproval(ctx context.Context, orgID uint, branch
 		return nil, err
 	}
 
+	// the approved % is taken from this branch's price, not the catalog's
+	pricing, err := catalog.ResolveBranchPricing(ctx, s.products, orgID, branchID, product)
+	if err != nil {
+		return nil, err
+	}
+
 	approverID, approverName := seller.StaffID, ""
 	if hasApprover {
 		approver, perms, err := s.staff.VerifyApprover(ctx, orgID, branchID, in.ApproverStaffID, in.Pin)
@@ -291,7 +307,7 @@ func (s *Service) CreateDiscountApproval(ctx context.Context, orgID uint, branch
 	}
 	return &DiscountApprovalResult{
 		ID: approval.ID, ProductID: product.ID, Percent: approval.Percent, MaxQty: approval.MaxQty,
-		UnitPrice: product.Price, UnitSalePrice: common.DiscountedUnitPrice(product.Price, approval.Percent),
+		UnitPrice: pricing.Price, UnitSalePrice: common.DiscountedUnitPrice(pricing.Price, approval.Percent),
 		ApprovedBy: ApproverRef{ID: approverID, Name: approverName}, ExpiresAt: approval.ExpiresAt,
 	}, nil
 }

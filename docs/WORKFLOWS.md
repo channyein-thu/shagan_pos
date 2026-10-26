@@ -90,7 +90,8 @@ a `warnings` list.
 | `view_item_cost` | see cost and profit | ✔ | `cogs`, `gross_profit`, `net_profit` of `GET /reports/profit-loss` |
 | `view_sales` | sales history and receipts | ✔ | `GET /sales`, `/sales/:id`, `/sales/:id/receipt` |
 | `view_audit_log` | audit log | ✔ | `GET /audit-log` |
-| `manage_catalog` | products, categories, combos | ✔ | catalog writes |
+| `manage_catalog` | products, categories, combos | ✔ | catalog writes, `GET /products/:id/branch-prices` |
+| `manage_branch_prices` | set their branch's prices | ✔ | `PUT/DELETE /products/:id/branch-prices/:branchId` (own branch only at a till) |
 | `view_inventory` | stock levels, ledger, transfers | ✔ | `GET /stock-levels`, `/inventory/*`, `/stock-transfers` |
 | `manage_stock` | adjustments and transfers | ✔ | `POST /inventory/adjustments`, `POST/PATCH /stock-transfers` |
 | `manage_suppliers` | suppliers | ✔ | supplier writes |
@@ -229,7 +230,7 @@ existed gets **401** on any gated route (re-login / refresh), never 403.
 | Gate (`internal/middleware`) | Who passes | Routes |
 |---|---|---|
 | `RequireOrgAdmin` | Owner, Service Center (never a till, manager PIN or not) | `POST/PATCH /branches`, `POST/PATCH /devices`, **all role routes** (`GET/POST /roles`, `PATCH/DELETE /roles/:id`, `GET /roles/:id/permissions`, `GET /permissions`), **payment-QR upload/delete** |
-| `RequireBackOfficePermission(code)` | Owner, Service Center, **or** a POS token + `X-Staff-Token` carrying `access_backoffice` **and** `code` | catalog writes (`manage_catalog`), supplier writes (`manage_suppliers`), `POST/PATCH /purchase-orders` (`manage_purchase_orders`), `POST /purchase-orders/:id/receipts` (`receive_stock`), `POST /inventory/adjustments` + `POST/PATCH /stock-transfers` (`manage_stock`), `PUT /receipt-settings` (`manage_receipt_settings`), `PATCH /sync/conflicts/:id/resolve` (`resolve_sync_conflicts`), `POST /staff` + `PATCH /staff/:id` (`manage_staff`) |
+| `RequireBackOfficePermission(code)` | Owner, Service Center, **or** a POS token + `X-Staff-Token` carrying `access_backoffice` **and** `code` | catalog writes (`manage_catalog`), `GET /products/:id/branch-prices` (`manage_catalog`; a till sees only its own branch), supplier writes (`manage_suppliers`), `POST/PATCH /purchase-orders` (`manage_purchase_orders`), `POST /purchase-orders/:id/receipts` (`receive_stock`), `POST /inventory/adjustments` + `POST/PATCH /stock-transfers` (`manage_stock`), `PUT/DELETE /products/:id/branch-prices/:branchId` (`manage_branch_prices`; a till's manager only for **their own branch**, else 403), `PUT /receipt-settings` (`manage_receipt_settings`), `PATCH /sync/conflicts/:id/resolve` (`resolve_sync_conflicts`), `POST /staff` + `PATCH /staff/:id` (`manage_staff`) |
 | `RequireViewPermission(code)` | everyone, except a staff token with `access_backoffice` lacking `code` | `GET /reports/*` (`view_reports`), `GET /audit-log` (`view_audit_log`), `GET /sales*` (`view_sales`), `GET /stock-levels`, `/inventory/*`, `/stock-transfers` (`view_inventory`), `GET /customers*` (`view_customers`), `GET /staff*`, `GET /branches/:id/staff` (`view_staff`) |
 | `RequireStaffPermission` / `...OrOrgAdmin` | see "Which middleware/helper, when" | the till actions listed there |
 | (none beyond `Auth`) | any authenticated caller | the reads the till needs to sell (products, receipt settings, QR codes, held sales, current shift, ...), `GET /branches*`, `GET /devices`, own-account routes, PIN verify |
@@ -556,7 +557,10 @@ enforced by its own permission: a role the Owner has stripped of, say,
   operation (`CreateStockAdjustment`, `CreateStockTransfer`,
   `CreatePurchaseOrder`/`CreateGoodsReceipt`) always takes an explicit,
   client-supplied `branch_id`, verified against the caller's own org -
-  never derived from the product.
+  never derived from the product. The one thing that can differ per branch
+  is the **selling price and catalog discount %**: a branch may override
+  them (see "Branch prices", Section 8). `tax_percent`, `cost_price`, combo
+  prices and `is_active` stay org-wide.
 
 ---
 
@@ -646,9 +650,10 @@ approval per discount - payment never asks for a PIN:**
   spent its approval returns the original (200) without re-checking.
 
 **How a line is priced** (`POST /sales`): everything comes from the product, not
-the client. `unit_price` is the product's price (a different client value is a
-409 `price changed, refresh the catalog`); with no approval the unit sale price
-is the product's `sale_price`; with one it is `DiscountedUnitPrice(original,
+the client. `unit_price` is the product's price **at the selling branch** (see
+"Branch prices" below; a different client value is a 409 `price changed,
+refresh the catalog`); with no approval the unit sale price is the product's
+sale price at that branch; with one it is `DiscountedUnitPrice(original,
 approval %)`. A combo line keeps the client's bundle share as `combo_discount`
 (needs no approval, is not a manual discount). The line stores
 `catalog_discount_percent/_discount`, `manual_discount_percent/_discount/_reason`,
@@ -712,6 +717,96 @@ added to a total, and the till no longer tells the backend what the tax is.
 - **Receipts**: items carry `tax_percent` and `tax` (the included amount); the
   receipt has `tax_inclusive: true` (print "Includes tax", don't add it). A
   sale from before has `false` - its tax was added on top.
+
+### Branch prices — a branch may override price and discount % (built 2026-10-23)
+
+The same catalog sells at different prices in different branches (Mandalay
+costs more than Yangon). The product's `price` / `discount_percent` stay the
+default for every branch; a branch may **override** either, per product.
+
+> **Effective price at branch B** = B's override if it has one, else the
+> catalog value. `price` and `discount_percent` fall back **independently**:
+> an override of only the price keeps the catalog %, and one of only the %
+> keeps the catalog price. With no override rows every branch behaves exactly
+> as before - there is no data migration.
+
+- **Table `product_branch_prices`**: `product_id`, `branch_id`, `org_id`,
+  `price` (null = catalog), `discount_percent` (null = catalog), `sale_price`,
+  `updated_by_user_id`, `updated_at`; unique on `(product_id, branch_id)`,
+  writes are upserts. At least one of `price` / `discount_percent` is set - a
+  row with neither is deleted instead. No DB foreign keys (as everywhere), so
+  deleting a product deletes its overrides in the same transaction.
+- **`sale_price` is stored** on the override, computed by the server on every
+  write with the product's own rule (`common.DiscountedUnitPrice`, K 100
+  rounding), from the override's price/% or the product's where null - so a
+  sale and an exchange at that branch can never disagree by a rounding step.
+  When the product's catalog `price` or `discount_percent` changes, the stored
+  `sale_price` of every override that inherits the changed field is recomputed
+  in the same transaction.
+- **Validation**: `price > 0`, `0 <= discount_percent <= 100` (400); the branch
+  must be in the caller's org (404) and **active** (400) to write. Clearing an
+  override works for an inactive branch too.
+- **One resolver** (`catalog.EffectivePricing` / `ResolveBranchPricing` /
+  `ResolveBranchPricingBatch`) is the only place a product is priced; none of
+  these read `Product.Price` / `DiscountPercent` / `EffectiveSalePrice()`
+  directly any more:
+
+  | Path | Priced at |
+  |---|---|
+  | `POST /sales` (online) - the 409 check, `unit_price`, catalog %, line total | the selling branch (the POS token's) |
+  | `POST /sync/sales` (queued) - the `price_mismatch` conflict compares the till's snapshot with | the branch's effective price (the conflict's current price / percent are the branch's) |
+  | `POST /sales/discount-approvals` - `unit_price`, `unit_sale_price` | the branch price; the approved % comes off it |
+  | `POST /exchanges` - "out" lines | the sale's branch (where the exchange happens) |
+  | `GET /products`, `/products/:id`, `/products/barcode/:code` | a POS token: its branch; an owner: `?branch_id=`; neither: the plain catalog prices |
+  | `GET /sync/catalog` | the caller's branch (owner: `?branch_id=`) |
+
+  Product responses resolved for a branch carry `"price_source": "branch" |
+  "catalog"` (absent when no branch was given), with `price`,
+  `discount_percent`, `sale_price` and the derived per-unit `discount` / `tax`
+  already at the branch's values. A `?branch_id=` of another org is a 404.
+- **Offline catalog**: the snapshot is built per branch and its **ETag includes
+  the branch**, so a till never keeps another branch's prices on a 304.
+- **Unchanged - they use the price snapshotted on the sale line**: receipts,
+  reprint, returns, voids, the "in" side of exchanges, reports. Combo prices
+  stay org-wide; a combo line's component is priced like any product line.
+- **API**:
+  - `GET /products/:id/branch-prices` - one row per branch: `branch_id`,
+    `branch_name`, `price` / `discount_percent` (the override; null =
+    inherits), `catalog_price` / `catalog_discount_percent` (the product's own
+    values - what a blank field falls back to; a till token can't read them
+    anywhere else), `effective_price`, `effective_discount_percent`,
+    `effective_sale_price`, `price_source`, `updated_at`. Owner / Service
+    Center see every branch (or `?branch_id=`); a manager unlocked into Back
+    Office at a till (`access_backoffice` + `manage_catalog`) sees **only their
+    own branch**.
+  - `PUT /products/:id/branch-prices/:branchId` `{ "price": "1900.00",
+    "discount_percent": null }` - upsert; **replaces the whole override** (a
+    null/omitted field inherits). Both null = clear. Same row shape as the GET
+    (so it carries `catalog_price` / `catalog_discount_percent` too). Needs
+    **`manage_branch_prices`** (below).
+  - `DELETE /products/:id/branch-prices/:branchId` - back to the catalog
+    price; 204, idempotent. Same permission.
+- **Who may write** (decided 2026-10-24): the **Owner / Service Center** - any
+  branch of the org, no permission needed - and a **manager at a till**: a POS
+  token + `X-Staff-Token` carrying `access_backoffice` **and**
+  `manage_branch_prices` (held by the default Manager role; the Owner can take
+  it off or give it to another role under Roles). **Own-branch rule**: for a
+  POS token `:branchId` must be the token's branch, else **403** "you can only
+  change your own branch's prices" - decided in the service before anything is
+  looked up, so another branch's (or another org's) id tells a manager nothing.
+  A till reads only its own branch's rows. The permission was added to every
+  existing org's built-in Manager role once, by a data migration
+  (`2026-10-24-manager-manage-branch-prices`); other roles were not touched.
+  Note a role with `manage_branch_prices` but without `manage_catalog` can
+  write but not read the rows - grant both.
+- **Audit**: every upsert / delete writes `audit_log` (entity
+  `product_branch_price`, `entity_id` = product id, `branch_id`, action
+  `branch_price_set` / `branch_price_removed`, `before` / `after` =
+  `{price, discount_percent, sale_price}`; a manager is `actor_id` (staff), the
+  Owner / Service Center `actor_user_id`). `product_branch_prices` records the
+  same on the row: `updated_by_staff_id` or `updated_by_user_id`, exactly one.
+- **Out of scope (v1)**: scheduled price changes, per-branch "not sold here",
+  bulk edit / CSV import, per-branch tax or cost, combo prices.
 
 ## 9. Returns / Void / Exchange — Standard Business Rules
 
@@ -826,8 +921,8 @@ the shape Shagan wants, or it can be re-modelled as a chained Return-then-Sale.*
 Confirmed as a real requirement, not just leftover ERD scaffolding — a POS
 till needs to keep working (and selling) through a spotty or dropped
 connection, and catch up once it's back online. The `datasync` domain is
-built: `GET /sync/catalog` (ETag; products, categories and combos with their
-items), `POST /sync/sales` (idempotent batch upload), `GET /sync/status`,
+built: `GET /sync/catalog` (ETag; products - priced for the caller's branch -,
+categories and combos with their items), `POST /sync/sales` (idempotent batch upload), `GET /sync/status`,
 `GET /sync/conflicts` and `PATCH /sync/conflicts/:id/resolve` (the latter needs
 `resolve_sync_conflicts` with Back Office open, or an Owner / Service Center).
 The shape below is the design it follows, reusing what was already in place.
@@ -1008,6 +1103,10 @@ distinct methods used on the sale, sorted (`["cash"]`, `["qr"]`,
 7. ~~Part B discounts~~ — replaced by Discount V1 (Section 8, "Discounts").
 8. **Per-branch timezone** — an org has one timezone (Section 11); a branch in
    another zone isn't supported.
+9. ~~Branch prices: may a manager edit their own branch's prices?~~ - settled
+   2026-10-24: yes, with `manage_branch_prices`, own branch only (Section 8).
+   Still deferred: combo prices per branch, scheduled price changes, "not sold
+   at this branch", bulk edit.
 
 ---
 

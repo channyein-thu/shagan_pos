@@ -139,7 +139,26 @@ func MigrateAccessRights(db *gorm.DB) error {
 			return fmt.Errorf("migrate roles of org %d: %w", orgID, err)
 		}
 	}
-	return common.RunOnce(db, migrationCashierMayAskForDiscounts, grantCashierApplyManualDiscount)
+	if err := common.RunOnce(db, migrationCashierMayAskForDiscounts, grantCashierApplyManualDiscount); err != nil {
+		return err
+	}
+	return common.RunOnce(db, migrationManagerSetsBranchPrices, grantManagerManageBranchPrices)
+}
+
+const migrationManagerSetsBranchPrices = "2026-10-24-manager-manage-branch-prices"
+
+// grantManagerManageBranchPrices gives every org's built-in Manager role
+// manage_branch_prices ("set their branch's prices", branch price overrides),
+// once - the default Manager now holds it. Only the system Manager role is
+// touched: Cashier, Super Staff and any custom role keep exactly what the
+// Owner gave them, and a Manager that already has it is skipped. Run once (not
+// on every start) so an Owner who later switches it off isn't overridden.
+func grantManagerManageBranchPrices(tx *gorm.DB) error {
+	return tx.Exec(`INSERT INTO org_role_permission (org_id, role_id, permission_id)
+		SELECT r.org_id, r.id, p.id FROM roles r, permissions p
+		WHERE r.org_id IS NOT NULL AND r.code = ? AND r.is_system = ? AND p.code = ?
+		AND NOT EXISTS (SELECT 1 FROM org_role_permission x WHERE x.role_id = r.id AND x.permission_id = p.id)`,
+		RoleCodeManager, true, PermManageBranchPrices).Error
 }
 
 const migrationCashierMayAskForDiscounts = "2026-10-23-cashier-apply-manual-discount"

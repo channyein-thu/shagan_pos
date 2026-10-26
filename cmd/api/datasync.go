@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"shagan_pos/internal/audit"
 	"shagan_pos/internal/catalog"
 	"shagan_pos/internal/common"
 	"shagan_pos/internal/datasync"
@@ -27,7 +28,7 @@ func NewSyncAPI(db *gorm.DB, store storage.Storage, jwtSecret []byte) *SyncAPI {
 			datasync.NewRepository(db),
 			identity.NewRepository(db),
 			identity.NewRepository(db),
-			catalog.NewService(catalog.NewRepository(db), db, store),
+			catalog.NewService(catalog.NewRepository(db), identity.NewRepository(db), audit.NewRepository(db), db, store),
 			newSalesService(db, jwtSecret),
 			db,
 		),
@@ -45,17 +46,21 @@ func (a *SyncAPI) RegisterRoutes(rg *gin.RouterGroup) {
 }
 
 // GetCatalogSnapshot handles `GET /sync/catalog`. Snapshot + ETag for
-// offline caching (products/categories/combos) - restricted to the
-// caller's own branch when the token carries one, org-wide otherwise, same
-// reasoning as inventory.ListStockLevels. Optional ?branch_id= (owner/
-// service_center only). A matching If-None-Match gets a 304 with no body
-// instead of re-sending an unchanged snapshot.
+// offline caching (products/categories/combos). Product prices are the
+// caller's own branch's (the token's branch; an owner / service_center may
+// pass ?branch_id=, and without one gets the plain catalog prices). The ETag
+// covers the branch. A matching If-None-Match gets a 304 with no body instead
+// of re-sending an unchanged snapshot.
 func (a *SyncAPI) GetCatalogSnapshot(c *gin.Context) {
 	orgID, ok := requireOrgID(c)
 	if !ok {
 		return
 	}
-	snapshot, etag, err := a.service.GetCatalogSnapshot(c.Request.Context(), orgID)
+	branchID, ok := reportBranchID(c)
+	if !ok {
+		return
+	}
+	snapshot, etag, err := a.service.GetCatalogSnapshot(c.Request.Context(), orgID, branchID)
 	if err != nil {
 		common.HandleError(c, err)
 		return
