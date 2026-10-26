@@ -59,7 +59,17 @@ func taxed(p *catalog.Product, rate string) *catalog.Product {
 func (fx *saleFixture) hasProducts(ps ...*catalog.Product) {
 	for _, p := range ps {
 		fx.products.EXPECT().GetProduct(mock.Anything, uint(7), p.ID).Return(p, nil).Maybe()
+		// no branch price override: the catalog price applies
+		fx.products.EXPECT().GetBranchPrice(mock.Anything, uint(7), mock.Anything, p.ID).Return(nil, nil).Maybe()
 	}
+}
+
+// hasBranchPrice stubs the product AND a branch override of it at branch 3
+// (the fixture's selling branch); another branch has none.
+func (fx *saleFixture) hasBranchPrice(p *catalog.Product, override *catalog.ProductBranchPrice) {
+	fx.products.EXPECT().GetProduct(mock.Anything, uint(7), p.ID).Return(p, nil).Maybe()
+	fx.products.EXPECT().GetBranchPrice(mock.Anything, uint(7), uint(3), p.ID).Return(override, nil).Maybe()
+	fx.products.EXPECT().GetBranchPrice(mock.Anything, uint(7), mock.Anything, p.ID).Return(nil, nil).Maybe()
 }
 
 // persisted is what the service handed to the repository for one sale.

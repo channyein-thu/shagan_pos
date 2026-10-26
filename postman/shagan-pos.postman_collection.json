@@ -3467,7 +3467,7 @@
                   "host": ["{{baseUrl}}"],
                   "path": ["api", "v1", "products"]
                 },
-                "description": "Lists products in the caller's org. If the caller's token carries a branch (a pos device), results are restricted to that branch automatically - owner/service_center tokens see every branch. No query params - the scope comes from the token, not something the client can override."
+                "description": "Lists products in the caller's org, PRICED FOR A BRANCH: a POS-device token gets its own branch's effective price / discount_percent / sale_price (the branch's override where it has one, else the catalog value - each field falls back on its own) and every product carries \"price_source\": \"branch\" (an override applies) or \"catalog\". An owner / service_center token may pass ?branch_id= for the same view of one branch; without it they get the plain catalog prices and no price_source. The derived per-unit discount and tax follow the branch price. A branch_id of another org is a 404. The token's branch always wins over ?branch_id=."
               },
               "response": []
             },
@@ -3493,7 +3493,7 @@
                     }
                   ]
                 },
-                "description": "Exact-match barcode lookup, scoped to the caller's org - returns the product plus its \"images\" array (see ListProducts), same presigned-URL/15-minute-TTL reasoning. Products are org-wide, and barcode is unique per org, so this resolves unambiguously with no branch needed. The product carries tax_percent (the tax already inside the price) and the computed per-unit tax."
+                "description": "Exact-match barcode lookup, scoped to the caller's org - returns the product plus its \"images\" array (see ListProducts), same presigned-URL/15-minute-TTL reasoning. Barcode is unique per org, so this resolves unambiguously; the price is the caller's branch's (see ListProducts: price_source, ?branch_id= for an owner). The product carries tax_percent (the tax already inside the price) and the computed per-unit tax."
               },
               "response": []
             },
@@ -3519,7 +3519,7 @@
                     }
                   ]
                 },
-                "description": "GetProduct"
+                "description": "One product with its images, priced for a branch exactly like ListProducts: a POS-device token gets its own branch's effective price / discount_percent / sale_price and price_source (\"branch\" or \"catalog\"); an owner / service_center may pass ?branch_id= (without it: plain catalog prices, no price_source). 404 for a product - or a ?branch_id= - of another org."
               },
               "response": []
             },
@@ -3672,6 +3672,213 @@
                   ]
                 },
                 "description": "Hard delete, scoped to the caller's org. Blocked with 409 if any combo still bundles this product (create a combo referencing it via CreateCombo to test that path), and with 409 if the product has ANY history - a sale line, an exchange line, stock (even if now zero), a stock adjustment/transfer, an inventory-ledger entry or a purchase-order line - because those records would be orphaned and history screens would lose the product's name. To retire such a product use UpdateProduct with is_active=false instead. Only a product that was never used (e.g. created by mistake) can be deleted: it also removes the product's own image and its storage object - 204 No Content, no body. Back Office write: an Owner / Service Center, or a till's X-Staff-Token carrying access_backoffice AND manage_catalog (403 with only one of them, 401 with no staff token)."
+              },
+              "response": []
+            },
+            {
+              "name": "ListBranchPrices - GET /products/:id/branch-prices",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "X-Staff-Token",
+                    "value": "{{staffToken}}",
+                    "type": "text",
+                    "description": "Only for a till (POS-device token): a manager's staff token carrying access_backoffice + manage_catalog. Not needed with an owner / service_center token."
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/products/:id/branch-prices",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "products",
+                    ":id",
+                    "branch-prices"
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": "1",
+                      "description": "Product id"
+                    }
+                  ],
+                  "query": [
+                    {
+                      "key": "branch_id",
+                      "value": "",
+                      "description": "Optional - owner/service_center only: just this branch.",
+                      "disabled": true
+                    }
+                  ]
+                },
+                "description": "Per-branch prices of one product: one row per branch of the org with the branch's override (price / discount_percent - null means it inherits the catalog value), what the branch effectively charges (effective_price, effective_discount_percent, effective_sale_price), branch_name, price_source (\"branch\" if an override applies, else \"catalog\") and updated_at (null when there is no override). Owner / Service Center see every branch (optional ?branch_id= narrows to one). A manager unlocked into Back Office at a till (POS token + X-Staff-Token with access_backoffice AND manage_catalog) sees ONLY their own branch - the token's branch always wins over ?branch_id=. 401 with no staff token on a till, 403 for a cashier. 404 for a product of another org. Each row also carries catalog_price and catalog_discount_percent - the product's own org-wide values, i.e. what a blank override field falls back to (a till token can't read them from GET /products, which is always resolved for its branch)."
+              },
+              "response": []
+            },
+            {
+              "name": "SetBranchPrice - PUT /products/:id/branch-prices/:branchId",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/products/:id/branch-prices/:branchId",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "products",
+                    ":id",
+                    "branch-prices",
+                    ":branchId"
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": "1",
+                      "description": "Product id"
+                    },
+                    {
+                      "key": "branchId",
+                      "value": "2",
+                      "description": "Branch id (must belong to your org)"
+                    }
+                  ]
+                },
+                "description": "Sets this branch's override for the product - an upsert that REPLACES the whole override: a field sent as null (or left out) inherits the catalog value, so {\"price\": \"7000.00\"} sells at 7,000 with the catalog's discount_percent, and {\"discount_percent\": \"20\"} keeps the catalog price at 20% off. Both null clears the override (same as DELETE). price must be > 0; discount_percent 0-100 (400 otherwise). The server computes sale_price with the product's own rule (Kyat-rounded), and recomputes it whenever the catalog price / discount_percent changes later. The branch must be in your org (404 otherwise) and active (400 if inactive). Returns the branch's row as in ListBranchPrices. Who may write: an Owner / Service Center (any branch of the org), or a manager at a till - POS token + X-Staff-Token carrying access_backoffice AND manage_branch_prices - for THEIR OWN branch only (see the manager example below; another branch is 403 \"you can only change your own branch's prices\"; a role without manage_branch_prices is 403, no staff token on a till is 401). The response row also carries catalog_price / catalog_discount_percent (the product's own values - what a null field falls back to). Every write is audited (entity product_branch_price, action branch_price_set / branch_price_removed, before / after, branch; a manager is actor_id, the owner actor_user_id) and the row records updated_by_staff_id or updated_by_user_id.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"price\": \"7000.00\",\n  \"discount_percent\": null\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "SetBranchPrice (manager at a till) - PUT /products/:id/branch-prices/:branchId",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}",
+                    "type": "text",
+                    "description": "The till's POS-device token (its branch is bound in the token)."
+                  },
+                  {
+                    "key": "X-Staff-Token",
+                    "value": "{{staffToken}}",
+                    "type": "text",
+                    "description": "A manager's staff token carrying access_backoffice AND manage_branch_prices (the default Manager role has both)."
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/products/:id/branch-prices/:branchId",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "products",
+                    ":id",
+                    "branch-prices",
+                    ":branchId"
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": "1",
+                      "description": "Product id"
+                    },
+                    {
+                      "key": "branchId",
+                      "value": "2",
+                      "description": "MUST be the till's own branch - any other branch is 403"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"price\": \"7000.00\",\n  \"discount_percent\": null\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Same request as SetBranchPrice, as a manager unlocked into Back Office at a till (POS token + X-Staff-Token). Allowed only for the token's own branch: :branchId of another branch or another org is 403 \"you can only change your own branch's prices\" (decided before anything is looked up). 403 too if the staff token lacks manage_branch_prices (a cashier, or a role the Owner didn't grant it to); 401 with no staff token. The audit entry records the manager as actor_id and the row as updated_by_staff_id. Use DeleteBranchPrice the same way to clear it."
+              },
+              "response": []
+            },
+            {
+              "name": "DeleteBranchPrice - DELETE /products/:id/branch-prices/:branchId",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/products/:id/branch-prices/:branchId",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "products",
+                    ":id",
+                    "branch-prices",
+                    ":branchId"
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": "1",
+                      "description": "Product id"
+                    },
+                    {
+                      "key": "branchId",
+                      "value": "2",
+                      "description": "Branch id (must belong to your org)"
+                    }
+                  ]
+                },
+                "description": "Removes the branch's override: the branch is back on the catalog price and discount. 204 No Content. Idempotent - a branch with no override is a no-op (no audit entry). Works for an inactive branch too, so a closed branch's overrides can be cleaned up; 404 for a branch or product of another org. Same callers as SetBranchPrice: Owner / Service Center, or a manager at a till with manage_branch_prices for their own branch only (403 otherwise). Audited as branch_price_removed."
               },
               "response": []
             }
@@ -5429,11 +5636,11 @@
                 {
                   "key": "branch_id",
                   "value": "1",
-                  "description": "Optional - owner/service_center only (a pos-device token's own branch always wins instead)."
+                  "description": "Optional - owner/service_center only: build the snapshot for this branch (a pos-device token's own branch always wins instead)."
                 }
               ]
             },
-            "description": "Snapshot + ETag for offline caching (products/categories/combos) - everything a device needs cached locally to ring up sales offline. Send the ETag response header back as If-None-Match on a later call - a 304 with no body means the device's cached copy is still current, saving the re-download. The ETag is stable across calls even though each image's URL is a freshly re-signed link every time (it hashes a redacted copy with URLs blanked out, not the raw response). Each product carries tax_percent, so the ETag changes when an Owner changes a rate - cache it per product and tax offline lines from it."
+            "description": "Snapshot + ETag for offline caching (products/categories/combos) - everything a device needs cached locally to ring up sales offline. Send the ETag response header back as If-None-Match on a later call - a 304 with no body means the device's cached copy is still current, saving the re-download. The ETag is stable across calls even though each image's URL is a freshly re-signed link every time (it hashes a redacted copy with URLs blanked out, not the raw response). Each product carries tax_percent, so the ETag changes when an Owner changes a rate - cache it per product and tax offline lines from it. Products are PRICED FOR THE CALLER'S BRANCH (price, discount_percent, sale_price, price_source - see ListProducts), and the ETag covers the branch itself, so a till never gets a 304 for another branch's prices; an owner / service_center token passes ?branch_id= (without it: plain catalog prices)."
           },
           "response": []
         },

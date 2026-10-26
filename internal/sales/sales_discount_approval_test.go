@@ -54,6 +54,7 @@ func tenPercentOffProduct1(approver uint, pin string) CreateDiscountApprovalRequ
 func (fx *approvalFixture) openShiftAndProduct() {
 	fx.repo.EXPECT().FindOpenShift(mock.Anything, uint(7), uint(70)).Return(&OpenShift{ID: 9, BranchID: 3}, nil).Maybe()
 	fx.products.EXPECT().GetProduct(mock.Anything, uint(7), uint(1)).Return(catalogProduct(1, "6500", "0"), nil).Maybe()
+	fx.products.EXPECT().GetBranchPrice(mock.Anything, uint(7), mock.Anything, uint(1)).Return(nil, nil).Maybe()
 }
 
 // ---- approving with another staff member's PIN ----

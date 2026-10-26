@@ -26,6 +26,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&Combo{},
 		&ComboItem{},
 		&ComboImage{},
+		&ProductBranchPrice{},
 		&common.DataMigration{},
 	); err != nil {
 		return err

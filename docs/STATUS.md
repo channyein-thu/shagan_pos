@@ -102,6 +102,7 @@ Full text in [backend-recommendations.md](backend-recommendations.md).
 | 20 | Wrong table name in a procurement migration | Open (found 2026-10-23) |
 | 21 | No unique index on `stock_levels (product, branch)` | Open (found 2026-10-23) |
 | 22 | No database foreign keys | Open - design decision to revisit |
+| 23 | Branch-specific product prices | **Built 2026-10-23** (branch price overrides; API in WORKFLOWS §8) - Back Office screens follow |
 
 ## Risks
 

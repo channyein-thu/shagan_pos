@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
 	"gorm.io/gorm"
@@ -52,8 +53,8 @@ func (s *Service) resolveBranchIDs(ctx context.Context, orgID uint, branchID *ui
 	return branchIDs, nil
 }
 
-func (s *Service) GetCatalogSnapshot(ctx context.Context, orgID uint) (*CatalogSnapshot, string, error) {
-	products, err := s.catalog.ListProducts(ctx, orgID)
+func (s *Service) GetCatalogSnapshot(ctx context.Context, orgID uint, branchID *uint) (*CatalogSnapshot, string, error) {
+	products, err := s.catalog.ListProducts(ctx, orgID, branchID)
 	if err != nil {
 		return nil, "", err
 	}
@@ -67,7 +68,7 @@ func (s *Service) GetCatalogSnapshot(ctx context.Context, orgID uint) (*CatalogS
 	}
 	snapshot := &CatalogSnapshot{Products: products, Categories: categories, Combos: combos}
 
-	etag, err := etagFor(snapshot)
+	etag, err := etagFor(snapshot, branchID)
 	if err != nil {
 		return nil, "", common.SystemError("failed to build catalog snapshot")
 	}
@@ -80,8 +81,11 @@ func (s *Service) GetCatalogSnapshot(ctx context.Context, orgID uint) (*CatalogS
 // every single call regardless of whether the underlying image changed.
 // Hashing it directly would mean the ETag never matches twice, defeating
 // If-None-Match caching entirely. ID/Width/Height (which only change when
-// the image itself is actually replaced) are kept.
-func etagFor(snapshot *CatalogSnapshot) (string, error) {
+// the image itself is actually replaced) are kept. The branch is hashed in
+// too, so two branches never share an ETag even when their content happens to
+// match today - a till that moves branches (or a shared cache) must not get a
+// 304 for another branch's snapshot.
+func etagFor(snapshot *CatalogSnapshot, branchID *uint) (string, error) {
 	stable := *snapshot
 	stable.Products = make([]catalog.ProductResult, len(snapshot.Products))
 	copy(stable.Products, snapshot.Products)
@@ -98,7 +102,11 @@ func etagFor(snapshot *CatalogSnapshot) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	sum := sha256.Sum256(body)
+	branchKey := "catalog"
+	if branchID != nil {
+		branchKey = "branch:" + strconv.FormatUint(uint64(*branchID), 10)
+	}
+	sum := sha256.Sum256(append([]byte(branchKey+"\n"), body...))
 	return `"` + hex.EncodeToString(sum[:]) + `"`, nil
 }
 

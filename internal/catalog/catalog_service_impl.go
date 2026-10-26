@@ -8,13 +8,16 @@ import (
 	_ "image/jpeg" // registers JPEG decoding with image.DecodeConfig
 	_ "image/png"  // registers PNG decoding with image.DecodeConfig
 	"io"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 
+	"shagan_pos/internal/audit"
 	"shagan_pos/internal/common"
+	"shagan_pos/internal/identity"
 	"shagan_pos/internal/storage"
 )
 
@@ -58,35 +61,80 @@ func productPricing(price, discountPercent decimal.Decimal) (percent, salePrice,
 }
 
 type Service struct {
-	repo    Repository
-	db      common.Transactioner
-	storage storage.Storage
+	repo     Repository
+	branches BranchLookup
+	audit    AuditWriter
+	db       common.Transactioner
+	storage  storage.Storage
 }
 
-func NewService(repo Repository, db common.Transactioner, store storage.Storage) *Service {
-	return &Service{repo: repo, db: db, storage: store}
+func NewService(repo Repository, branches BranchLookup, auditWriter AuditWriter, db common.Transactioner, store storage.Storage) *Service {
+	return &Service{repo: repo, branches: branches, audit: auditWriter, db: db, storage: store}
 }
 
 var _ Interface = (*Service)(nil)
 
-func (s *Service) ListProducts(ctx context.Context, orgID uint) ([]ProductResult, error) {
+func (s *Service) ListProducts(ctx context.Context, orgID uint, branchID *uint) ([]ProductResult, error) {
 	products, err := s.repo.ListProducts(ctx, orgID)
 	if err != nil {
 		return nil, err
 	}
-	return s.attachImages(ctx, products)
+	results, err := s.attachImages(ctx, products)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.resolveForBranch(ctx, orgID, branchID, results); err != nil {
+		return nil, err
+	}
+	return results, nil
 }
 
-func (s *Service) GetProduct(ctx context.Context, orgID uint, id uint) (*ProductResult, error) {
+func (s *Service) GetProduct(ctx context.Context, orgID uint, id uint, branchID *uint) (*ProductResult, error) {
 	product, err := s.repo.GetProduct(ctx, orgID, id)
 	if err != nil {
 		return nil, err
 	}
+	return s.productResult(ctx, orgID, branchID, product)
+}
+
+// productResult is the single-product tail shared by GetProduct and
+// GetProductByBarcode: images, then pricing for branchID.
+func (s *Service) productResult(ctx context.Context, orgID uint, branchID *uint, product *Product) (*ProductResult, error) {
 	results, err := s.attachImages(ctx, []Product{*product})
 	if err != nil {
 		return nil, err
 	}
+	if err := s.resolveForBranch(ctx, orgID, branchID, results); err != nil {
+		return nil, err
+	}
 	return &results[0], nil
+}
+
+// resolveForBranch rewrites results in place to what each product costs at
+// branchID (the branch's override where one exists, else the catalog value)
+// and records where it came from. A nil branchID leaves the catalog row as it
+// is and sets no price_source. The branch must belong to orgID - a cross-org
+// id is a not-found, not a silent fall back to catalog prices.
+func (s *Service) resolveForBranch(ctx context.Context, orgID uint, branchID *uint, results []ProductResult) error {
+	if branchID == nil {
+		return nil
+	}
+	if _, err := s.branches.GetBranch(ctx, orgID, *branchID); err != nil {
+		return err
+	}
+	products := make([]Product, len(results))
+	for i := range results {
+		products[i] = results[i].Product
+	}
+	pricings, err := ResolveBranchPricingBatch(ctx, s.repo, orgID, *branchID, products)
+	if err != nil {
+		return err
+	}
+	for i := range results {
+		applyPricing(&results[i].Product, pricings[i])
+		results[i].PriceSource = pricings[i].Source
+	}
+	return nil
 }
 
 // attachImages assembles each product's ProductImageResult list - fetching
@@ -134,16 +182,12 @@ func (s *Service) attachImages(ctx context.Context, products []Product) ([]Produ
 	return results, nil
 }
 
-func (s *Service) GetProductByBarcode(ctx context.Context, orgID uint, code string) (*ProductResult, error) {
+func (s *Service) GetProductByBarcode(ctx context.Context, orgID uint, code string, branchID *uint) (*ProductResult, error) {
 	product, err := s.repo.GetProductByBarcode(ctx, orgID, code)
 	if err != nil {
 		return nil, err
 	}
-	results, err := s.attachImages(ctx, []Product{*product})
-	if err != nil {
-		return nil, err
-	}
-	return &results[0], nil
+	return s.productResult(ctx, orgID, branchID, product)
 }
 
 // CreateProduct confirms in.CategoryID belongs to orgID (same
@@ -342,6 +386,17 @@ func (s *Service) UpdateProduct(ctx context.Context, orgID uint, id uint, in Upd
 		updates["modifier"] = *in.Modifier
 	}
 
+	// A catalog price or percent change moves the sale price of every
+	// override that inherits the changed field - see recomputeBranchPrices.
+	// Read before the transaction, like oldImages above.
+	var overrides []ProductBranchPrice
+	if pricingChanged {
+		overrides, err = s.repo.ListBranchPricesByProduct(ctx, orgID, id)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	var newKey string
 	if len(updates) > 0 || file != nil {
 		err := s.db.Transaction(func(tx *gorm.DB) error {
@@ -350,6 +405,13 @@ func (s *Service) UpdateProduct(ctx context.Context, orgID uint, id uint, in Upd
 					if common.IsDuplicateError(err) {
 						return common.ConflictError("a product with this barcode already exists")
 					}
+					return err
+				}
+			}
+			if pricingChanged {
+				updated := *product
+				updated.Price, updated.DiscountPercent = price, percent
+				if err := s.recomputeBranchPrices(tx, &updated, overrides); err != nil {
 					return err
 				}
 			}
@@ -436,6 +498,10 @@ func (s *Service) DeleteProduct(ctx context.Context, orgID uint, id uint) error 
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		if err := s.repo.DeleteProductImagesByProductID(tx, id); err != nil {
+			return err
+		}
+		// overrides have no FK either, so they go with the product
+		if err := s.repo.DeleteBranchPricesByProductID(tx, id); err != nil {
 			return err
 		}
 		return s.repo.DeleteProduct(tx, id)
@@ -827,4 +893,187 @@ func (s *Service) DeleteCombo(ctx context.Context, orgID uint, id uint) error {
 	}
 
 	return nil
+}
+
+// recomputeBranchPrices refreshes the stored sale price of a product's
+// overrides after its catalog price or percent changed: an override that
+// inherits the changed field now sells at a new price, and one that sets both
+// is unaffected (its recomputed value equals the stored one, so it's skipped).
+// product carries the NEW catalog values. Runs inside UpdateProduct's
+// transaction.
+func (s *Service) recomputeBranchPrices(tx *gorm.DB, product *Product, overrides []ProductBranchPrice) error {
+	for _, o := range overrides {
+		salePrice := overrideSalePrice(product, o.Price, o.DiscountPercent)
+		if salePrice.Equal(o.SalePrice) {
+			continue
+		}
+		if err := s.repo.UpdateBranchPriceSalePrice(tx, o.ID, salePrice); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Service) ListBranchPrices(ctx context.Context, orgID uint, productID uint, branchID *uint) ([]BranchPriceResult, error) {
+	product, err := s.repo.GetProduct(ctx, orgID, productID)
+	if err != nil {
+		return nil, err
+	}
+	var branchList []identity.Branch
+	if branchID != nil {
+		branch, err := s.branches.GetBranch(ctx, orgID, *branchID)
+		if err != nil {
+			return nil, err
+		}
+		branchList = []identity.Branch{*branch}
+	} else if branchList, err = s.branches.ListBranches(ctx, orgID); err != nil {
+		return nil, err
+	}
+	overrides, err := s.repo.ListBranchPricesByProduct(ctx, orgID, productID)
+	if err != nil {
+		return nil, err
+	}
+	byBranch := make(map[uint]*ProductBranchPrice, len(overrides))
+	for i := range overrides {
+		byBranch[overrides[i].BranchID] = &overrides[i]
+	}
+	results := make([]BranchPriceResult, len(branchList))
+	for i, b := range branchList {
+		results[i] = branchPriceResult(product, b, byBranch[b.ID])
+	}
+	return results, nil
+}
+
+// branchPriceResult is one branch's row: the override itself (null fields
+// inherit) and what the branch effectively charges.
+func branchPriceResult(product *Product, branch identity.Branch, override *ProductBranchPrice) BranchPriceResult {
+	pr := EffectivePricing(product, override)
+	res := BranchPriceResult{
+		BranchID: branch.ID, BranchName: branch.Name,
+		CatalogPrice: product.Price, CatalogDiscountPercent: product.DiscountPercent,
+		EffectivePrice: pr.Price, EffectiveDiscountPercent: pr.DiscountPercent, EffectiveSalePrice: pr.SalePrice,
+		PriceSource: pr.Source,
+	}
+	if override != nil {
+		res.Price, res.DiscountPercent = override.Price, override.DiscountPercent
+		updatedAt := override.UpdatedAt
+		res.UpdatedAt = &updatedAt
+	}
+	return res
+}
+
+// branchPriceAudit is the before/after snapshot of an override for the audit
+// log; nil (no override) is recorded as JSON null.
+func branchPriceAudit(o *ProductBranchPrice) any {
+	if o == nil {
+		return nil
+	}
+	return map[string]any{"price": o.Price, "discount_percent": o.DiscountPercent, "sale_price": o.SalePrice}
+}
+
+// checkBranchPriceActor enforces the own-branch rule for a caller bound to a
+// branch (a manager at a till). Done first, before any lookup, so a manager
+// probing another branch's - or another org's - id learns nothing.
+func checkBranchPriceActor(actor BranchPriceActor, branchID uint) error {
+	if actor.BranchID != nil && *actor.BranchID != branchID {
+		return common.ForbiddenError("you can only change your own branch's prices")
+	}
+	return nil
+}
+
+// audit builds the audit entry for one branch-price write, recording a
+// manager as the staff actor and an org-wide account as the user actor.
+func (a BranchPriceActor) audit(orgID, productID, branchID uint, action string, before, after any) *audit.AuditLog {
+	return &audit.AuditLog{
+		OrgID: orgID, ActorID: a.StaffID, ActorUserID: a.UserID, BranchID: &branchID,
+		Entity: "product_branch_price", EntityID: strconv.FormatUint(uint64(productID), 10), Action: action,
+		Before: audit.ToJSON(before), After: audit.ToJSON(after),
+	}
+}
+
+func (s *Service) SetBranchPrice(ctx context.Context, orgID uint, actor BranchPriceActor, productID uint, branchID uint, in SetBranchPriceRequest) (*BranchPriceResult, error) {
+	if err := checkBranchPriceActor(actor, branchID); err != nil {
+		return nil, err
+	}
+	product, err := s.repo.GetProduct(ctx, orgID, productID)
+	if err != nil {
+		return nil, err
+	}
+	branch, err := s.branches.GetBranch(ctx, orgID, branchID)
+	if err != nil {
+		return nil, err
+	}
+	// nothing left to override: the branch goes back to the catalog price
+	if in.Price == nil && in.DiscountPercent == nil {
+		if err := s.DeleteBranchPrice(ctx, orgID, actor, productID, branchID); err != nil {
+			return nil, err
+		}
+		res := branchPriceResult(product, *branch, nil)
+		return &res, nil
+	}
+	if branch.Status != identity.BranchStatusActive {
+		return nil, common.BadRequestError("branch is not active")
+	}
+	var price, percent *decimal.Decimal
+	if in.Price != nil {
+		if !in.Price.IsPositive() {
+			return nil, common.BadRequestError("price must be greater than zero")
+		}
+		p := in.Price.Round(2)
+		price = &p
+	}
+	if in.DiscountPercent != nil {
+		if in.DiscountPercent.IsNegative() || in.DiscountPercent.GreaterThan(decimal.NewFromInt(100)) {
+			return nil, common.BadRequestError("discount_percent must be between 0 and 100")
+		}
+		p := in.DiscountPercent.Round(2)
+		percent = &p
+	}
+
+	before, err := s.repo.GetBranchPrice(ctx, orgID, branchID, productID)
+	if err != nil {
+		return nil, err
+	}
+	row := ProductBranchPrice{
+		OrgID: orgID, ProductID: productID, BranchID: branchID,
+		Price: price, DiscountPercent: percent,
+		SalePrice:       overrideSalePrice(product, price, percent),
+		UpdatedByUserID: actor.UserID, UpdatedByStaffID: actor.StaffID,
+	}
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		if err := s.repo.UpsertBranchPrice(tx, &row); err != nil {
+			return err
+		}
+		return s.audit.CreateAuditLog(tx, actor.audit(orgID, productID, branchID, "branch_price_set", branchPriceAudit(before), branchPriceAudit(&row)))
+	})
+	if err != nil {
+		return nil, err
+	}
+	res := branchPriceResult(product, *branch, &row)
+	return &res, nil
+}
+
+func (s *Service) DeleteBranchPrice(ctx context.Context, orgID uint, actor BranchPriceActor, productID uint, branchID uint) error {
+	if err := checkBranchPriceActor(actor, branchID); err != nil {
+		return err
+	}
+	if _, err := s.repo.GetProduct(ctx, orgID, productID); err != nil {
+		return err
+	}
+	if _, err := s.branches.GetBranch(ctx, orgID, branchID); err != nil {
+		return err
+	}
+	before, err := s.repo.GetBranchPrice(ctx, orgID, branchID, productID)
+	if err != nil {
+		return err
+	}
+	if before == nil {
+		return nil
+	}
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		if err := s.repo.DeleteBranchPrice(tx, orgID, productID, branchID); err != nil {
+			return err
+		}
+		return s.audit.CreateAuditLog(tx, actor.audit(orgID, productID, branchID, "branch_price_removed", branchPriceAudit(before), nil))
+	})
 }

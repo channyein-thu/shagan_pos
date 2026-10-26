@@ -41,6 +41,7 @@ const (
 	PermViewSales             = "view_sales"
 	PermViewAuditLog          = "view_audit_log"
 	PermManageCatalog         = "manage_catalog"
+	PermManageBranchPrices    = "manage_branch_prices"
 	PermViewInventory         = "view_inventory"
 	PermManageStock           = "manage_stock"
 	PermManageSuppliers       = "manage_suppliers"
@@ -88,6 +89,7 @@ var PermissionCatalogue = []PermissionDef{
 	{PermViewSales, "Sales history and receipts", CategoryBackOffice},
 	{PermViewAuditLog, "Audit log", CategoryBackOffice},
 	{PermManageCatalog, "Products, categories and combos", CategoryBackOffice},
+	{PermManageBranchPrices, "Set their branch's prices", CategoryBackOffice},
 	{PermViewInventory, "Stock levels and inventory ledger", CategoryBackOffice},
 	{PermManageStock, "Stock adjustments and transfers", CategoryBackOffice},
 	{PermManageSuppliers, "Suppliers", CategoryBackOffice},
@@ -169,7 +171,7 @@ var cashierGrants = []string{
 }
 
 // DefaultRoles are the roles a new org gets. Manager holds everything in the
-// catalogue except manage_staff, which stays Owner-only until an Owner grants
+// catalogue (manage_branch_prices included) except manage_staff, which stays Owner-only until an Owner grants
 // it (staff are provisioned by the Owner today).
 var DefaultRoles = []DefaultRole{
 	{

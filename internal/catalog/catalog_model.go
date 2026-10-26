@@ -63,7 +63,10 @@ type Product struct {
 // the Owner set it). A row that was never priced - sale_price 0 with no percent
 // - has no catalog discount, so it sells at its price; a 100% product
 // (sale_price 0, percent 100) is genuinely free. Sales and exchanges both price
-// from this, so the two can never disagree.
+// from this, so the two can never disagree. This is the CATALOG (org-wide)
+// price: what a branch charges comes from EffectivePricing, which falls back to
+// this when the branch has no override - nothing that prices a sale, an exchange
+// or a product read should call this directly.
 func (p *Product) EffectiveSalePrice() decimal.Decimal {
 	if p.SalePrice.IsZero() && p.DiscountPercent.IsZero() {
 		return p.Price
@@ -115,4 +118,34 @@ type ComboImage struct {
 	StorageKey string `gorm:"size:500;not null" json:"storage_key"`
 	Width      int    `gorm:"not null" json:"width"`
 	Height     int    `gorm:"not null" json:"height"`
+}
+
+// ProductBranchPrice is one branch's override of a product's selling price
+// and/or catalog discount percent. The product row stays the default for every
+// branch; this row only exists where a branch deviates, and each field falls
+// back to the product's own value on its own when nil (see EffectivePricing).
+// Unique per (product, branch): writes are upserts. At least one of Price /
+// DiscountPercent is set - a row with both nil is deleted instead.
+//
+// SalePrice is computed by the server on every write with the same rule and
+// rounding as Product.SalePrice (productPricing / common.DiscountedUnitPrice),
+// from the override's own price and percent or the product's where nil, and is
+// recomputed whenever the product's catalog price or percent changes - so a
+// sale and an exchange at this branch can never disagree by a rounding step.
+// There are no DB foreign keys; DeleteProduct removes a product's overrides in
+// the same transaction.
+type ProductBranchPrice struct {
+	ID              uint             `gorm:"primaryKey;autoIncrement" json:"id"`
+	OrgID           uint             `gorm:"not null;index" json:"org_id"`
+	ProductID       uint             `gorm:"not null;uniqueIndex:ux_product_branch_prices" json:"product_id"`
+	BranchID        uint             `gorm:"not null;uniqueIndex:ux_product_branch_prices;index" json:"branch_id"`
+	Price           *decimal.Decimal `gorm:"type:decimal(10,2)" json:"price"`           // nil = catalog price
+	DiscountPercent *decimal.Decimal `gorm:"type:decimal(5,2)" json:"discount_percent"` // nil = catalog %
+	SalePrice       decimal.Decimal  `gorm:"type:decimal(10,2);not null" json:"sale_price"`
+	// Exactly one of the two is set: the org-wide account (Owner / Service
+	// Center) that wrote the row, or the staff member - a manager at a till -
+	// who did. The same dual-actor pattern as expenses and voids.
+	UpdatedByUserID  *uint     `json:"updated_by_user_id"`
+	UpdatedByStaffID *uint     `json:"updated_by_staff_id"`
+	UpdatedAt        time.Time `gorm:"autoUpdateTime;not null" json:"updated_at"`
 }

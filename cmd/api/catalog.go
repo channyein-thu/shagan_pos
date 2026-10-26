@@ -11,8 +11,10 @@ import (
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 
+	"shagan_pos/internal/audit"
 	"shagan_pos/internal/catalog"
 	"shagan_pos/internal/common"
+	"shagan_pos/internal/identity"
 	"shagan_pos/internal/middleware"
 	"shagan_pos/internal/storage"
 )
@@ -23,7 +25,7 @@ type CatalogAPI struct {
 }
 
 func NewCatalogAPI(db *gorm.DB, store storage.Storage, jwtSecret []byte) *CatalogAPI {
-	return &CatalogAPI{service: catalog.NewService(catalog.NewRepository(db), db, store), jwtSecret: jwtSecret}
+	return &CatalogAPI{service: catalog.NewService(catalog.NewRepository(db), identity.NewRepository(db), audit.NewRepository(db), db, store), jwtSecret: jwtSecret}
 }
 
 func (a *CatalogAPI) RegisterRoutes(rg *gin.RouterGroup) {
@@ -38,6 +40,15 @@ func (a *CatalogAPI) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.POST("/products", backOffice, a.CreateProduct)
 	rg.PATCH("/products/:id", backOffice, a.UpdateProduct)
 	rg.DELETE("/products/:id", backOffice, a.DeleteProduct)
+	// Branch price overrides. Reading them takes Back Office with manage_catalog
+	// (an owner sees every branch; a till's manager only their own branch).
+	// Setting or clearing one takes its own permission, manage_branch_prices:
+	// an Owner / Service Center may write any branch of the org, a manager at a
+	// till only their own (checked in the service - a 403 for another branch).
+	branchPrices := middleware.RequireBackOfficePermission(a.jwtSecret, "manage_branch_prices")
+	rg.GET("/products/:id/branch-prices", backOffice, a.ListBranchPrices)
+	rg.PUT("/products/:id/branch-prices/:branchId", branchPrices, a.SetBranchPrice)
+	rg.DELETE("/products/:id/branch-prices/:branchId", branchPrices, a.DeleteBranchPrice)
 	rg.GET("/categories", a.ListCategories)
 	rg.POST("/categories", backOffice, a.CreateCategory)
 	rg.PATCH("/categories/:id", backOffice, a.UpdateCategory)
@@ -48,14 +59,21 @@ func (a *CatalogAPI) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.DELETE("/combos/:id", backOffice, a.DeleteCombo)
 }
 
-// ListProducts handles `GET /products`. Org-wide - every caller in the org
-// sees the same catalog, regardless of which branch their token carries.
+// ListProducts handles `GET /products`. The same catalog for every caller in
+// the org, priced for a branch: a POS token gets its own branch's effective
+// prices, an owner / service_center may pass ?branch_id= (without one they get
+// the plain catalog prices). A product resolved for a branch carries
+// "price_source": "branch" | "catalog".
 func (a *CatalogAPI) ListProducts(c *gin.Context) {
 	orgID, ok := requireOrgID(c)
 	if !ok {
 		return
 	}
-	result, err := a.service.ListProducts(c.Request.Context(), orgID)
+	branchID, ok := reportBranchID(c)
+	if !ok {
+		return
+	}
+	result, err := a.service.ListProducts(c.Request.Context(), orgID, branchID)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -63,9 +81,13 @@ func (a *CatalogAPI) ListProducts(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// GetProduct handles `GET /products/:id`.
+// GetProduct handles `GET /products/:id`. Branch pricing as ListProducts.
 func (a *CatalogAPI) GetProduct(c *gin.Context) {
 	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	branchID, ok := reportBranchID(c)
 	if !ok {
 		return
 	}
@@ -74,7 +96,7 @@ func (a *CatalogAPI) GetProduct(c *gin.Context) {
 		common.HandleError(c, common.BadRequestError("invalid id"))
 		return
 	}
-	result, err := a.service.GetProduct(c.Request.Context(), orgID, uint(idVal))
+	result, err := a.service.GetProduct(c.Request.Context(), orgID, uint(idVal), branchID)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -84,15 +106,20 @@ func (a *CatalogAPI) GetProduct(c *gin.Context) {
 
 // GetProductByBarcode handles `GET /products/barcode/:code`. Exact-match
 // scan lookup, e.g. for a checkout scan. Barcode is unique per org, so this
-// resolves unambiguously without needing a branch.
+// resolves unambiguously without needing a branch; the price it returns is the
+// branch's, as ListProducts.
 func (a *CatalogAPI) GetProductByBarcode(c *gin.Context) {
 	orgID, ok := requireOrgID(c)
 	if !ok {
 		return
 	}
+	branchID, ok := reportBranchID(c)
+	if !ok {
+		return
+	}
 
 	code := c.Param("code")
-	result, err := a.service.GetProductByBarcode(c.Request.Context(), orgID, code)
+	result, err := a.service.GetProductByBarcode(c.Request.Context(), orgID, code, branchID)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -574,4 +601,110 @@ func (a *CatalogAPI) DeleteCombo(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+// ListBranchPrices handles `GET /products/:id/branch-prices`: one row per
+// branch with its override (null = inherits the catalog value) and effective
+// prices. A POS token (a manager in Back Office at a till) only ever sees its
+// own branch; an owner / service_center sees every branch, or just
+// ?branch_id=.
+func (a *CatalogAPI) ListBranchPrices(c *gin.Context) {
+	orgID, ok := requireOrgID(c)
+	if !ok {
+		return
+	}
+	productID, ok := pathID(c, "id")
+	if !ok {
+		return
+	}
+	branchID, ok := reportBranchID(c)
+	if !ok {
+		return
+	}
+	result, err := a.service.ListBranchPrices(c.Request.Context(), orgID, productID, branchID)
+	if err != nil {
+		common.HandleError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// SetBranchPrice handles `PUT /products/:id/branch-prices/:branchId`: upsert
+// the branch's override. Body {"price": "1900.00", "discount_percent": null} -
+// a null or omitted field inherits the catalog value; both null clears the
+// override. Owner / service_center (any branch of the org) or a manager at a
+// till with manage_branch_prices (their own branch only).
+func (a *CatalogAPI) SetBranchPrice(c *gin.Context) {
+	orgID, actor, productID, branchID, ok := branchPriceParams(c)
+	if !ok {
+		return
+	}
+	var in catalog.SetBranchPriceRequest
+	if err := c.ShouldBindJSON(&in); err != nil {
+		common.HandleError(c, common.BadRequestError(err.Error()))
+		return
+	}
+	result, err := a.service.SetBranchPrice(c.Request.Context(), orgID, actor, productID, branchID, in)
+	if err != nil {
+		common.HandleError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// DeleteBranchPrice handles `DELETE /products/:id/branch-prices/:branchId`:
+// the branch goes back to the catalog price. Idempotent. Same callers as
+// SetBranchPrice.
+func (a *CatalogAPI) DeleteBranchPrice(c *gin.Context) {
+	orgID, actor, productID, branchID, ok := branchPriceParams(c)
+	if !ok {
+		return
+	}
+	if err := a.service.DeleteBranchPrice(c.Request.Context(), orgID, actor, productID, branchID); err != nil {
+		common.HandleError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+// branchPriceParams reads what the two branch-price write routes share: the
+// org, who is writing and the product and branch from the path. A POS token
+// (a manager at a till) is the staff member from the X-Staff-Token the guard
+// already verified, bound to the token's branch; an org-wide token is the user.
+func branchPriceParams(c *gin.Context) (orgID uint, actor catalog.BranchPriceActor, productID, branchID uint, ok bool) {
+	if orgID, ok = requireOrgID(c); !ok {
+		return
+	}
+	if ownBranch, bound := middleware.BranchIDFromContext(c); bound {
+		staffID, hasStaff := middleware.StaffIDFromContext(c)
+		if !hasStaff {
+			ok = false
+			common.HandleError(c, common.UnauthorizedError("a staff token is required"))
+			return
+		}
+		actor = catalog.BranchPriceActor{StaffID: &staffID, BranchID: &ownBranch}
+	} else {
+		userID, hasUser := middleware.UserIDFromContext(c)
+		if !hasUser {
+			ok = false
+			common.HandleError(c, common.UnauthorizedError("missing or malformed authorization header"))
+			return
+		}
+		actor = catalog.BranchPriceActor{UserID: &userID}
+	}
+	if productID, ok = pathID(c, "id"); !ok {
+		return
+	}
+	branchID, ok = pathID(c, "branchId")
+	return
+}
+
+// pathID parses a positive uint path parameter, or answers 400.
+func pathID(c *gin.Context, name string) (uint, bool) {
+	v, err := strconv.ParseUint(c.Param(name), 10, 64)
+	if err != nil || v == 0 {
+		common.HandleError(c, common.BadRequestError("invalid "+name))
+		return 0, false
+	}
+	return uint(v), true
 }

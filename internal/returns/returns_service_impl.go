@@ -507,9 +507,14 @@ func (s *Service) CreateExchange(ctx context.Context, orgID uint, actor Actor, i
 					products[*reqItem.ProductID] = product
 				}
 				// Priced from the product, like a sale: its sale price (catalog
-				// discount applied) already contains the tax. A unit_price in
-				// the request is not read.
-				unitPrice := product.EffectiveSalePrice()
+				// discount applied) already contains the tax - at the branch
+				// where the exchange happens, so a branch price override
+				// applies. A unit_price in the request is not read.
+				pricing, err := catalog.ResolveBranchPricing(ctx, s.products, orgID, sale.BranchID, product)
+				if err != nil {
+					return err
+				}
+				unitPrice := pricing.SalePrice
 				lineValue := unitPrice.Mul(decimal.NewFromInt(int64(reqItem.Qty))).Round(2)
 				netDifference = netDifference.Add(lineValue)
 				lineTax := common.IncludedTax(lineValue, product.TaxPercent)

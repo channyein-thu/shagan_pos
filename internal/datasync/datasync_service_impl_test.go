@@ -59,11 +59,11 @@ func TestService_GetCatalogSnapshot_ComposesAllThreeAndComputesETag(t *testing.T
 	categories := []catalog.Category{{ID: 1, NameI18n: "Beverages"}}
 	combos := []catalog.ComboResult{{Combo: catalog.Combo{ID: 1}}}
 
-	cat.EXPECT().ListProducts(mock.Anything, uint(7)).Return(products, nil).Once()
+	cat.EXPECT().ListProducts(mock.Anything, uint(7), (*uint)(nil)).Return(products, nil).Once()
 	cat.EXPECT().ListCategories(mock.Anything, uint(7)).Return(categories, nil).Once()
 	cat.EXPECT().ListCombos(mock.Anything, uint(7)).Return(combos, nil).Once()
 
-	got, etag, err := svc.GetCatalogSnapshot(context.Background(), 7)
+	got, etag, err := svc.GetCatalogSnapshot(context.Background(), 7, nil)
 	require.NoError(t, err)
 	require.Equal(t, products, got.Products)
 	require.Equal(t, categories, got.Categories)
@@ -79,13 +79,13 @@ func TestService_GetCatalogSnapshot_SameContentYieldsSameETag(t *testing.T) {
 	svc := newTestService(repo, branches, cat, sw)
 
 	products := []catalog.ProductResult{{Product: catalog.Product{ID: 1, Name: "Cola"}}}
-	cat.EXPECT().ListProducts(mock.Anything, uint(7)).Return(products, nil).Twice()
+	cat.EXPECT().ListProducts(mock.Anything, uint(7), (*uint)(nil)).Return(products, nil).Twice()
 	cat.EXPECT().ListCategories(mock.Anything, uint(7)).Return(nil, nil).Twice()
 	cat.EXPECT().ListCombos(mock.Anything, uint(7)).Return(nil, nil).Twice()
 
-	_, etag1, err := svc.GetCatalogSnapshot(context.Background(), 7)
+	_, etag1, err := svc.GetCatalogSnapshot(context.Background(), 7, nil)
 	require.NoError(t, err)
-	_, etag2, err := svc.GetCatalogSnapshot(context.Background(), 7)
+	_, etag2, err := svc.GetCatalogSnapshot(context.Background(), 7, nil)
 	require.NoError(t, err)
 	require.Equal(t, etag1, etag2)
 }
@@ -102,15 +102,15 @@ func TestService_GetCatalogSnapshot_ComboItemsChange_YieldsDifferentETag(t *test
 
 	before := []catalog.ComboResult{{Combo: catalog.Combo{ID: 1, Name: "Breakfast"}, Items: []catalog.ComboItemResult{{ProductID: 5, Qty: 1}}}}
 	after := []catalog.ComboResult{{Combo: catalog.Combo{ID: 1, Name: "Breakfast"}, Items: []catalog.ComboItemResult{{ProductID: 5, Qty: 2}}}}
-	cat.EXPECT().ListProducts(mock.Anything, uint(7)).Return(nil, nil).Twice()
+	cat.EXPECT().ListProducts(mock.Anything, uint(7), (*uint)(nil)).Return(nil, nil).Twice()
 	cat.EXPECT().ListCategories(mock.Anything, uint(7)).Return(nil, nil).Twice()
 	cat.EXPECT().ListCombos(mock.Anything, uint(7)).Return(before, nil).Once()
 	cat.EXPECT().ListCombos(mock.Anything, uint(7)).Return(after, nil).Once()
 
-	snap, etag1, err := svc.GetCatalogSnapshot(context.Background(), 7)
+	snap, etag1, err := svc.GetCatalogSnapshot(context.Background(), 7, nil)
 	require.NoError(t, err)
 	require.Equal(t, before[0].Items, snap.Combos[0].Items, "the snapshot must carry the items through")
-	_, etag2, err := svc.GetCatalogSnapshot(context.Background(), 7)
+	_, etag2, err := svc.GetCatalogSnapshot(context.Background(), 7, nil)
 	require.NoError(t, err)
 	require.NotEqual(t, etag1, etag2)
 }
@@ -128,14 +128,14 @@ func TestService_GetCatalogSnapshot_TaxPercentChange_YieldsDifferentETag(t *test
 	rate := func(p string) []catalog.ProductResult {
 		return []catalog.ProductResult{{Product: catalog.Product{ID: 1, Name: "Cola", TaxPercent: decimal.RequireFromString(p)}}}
 	}
-	cat.EXPECT().ListProducts(mock.Anything, uint(7)).Return(rate("0"), nil).Once()
-	cat.EXPECT().ListProducts(mock.Anything, uint(7)).Return(rate("5"), nil).Once()
+	cat.EXPECT().ListProducts(mock.Anything, uint(7), (*uint)(nil)).Return(rate("0"), nil).Once()
+	cat.EXPECT().ListProducts(mock.Anything, uint(7), (*uint)(nil)).Return(rate("5"), nil).Once()
 	cat.EXPECT().ListCategories(mock.Anything, uint(7)).Return(nil, nil).Twice()
 	cat.EXPECT().ListCombos(mock.Anything, uint(7)).Return(nil, nil).Twice()
 
-	_, etag1, err := svc.GetCatalogSnapshot(context.Background(), 7)
+	_, etag1, err := svc.GetCatalogSnapshot(context.Background(), 7, nil)
 	require.NoError(t, err)
-	snap, etag2, err := svc.GetCatalogSnapshot(context.Background(), 7)
+	snap, etag2, err := svc.GetCatalogSnapshot(context.Background(), 7, nil)
 	require.NoError(t, err)
 	require.NotEqual(t, etag1, etag2)
 	require.True(t, decimal.NewFromInt(5).Equal(snap.Products[0].TaxPercent), "the snapshot must carry the rate")
@@ -160,14 +160,14 @@ func TestService_GetCatalogSnapshot_DifferingOnlyByPresignedImageURL_YieldsSameE
 			Images:  []catalog.ProductImageResult{{ID: 10, URL: url, Width: 100, Height: 100}},
 		}}
 	}
-	cat.EXPECT().ListProducts(mock.Anything, uint(7)).Return(productWithImage("https://cdn.example/a?sig=111"), nil).Once()
-	cat.EXPECT().ListProducts(mock.Anything, uint(7)).Return(productWithImage("https://cdn.example/a?sig=222"), nil).Once()
+	cat.EXPECT().ListProducts(mock.Anything, uint(7), (*uint)(nil)).Return(productWithImage("https://cdn.example/a?sig=111"), nil).Once()
+	cat.EXPECT().ListProducts(mock.Anything, uint(7), (*uint)(nil)).Return(productWithImage("https://cdn.example/a?sig=222"), nil).Once()
 	cat.EXPECT().ListCategories(mock.Anything, uint(7)).Return(nil, nil).Twice()
 	cat.EXPECT().ListCombos(mock.Anything, uint(7)).Return(nil, nil).Twice()
 
-	_, etag1, err := svc.GetCatalogSnapshot(context.Background(), 7)
+	_, etag1, err := svc.GetCatalogSnapshot(context.Background(), 7, nil)
 	require.NoError(t, err)
-	_, etag2, err := svc.GetCatalogSnapshot(context.Background(), 7)
+	_, etag2, err := svc.GetCatalogSnapshot(context.Background(), 7, nil)
 	require.NoError(t, err)
 	require.Equal(t, etag1, etag2)
 }
@@ -594,4 +594,56 @@ func TestService_ResolveSyncConflict_NotFound_PropagatesError(t *testing.T) {
 	_, err := svc.ResolveSyncConflict(context.Background(), 7, 9, 99)
 	require.Error(t, err)
 	requireRestErrorStatus(t, err, http.StatusNotFound)
+}
+
+// --- branch prices in the snapshot ---
+
+func catalogForBranch(t *testing.T) (*Service, *MockCatalogReader) {
+	t.Helper()
+	cat := NewMockCatalogReader(t)
+	cat.EXPECT().ListCategories(mock.Anything, uint(7)).Return(nil, nil).Maybe()
+	cat.EXPECT().ListCombos(mock.Anything, uint(7)).Return(nil, nil).Maybe()
+	return newTestService(NewMockRepository(t), NewMockBranchLookup(t), cat, NewMockSalesWriter(t)), cat
+}
+
+func productAt(price string) []catalog.ProductResult {
+	p := decimal.RequireFromString(price)
+	return []catalog.ProductResult{{Product: catalog.Product{ID: 1, Name: "Cola", Price: p, SalePrice: p}, PriceSource: catalog.PriceSourceBranch}}
+}
+
+// Two branches that price the same product differently get different prices
+// AND different ETags - a till must never keep another branch's cached prices
+// on a 304.
+func TestService_GetCatalogSnapshot_DifferentBranches_GetTheirOwnPricesAndETags(t *testing.T) {
+	svc, cat := catalogForBranch(t)
+	b3, b4 := uint(3), uint(4)
+	cat.EXPECT().ListProducts(mock.Anything, uint(7), &b3).Return(productAt("7000"), nil).Once()
+	cat.EXPECT().ListProducts(mock.Anything, uint(7), &b4).Return(productAt("6500"), nil).Once()
+
+	snap3, etag3, err := svc.GetCatalogSnapshot(context.Background(), 7, &b3)
+	require.NoError(t, err)
+	snap4, etag4, err := svc.GetCatalogSnapshot(context.Background(), 7, &b4)
+	require.NoError(t, err)
+
+	require.True(t, decimal.RequireFromString("7000").Equal(snap3.Products[0].Price))
+	require.True(t, decimal.RequireFromString("6500").Equal(snap4.Products[0].Price))
+	require.NotEqual(t, etag3, etag4)
+}
+
+// The branch is part of the ETag itself: two branches whose content happens to
+// be identical today still don't share one.
+func TestService_GetCatalogSnapshot_SameContentAtTwoBranches_YieldsDifferentETags(t *testing.T) {
+	svc, cat := catalogForBranch(t)
+	b3, b4 := uint(3), uint(4)
+	cat.EXPECT().ListProducts(mock.Anything, uint(7), mock.Anything).Return(productAt("6500"), nil).Times(3)
+
+	_, etag3, err := svc.GetCatalogSnapshot(context.Background(), 7, &b3)
+	require.NoError(t, err)
+	_, etag4, err := svc.GetCatalogSnapshot(context.Background(), 7, &b4)
+	require.NoError(t, err)
+	_, etag3Again, err := svc.GetCatalogSnapshot(context.Background(), 7, &b3)
+	require.NoError(t, err)
+
+	require.NotEqual(t, etag3, etag4)
+	require.Equal(t, etag3, etag3Again, "still stable for one branch")
 }

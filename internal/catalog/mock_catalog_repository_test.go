@@ -5,6 +5,7 @@ package catalog
 import (
 	context "context"
 
+	decimal "github.com/shopspring/decimal"
 	gorm "gorm.io/gorm"
 
 	mock "github.com/stretchr/testify/mock"
@@ -362,6 +363,102 @@ func (_c *MockRepository_CreateProductImage_Call) RunAndReturn(run func(*gorm.DB
 	return _c
 }
 
+// DeleteBranchPrice provides a mock function with given fields: db, orgID, productID, branchID
+func (_m *MockRepository) DeleteBranchPrice(db *gorm.DB, orgID uint, productID uint, branchID uint) error {
+	ret := _m.Called(db, orgID, productID, branchID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DeleteBranchPrice")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(*gorm.DB, uint, uint, uint) error); ok {
+		r0 = rf(db, orgID, productID, branchID)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// MockRepository_DeleteBranchPrice_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DeleteBranchPrice'
+type MockRepository_DeleteBranchPrice_Call struct {
+	*mock.Call
+}
+
+// DeleteBranchPrice is a helper method to define mock.On call
+//   - db *gorm.DB
+//   - orgID uint
+//   - productID uint
+//   - branchID uint
+func (_e *MockRepository_Expecter) DeleteBranchPrice(db interface{}, orgID interface{}, productID interface{}, branchID interface{}) *MockRepository_DeleteBranchPrice_Call {
+	return &MockRepository_DeleteBranchPrice_Call{Call: _e.mock.On("DeleteBranchPrice", db, orgID, productID, branchID)}
+}
+
+func (_c *MockRepository_DeleteBranchPrice_Call) Run(run func(db *gorm.DB, orgID uint, productID uint, branchID uint)) *MockRepository_DeleteBranchPrice_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(*gorm.DB), args[1].(uint), args[2].(uint), args[3].(uint))
+	})
+	return _c
+}
+
+func (_c *MockRepository_DeleteBranchPrice_Call) Return(_a0 error) *MockRepository_DeleteBranchPrice_Call {
+	_c.Call.Return(_a0)
+	return _c
+}
+
+func (_c *MockRepository_DeleteBranchPrice_Call) RunAndReturn(run func(*gorm.DB, uint, uint, uint) error) *MockRepository_DeleteBranchPrice_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// DeleteBranchPricesByProductID provides a mock function with given fields: db, productID
+func (_m *MockRepository) DeleteBranchPricesByProductID(db *gorm.DB, productID uint) error {
+	ret := _m.Called(db, productID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DeleteBranchPricesByProductID")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(*gorm.DB, uint) error); ok {
+		r0 = rf(db, productID)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// MockRepository_DeleteBranchPricesByProductID_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DeleteBranchPricesByProductID'
+type MockRepository_DeleteBranchPricesByProductID_Call struct {
+	*mock.Call
+}
+
+// DeleteBranchPricesByProductID is a helper method to define mock.On call
+//   - db *gorm.DB
+//   - productID uint
+func (_e *MockRepository_Expecter) DeleteBranchPricesByProductID(db interface{}, productID interface{}) *MockRepository_DeleteBranchPricesByProductID_Call {
+	return &MockRepository_DeleteBranchPricesByProductID_Call{Call: _e.mock.On("DeleteBranchPricesByProductID", db, productID)}
+}
+
+func (_c *MockRepository_DeleteBranchPricesByProductID_Call) Run(run func(db *gorm.DB, productID uint)) *MockRepository_DeleteBranchPricesByProductID_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(*gorm.DB), args[1].(uint))
+	})
+	return _c
+}
+
+func (_c *MockRepository_DeleteBranchPricesByProductID_Call) Return(_a0 error) *MockRepository_DeleteBranchPricesByProductID_Call {
+	_c.Call.Return(_a0)
+	return _c
+}
+
+func (_c *MockRepository_DeleteBranchPricesByProductID_Call) RunAndReturn(run func(*gorm.DB, uint) error) *MockRepository_DeleteBranchPricesByProductID_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // DeleteCategory provides a mock function with given fields: ctx, id
 func (_m *MockRepository) DeleteCategory(ctx context.Context, id uint) error {
 	ret := _m.Called(ctx, id)
@@ -644,6 +741,67 @@ func (_c *MockRepository_DeleteProductImagesByProductID_Call) RunAndReturn(run f
 	return _c
 }
 
+// GetBranchPrice provides a mock function with given fields: ctx, orgID, branchID, productID
+func (_m *MockRepository) GetBranchPrice(ctx context.Context, orgID uint, branchID uint, productID uint) (*ProductBranchPrice, error) {
+	ret := _m.Called(ctx, orgID, branchID, productID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetBranchPrice")
+	}
+
+	var r0 *ProductBranchPrice
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, uint, uint, uint) (*ProductBranchPrice, error)); ok {
+		return rf(ctx, orgID, branchID, productID)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, uint, uint, uint) *ProductBranchPrice); ok {
+		r0 = rf(ctx, orgID, branchID, productID)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*ProductBranchPrice)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, uint, uint, uint) error); ok {
+		r1 = rf(ctx, orgID, branchID, productID)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// MockRepository_GetBranchPrice_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetBranchPrice'
+type MockRepository_GetBranchPrice_Call struct {
+	*mock.Call
+}
+
+// GetBranchPrice is a helper method to define mock.On call
+//   - ctx context.Context
+//   - orgID uint
+//   - branchID uint
+//   - productID uint
+func (_e *MockRepository_Expecter) GetBranchPrice(ctx interface{}, orgID interface{}, branchID interface{}, productID interface{}) *MockRepository_GetBranchPrice_Call {
+	return &MockRepository_GetBranchPrice_Call{Call: _e.mock.On("GetBranchPrice", ctx, orgID, branchID, productID)}
+}
+
+func (_c *MockRepository_GetBranchPrice_Call) Run(run func(ctx context.Context, orgID uint, branchID uint, productID uint)) *MockRepository_GetBranchPrice_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(uint), args[2].(uint), args[3].(uint))
+	})
+	return _c
+}
+
+func (_c *MockRepository_GetBranchPrice_Call) Return(_a0 *ProductBranchPrice, _a1 error) *MockRepository_GetBranchPrice_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *MockRepository_GetBranchPrice_Call) RunAndReturn(run func(context.Context, uint, uint, uint) (*ProductBranchPrice, error)) *MockRepository_GetBranchPrice_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetCategory provides a mock function with given fields: ctx, orgID, id
 func (_m *MockRepository) GetCategory(ctx context.Context, orgID uint, id uint) (*Category, error) {
 	ret := _m.Called(ctx, orgID, id)
@@ -880,6 +1038,127 @@ func (_c *MockRepository_GetProductByBarcode_Call) Return(_a0 *Product, _a1 erro
 }
 
 func (_c *MockRepository_GetProductByBarcode_Call) RunAndReturn(run func(context.Context, uint, string) (*Product, error)) *MockRepository_GetProductByBarcode_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ListBranchPricesByProduct provides a mock function with given fields: ctx, orgID, productID
+func (_m *MockRepository) ListBranchPricesByProduct(ctx context.Context, orgID uint, productID uint) ([]ProductBranchPrice, error) {
+	ret := _m.Called(ctx, orgID, productID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListBranchPricesByProduct")
+	}
+
+	var r0 []ProductBranchPrice
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, uint, uint) ([]ProductBranchPrice, error)); ok {
+		return rf(ctx, orgID, productID)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, uint, uint) []ProductBranchPrice); ok {
+		r0 = rf(ctx, orgID, productID)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]ProductBranchPrice)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, uint, uint) error); ok {
+		r1 = rf(ctx, orgID, productID)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// MockRepository_ListBranchPricesByProduct_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListBranchPricesByProduct'
+type MockRepository_ListBranchPricesByProduct_Call struct {
+	*mock.Call
+}
+
+// ListBranchPricesByProduct is a helper method to define mock.On call
+//   - ctx context.Context
+//   - orgID uint
+//   - productID uint
+func (_e *MockRepository_Expecter) ListBranchPricesByProduct(ctx interface{}, orgID interface{}, productID interface{}) *MockRepository_ListBranchPricesByProduct_Call {
+	return &MockRepository_ListBranchPricesByProduct_Call{Call: _e.mock.On("ListBranchPricesByProduct", ctx, orgID, productID)}
+}
+
+func (_c *MockRepository_ListBranchPricesByProduct_Call) Run(run func(ctx context.Context, orgID uint, productID uint)) *MockRepository_ListBranchPricesByProduct_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(uint), args[2].(uint))
+	})
+	return _c
+}
+
+func (_c *MockRepository_ListBranchPricesByProduct_Call) Return(_a0 []ProductBranchPrice, _a1 error) *MockRepository_ListBranchPricesByProduct_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *MockRepository_ListBranchPricesByProduct_Call) RunAndReturn(run func(context.Context, uint, uint) ([]ProductBranchPrice, error)) *MockRepository_ListBranchPricesByProduct_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ListBranchPricesForBranch provides a mock function with given fields: ctx, orgID, branchID, productIDs
+func (_m *MockRepository) ListBranchPricesForBranch(ctx context.Context, orgID uint, branchID uint, productIDs []uint) ([]ProductBranchPrice, error) {
+	ret := _m.Called(ctx, orgID, branchID, productIDs)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListBranchPricesForBranch")
+	}
+
+	var r0 []ProductBranchPrice
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, uint, uint, []uint) ([]ProductBranchPrice, error)); ok {
+		return rf(ctx, orgID, branchID, productIDs)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, uint, uint, []uint) []ProductBranchPrice); ok {
+		r0 = rf(ctx, orgID, branchID, productIDs)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]ProductBranchPrice)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, uint, uint, []uint) error); ok {
+		r1 = rf(ctx, orgID, branchID, productIDs)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// MockRepository_ListBranchPricesForBranch_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListBranchPricesForBranch'
+type MockRepository_ListBranchPricesForBranch_Call struct {
+	*mock.Call
+}
+
+// ListBranchPricesForBranch is a helper method to define mock.On call
+//   - ctx context.Context
+//   - orgID uint
+//   - branchID uint
+//   - productIDs []uint
+func (_e *MockRepository_Expecter) ListBranchPricesForBranch(ctx interface{}, orgID interface{}, branchID interface{}, productIDs interface{}) *MockRepository_ListBranchPricesForBranch_Call {
+	return &MockRepository_ListBranchPricesForBranch_Call{Call: _e.mock.On("ListBranchPricesForBranch", ctx, orgID, branchID, productIDs)}
+}
+
+func (_c *MockRepository_ListBranchPricesForBranch_Call) Run(run func(ctx context.Context, orgID uint, branchID uint, productIDs []uint)) *MockRepository_ListBranchPricesForBranch_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(uint), args[2].(uint), args[3].([]uint))
+	})
+	return _c
+}
+
+func (_c *MockRepository_ListBranchPricesForBranch_Call) Return(_a0 []ProductBranchPrice, _a1 error) *MockRepository_ListBranchPricesForBranch_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *MockRepository_ListBranchPricesForBranch_Call) RunAndReturn(run func(context.Context, uint, uint, []uint) ([]ProductBranchPrice, error)) *MockRepository_ListBranchPricesForBranch_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -1352,6 +1631,54 @@ func (_c *MockRepository_ProductsExistForCategory_Call) RunAndReturn(run func(co
 	return _c
 }
 
+// UpdateBranchPriceSalePrice provides a mock function with given fields: db, id, salePrice
+func (_m *MockRepository) UpdateBranchPriceSalePrice(db *gorm.DB, id uint, salePrice decimal.Decimal) error {
+	ret := _m.Called(db, id, salePrice)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateBranchPriceSalePrice")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(*gorm.DB, uint, decimal.Decimal) error); ok {
+		r0 = rf(db, id, salePrice)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// MockRepository_UpdateBranchPriceSalePrice_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdateBranchPriceSalePrice'
+type MockRepository_UpdateBranchPriceSalePrice_Call struct {
+	*mock.Call
+}
+
+// UpdateBranchPriceSalePrice is a helper method to define mock.On call
+//   - db *gorm.DB
+//   - id uint
+//   - salePrice decimal.Decimal
+func (_e *MockRepository_Expecter) UpdateBranchPriceSalePrice(db interface{}, id interface{}, salePrice interface{}) *MockRepository_UpdateBranchPriceSalePrice_Call {
+	return &MockRepository_UpdateBranchPriceSalePrice_Call{Call: _e.mock.On("UpdateBranchPriceSalePrice", db, id, salePrice)}
+}
+
+func (_c *MockRepository_UpdateBranchPriceSalePrice_Call) Run(run func(db *gorm.DB, id uint, salePrice decimal.Decimal)) *MockRepository_UpdateBranchPriceSalePrice_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(*gorm.DB), args[1].(uint), args[2].(decimal.Decimal))
+	})
+	return _c
+}
+
+func (_c *MockRepository_UpdateBranchPriceSalePrice_Call) Return(_a0 error) *MockRepository_UpdateBranchPriceSalePrice_Call {
+	_c.Call.Return(_a0)
+	return _c
+}
+
+func (_c *MockRepository_UpdateBranchPriceSalePrice_Call) RunAndReturn(run func(*gorm.DB, uint, decimal.Decimal) error) *MockRepository_UpdateBranchPriceSalePrice_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // UpdateCategory provides a mock function with given fields: ctx, id, updates
 func (_m *MockRepository) UpdateCategory(ctx context.Context, id uint, updates map[string]interface{}) error {
 	ret := _m.Called(ctx, id, updates)
@@ -1492,6 +1819,53 @@ func (_c *MockRepository_UpdateProduct_Call) Return(_a0 error) *MockRepository_U
 }
 
 func (_c *MockRepository_UpdateProduct_Call) RunAndReturn(run func(*gorm.DB, uint, map[string]interface{}) error) *MockRepository_UpdateProduct_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// UpsertBranchPrice provides a mock function with given fields: db, row
+func (_m *MockRepository) UpsertBranchPrice(db *gorm.DB, row *ProductBranchPrice) error {
+	ret := _m.Called(db, row)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpsertBranchPrice")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(*gorm.DB, *ProductBranchPrice) error); ok {
+		r0 = rf(db, row)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// MockRepository_UpsertBranchPrice_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpsertBranchPrice'
+type MockRepository_UpsertBranchPrice_Call struct {
+	*mock.Call
+}
+
+// UpsertBranchPrice is a helper method to define mock.On call
+//   - db *gorm.DB
+//   - row *ProductBranchPrice
+func (_e *MockRepository_Expecter) UpsertBranchPrice(db interface{}, row interface{}) *MockRepository_UpsertBranchPrice_Call {
+	return &MockRepository_UpsertBranchPrice_Call{Call: _e.mock.On("UpsertBranchPrice", db, row)}
+}
+
+func (_c *MockRepository_UpsertBranchPrice_Call) Run(run func(db *gorm.DB, row *ProductBranchPrice)) *MockRepository_UpsertBranchPrice_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(*gorm.DB), args[1].(*ProductBranchPrice))
+	})
+	return _c
+}
+
+func (_c *MockRepository_UpsertBranchPrice_Call) Return(_a0 error) *MockRepository_UpsertBranchPrice_Call {
+	_c.Call.Return(_a0)
+	return _c
+}
+
+func (_c *MockRepository_UpsertBranchPrice_Call) RunAndReturn(run func(*gorm.DB, *ProductBranchPrice) error) *MockRepository_UpsertBranchPrice_Call {
 	_c.Call.Return(run)
 	return _c
 }

@@ -29,6 +29,7 @@ GitHub issue. Paths are relative to the repo root. See the status section and
 | 20 | Wrong table name in a procurement migration | Bug | Old databases being migrated |
 | 21 | No unique index on `stock_levels (product_id, branch_id)` | Data integrity | — |
 | 22 | No database foreign keys | Data integrity (design) | — |
+| 23 | Branch-specific product prices | **Feature (decided)** | Selling one catalog at different prices per branch |
 
 ---
 
@@ -238,3 +239,113 @@ code path (and every manual fix in the database) being right.
 **Fix (suggested):** add FKs at least for the money tables (`sale_items`,
 `payments`, `voids`, `returns`, `exchanges` → `sales`), ideally as part of
 moving to versioned SQL migrations.
+
+## 23. Branch-specific product prices (decided 2026-10-23)
+**Status: built 2026-10-23** - see WORKFLOWS.md Section 8 ("Branch prices") for the rules as built, including the few places they differ from the defaults below.
+
+**Need:** the same catalog is sold at different prices in different branches
+(e.g. Mandalay costs more than Yangon). Today a product has one org-wide
+`price` / `discount_percent`, and an online sale whose `unit_price` differs from
+it is rejected with **409 "price changed, refresh the catalog"**
+(`internal/sales/sales_discount_service_impl.go`, the `default:` case). So this
+can't be solved in the frontend.
+
+**Chosen design: branch price overrides** (option B of the four considered;
+rejected: duplicating products per branch, price lists, per-branch
+multipliers). The catalog price stays the default; a branch may override it for
+any product. No data migration: with no override rows, every branch keeps
+today's behaviour.
+
+> **Effective price at branch B** = B's override for the product if one exists,
+> otherwise the catalog price. Each override field falls back on its own.
+
+### Defaults assumed (change before building if wrong)
+| Question | Default |
+|---|---|
+| What can differ per branch | **Selling `price`** and the catalog **`discount_percent`**. `tax_percent` and `cost_price` stay org-wide. |
+| Combos | Out of scope; combo prices stay org-wide (possible follow-up). |
+| Scheduled price changes ("from 1 Nov") | Out of scope; an override applies immediately. |
+| Per-branch "not sold here" | Out of scope (`is_active` stays org-wide). |
+| Bulk edit / CSV import | Out of scope for v1. |
+
+### Schema
+```go
+// internal/catalog/catalog_model.go
+type ProductBranchPrice struct {
+    ID              uint             `gorm:"primaryKey;autoIncrement" json:"id"`
+    OrgID           uint             `gorm:"not null;index" json:"org_id"`
+    ProductID       uint             `gorm:"not null;uniqueIndex:ux_product_branch_prices" json:"product_id"`
+    BranchID        uint             `gorm:"not null;uniqueIndex:ux_product_branch_prices;index" json:"branch_id"`
+    Price           *decimal.Decimal `gorm:"type:decimal(10,2)" json:"price"`             // nil = catalog price
+    DiscountPercent *decimal.Decimal `gorm:"type:decimal(5,2)" json:"discount_percent"`   // nil = catalog %
+    SalePrice       decimal.Decimal  `gorm:"type:decimal(10,2);not null" json:"sale_price"` // computed on write, like Product.SalePrice
+    UpdatedByUserID *uint            `json:"updated_by_user_id"`
+    UpdatedAt       time.Time        `gorm:"autoUpdateTime;not null" json:"updated_at"`
+}
+```
+- Unique on `(product_id, branch_id)`. Writes are upserts (`ON CONFLICT`).
+- `sale_price` is computed and rounded on write with the same rule as
+  `Product.SalePrice` (`common.DiscountedUnitPrice`), so a sale and an exchange
+  at that branch can never disagree by a rounding step. When the catalog
+  `price` or `discount_percent` changes, recompute the `sale_price` of
+  overrides that inherit the changed field.
+- At least one of `price` / `discount_percent` must be set. A row with both
+  nil is deleted instead.
+- Validation matches the product's: `price > 0`, `0 <= discount_percent <= 100`.
+  The branch must be active and in the caller's org.
+- Deleting a product deletes its overrides (in the same transaction, since
+  there are no DB foreign keys - see #22).
+
+### One resolver, used everywhere a product is priced
+Add to catalog something like
+`EffectivePricing(ctx, orgID, branchID, product) (price, discountPercent)`, or
+a batch form for lists. It returns the override's fields where set, otherwise
+the product's. The existing `Product.EffectiveSalePrice()`
+(`catalog_model.go:67`) becomes "sale price **at a branch**".
+
+Every path that prices a product today reads the org-wide fields and must use
+the resolver instead:
+
+| Path | Where | Change |
+|---|---|---|
+| Create sale, online | `sales_discount_service_impl.go` (`original := product.Price`; the `default:` case's 409 check and `catalogSalePrice(product)`) | Compare and price against the **selling branch's** effective price. The branch comes from the POS token. |
+| Create sale, offline queued | Same file, `queued` case: the `PriceMismatches` check | Compare the till's snapshot with the branch's effective price, not the catalog's. |
+| Discount approvals | Same file: approval creation (`GetProduct` at ~:238; `UnitPrice: product.Price` at ~:294) | Base the approved percentage on the branch price. |
+| Exchange "out" items | `internal/returns/returns_service_impl.go` ~:512 (`product.EffectiveSalePrice()`) | Price the replacement at the **till's branch** (where the exchange happens). |
+| Product reads | `catalog_service_impl.go` `ListProducts` / `GetProduct`; `cmd/api/catalog.go` `GET /products`, `/products/:id`, `/products/barcode/:code` | For a POS token, return the token's branch's effective `price`, `discount_percent` and `sale_price`. For an owner, accept `?branch_id=` and do the same. Without it, return catalog prices. |
+| Offline catalog | `internal/datasync/datasync_service_impl.go` `GetCatalogSnapshot` (ignores `branch_id` today) | Build the snapshot for the caller's branch, and include the branch in the **ETag**. Otherwise a till keeps another branch's cached prices (`304 Not Modified`). |
+
+Unchanged, because sale lines already snapshot the price they were sold at:
+receipts, reprint, returns, voids, the "in" side of exchanges, and reports.
+
+### API for the Owner / Service Center
+```
+GET    /products/:id/branch-prices            → [{branch_id, branch_name, price|null, discount_percent|null, effective_price, effective_sale_price}]
+PUT    /products/:id/branch-prices/:branchId  → { "price": "1900.00", "discount_percent": null }   upsert
+DELETE /products/:id/branch-prices/:branchId  → back to the catalog price
+```
+- Product responses gain `"price_source": "catalog" | "branch"` when resolved
+  for a branch, so Back Office can mark overridden prices.
+- **Permissions:** writes are Owner / Service Center only, like other catalog
+  writes. A manager in Back Office at a till can read their own branch's
+  overrides. Whether they can edit them is a business decision; default no.
+- **Audit:** every upsert or delete writes `audit_log` with before / after and
+  the branch.
+
+### Tests to add
+- Effective-price resolution: no override, price only, % only, both.
+- An online sale at the catalog price is rejected at a branch that has an
+  override (409), and accepted at the override price. The other branch is
+  unaffected.
+- A queued (offline) sale flags a `PriceMismatch` against the branch price.
+- A discount approval and an exchange "out" item use the branch price.
+- `/sync/catalog`: different branches get different prices and ETags.
+- Deleting a product removes its overrides. A cross-org branch id is rejected.
+
+### Frontend follow-up (shagan-retail, once the API exists)
+- Back Office product form: a "Prices by branch" table showing each branch's
+  default and an optional override (blank = default).
+- The product list shows the selected branch's price with a "branch price"
+  badge.
+- **The till needs no change.** It shows whatever price the API returns for its
+  branch.

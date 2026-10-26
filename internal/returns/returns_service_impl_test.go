@@ -1034,6 +1034,7 @@ func exchangeShiftFixture(t *testing.T, completes bool) (*Service, *MockReposito
 	// is left open (and unrestricted) here
 	products := NewMockProductLookup(t)
 	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(3)).Return(&catalog.Product{ID: 3, OrgID: 7, Price: d("15.00"), SalePrice: d("15.00")}, nil).Maybe()
+	products.EXPECT().GetBranchPrice(mock.Anything, uint(7), uint(5), uint(3)).Return(nil, nil).Maybe()
 	svc.products = products
 
 	saleID := uuid.New()
@@ -1076,6 +1077,7 @@ func productsAt(t *testing.T, id uint, price, taxRate string) *MockProductLookup
 	products := NewMockProductLookup(t)
 	products.EXPECT().GetProduct(mock.Anything, uint(7), id).
 		Return(&catalog.Product{ID: id, OrgID: 7, Price: d(price), SalePrice: d(price), TaxPercent: d(taxRate)}, nil).Maybe()
+	products.EXPECT().GetBranchPrice(mock.Anything, uint(7), mock.Anything, id).Return(nil, nil).Maybe()
 	return products
 }
 
@@ -1382,6 +1384,13 @@ func TestService_CreateReturn_TwoLinesWithDifferentRates_SumTheirTaxRefunded(t *
 // and the lines the service stored.
 func exchangeForProduct3(t *testing.T, product *catalog.Product, req CreateExchangeItemRequest) (*Exchange, []ExchangeItem) {
 	t.Helper()
+	return exchangeForProduct3At(t, product, nil, req)
+}
+
+// exchangeForProduct3At is exchangeForProduct3 where the exchange's branch
+// (5, the sale's) carries the given price override of product 3, if any.
+func exchangeForProduct3At(t *testing.T, product *catalog.Product, override *catalog.ProductBranchPrice, req CreateExchangeItemRequest) (*Exchange, []ExchangeItem) {
+	t.Helper()
 	repo := NewMockRepository(t)
 	branches := NewMockBranchLookup(t)
 	salesRepo := NewMockSalesReader(t)
@@ -1390,6 +1399,7 @@ func exchangeForProduct3(t *testing.T, product *catalog.Product, req CreateExcha
 	svc := newTestService(repo, branches, salesRepo, inv, audW)
 	products := NewMockProductLookup(t)
 	products.EXPECT().GetProduct(mock.Anything, uint(7), uint(3)).Return(product, nil).Once()
+	products.EXPECT().GetBranchPrice(mock.Anything, uint(7), uint(5), uint(3)).Return(override, nil).Once()
 	svc.products = products
 
 	saleID := uuid.New()
@@ -1517,4 +1527,20 @@ func TestService_CreateExchange_OutLine_UnknownProduct_PropagatesNotFound(t *tes
 	})
 
 	requireRestErrorStatus(t, err, http.StatusNotFound)
+}
+
+// An exchange happens at the sale's branch, so the new goods are priced there:
+// that branch's override of price and percent, not the catalog's. 7,000 at the
+// catalog's inherited 10% is 6,300, and the tax inside it follows.
+func TestService_CreateExchange_OutLine_IsPricedAtTheBranchOverride(t *testing.T) {
+	product := &catalog.Product{ID: 3, OrgID: 7, Price: d("6500"), DiscountPercent: d("10"), SalePrice: d("5900"), TaxPercent: d("5")}
+	price := d("7000")
+	override := &catalog.ProductBranchPrice{OrgID: 7, ProductID: 3, BranchID: 5, Price: &price, SalePrice: d("6300")}
+
+	got, items := exchangeForProduct3At(t, product, override, CreateExchangeItemRequest{Direction: DirectionOut, ProductID: uintPtr(3), Qty: 1})
+
+	out := outLine(t, items)
+	require.True(t, d("6300").Equal(out.UnitPrice), "the branch's sale price, not the catalog's 5,900 (got %s)", out.UnitPrice)
+	require.True(t, d("300.00").Equal(out.Tax), "tax inside 6,300 at 5%% (got %s)", out.Tax)
+	require.True(t, d("-4200").Equal(got.NetDifference), "6,300 out less the 10,500 paid for the line coming back")
 }

@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 
+	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
 
@@ -77,6 +78,33 @@ type Repository interface {
 	// DeleteProductImagesByProductID inside one db.Transaction, so a
 	// product row is never left with dangling ProductImage rows.
 	DeleteProduct(db *gorm.DB, id uint) error
+	// GetBranchPrice backs the pricing resolver (ResolveBranchPricing): the
+	// branch's override of one product, scoped to orgID. Returns nil, nil when
+	// the branch has none - the common case, not an error.
+	GetBranchPrice(ctx context.Context, orgID, branchID, productID uint) (*ProductBranchPrice, error)
+	// ListBranchPricesForBranch is the batch form for lists
+	// (ResolveBranchPricingBatch): the branch's overrides among productIDs.
+	ListBranchPricesForBranch(ctx context.Context, orgID, branchID uint, productIDs []uint) ([]ProductBranchPrice, error)
+	// ListBranchPricesByProduct backs `GET /products/:id/branch-prices` and the
+	// recompute after a catalog price change: every branch's override of one
+	// product, scoped to orgID, ordered by branch.
+	ListBranchPricesByProduct(ctx context.Context, orgID, productID uint) ([]ProductBranchPrice, error)
+	// UpsertBranchPrice backs `PUT /products/:id/branch-prices/:branchId`:
+	// insert, or on the unique (product_id, branch_id) replace price,
+	// discount_percent, sale_price and updated_by_user_id. Plain write - the
+	// service has validated and computed everything. db is an in-flight
+	// transaction (the upsert and its audit entry commit together).
+	UpsertBranchPrice(db *gorm.DB, row *ProductBranchPrice) error
+	// UpdateBranchPriceSalePrice backs the recompute when a product's catalog
+	// price or percent changes: only sale_price of one override row.
+	UpdateBranchPriceSalePrice(db *gorm.DB, id uint, salePrice decimal.Decimal) error
+	// DeleteBranchPrice backs `DELETE /products/:id/branch-prices/:branchId`
+	// (and a PUT that clears both fields). Deleting a row that isn't there is
+	// not an error.
+	DeleteBranchPrice(db *gorm.DB, orgID, productID, branchID uint) error
+	// DeleteBranchPricesByProductID backs Service.DeleteProduct: a product's
+	// overrides go with it, in the same transaction (no DB foreign keys).
+	DeleteBranchPricesByProductID(db *gorm.DB, productID uint) error
 	// ListCategories backs `GET /categories`, scoped to the authenticated
 	// caller's own organization - same reasoning as identity's
 	// org-scoped lists (e.g. ListBranches).

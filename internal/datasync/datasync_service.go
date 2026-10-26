@@ -34,10 +34,12 @@ type StaffLookup interface {
 // needs the same client-ready shape (signed image URLs, combo items) the
 // live GET /products and GET /combos already produce - reimplementing that
 // composition here would just duplicate catalog's own business logic.
-// Products/Categories/Combos are all org-wide, so every device in an org
-// gets the exact same snapshot regardless of which branch it belongs to.
+// Categories and Combos are org-wide; Products are resolved for the device's
+// branch (price, discount_percent, sale_price from the branch's override where
+// it has one - see catalog.EffectivePricing), so devices at different branches
+// can get different prices.
 type CatalogReader interface {
-	ListProducts(ctx context.Context, orgID uint) ([]catalog.ProductResult, error)
+	ListProducts(ctx context.Context, orgID uint, branchID *uint) ([]catalog.ProductResult, error)
 	ListCategories(ctx context.Context, orgID uint) ([]catalog.Category, error)
 	ListCombos(ctx context.Context, orgID uint) ([]catalog.ComboResult, error)
 }
@@ -57,9 +59,11 @@ type Interface interface {
 	// offline, plus an ETag over that content - if the caller's
 	// If-None-Match header (compared by the handler, not here) matches, the
 	// device already has the latest snapshot and gets a 304 instead of the
-	// full body. Org-wide, same reasoning as CatalogReader's doc - no
-	// branch filter.
-	GetCatalogSnapshot(ctx context.Context, orgID uint) (*CatalogSnapshot, string, error)
+	// full body. Products carry branchID's effective prices (nil = the plain
+	// catalog prices, for an org-wide caller that names no branch), and the
+	// ETag covers the branch itself, not only the content - so a till never
+	// keeps another branch's prices on a 304.
+	GetCatalogSnapshot(ctx context.Context, orgID uint, branchID *uint) (*CatalogSnapshot, string, error)
 	// IngestQueuedSales processes a device's offline queue - each sale is
 	// idempotent by its own client-generated ID (a retry of an
 	// already-arrived sale is a safe no-op, reported as success), and is

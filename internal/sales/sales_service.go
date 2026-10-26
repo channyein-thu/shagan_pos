@@ -16,10 +16,14 @@ import (
 // ProductLookup is what sales needs from catalog: reading each item's own
 // Product.CostPrice server-side at sale time, to snapshot onto
 // SaleItem.UnitCost - see SaleItem.UnitCost's own doc for why this is
-// never client-supplied, unlike UnitPrice/NameSnapshot/Tax. catalog.Repository
-// already satisfies this signature - no adapter needed.
+// never client-supplied, unlike UnitPrice/NameSnapshot/Tax - and, through
+// catalog.BranchPriceReader, the selling branch's price override, so every
+// line is priced with catalog.ResolveBranchPricing (never Product.Price
+// directly). catalog.Repository already satisfies this signature - no adapter
+// needed.
 type ProductLookup interface {
 	GetProduct(ctx context.Context, orgID uint, id uint) (*catalog.Product, error)
+	catalog.BranchPriceReader
 }
 
 // InventoryWriter is what sales needs from inventory: decrementing a sold
