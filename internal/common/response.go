@@ -15,11 +15,18 @@ import (
 func HandleError(c *gin.Context, err error) {
 	var restErr RestError
 	if errors.As(err, &restErr) {
-		c.JSON(restErr.Status, gin.H{
+		body := gin.H{
 			"success": false,
 			"message": restErr.Message,
 			"errors":  restErr.Errors,
-		})
+		}
+		if restErr.Code != "" {
+			for k, v := range restErr.Details {
+				body[k] = v
+			}
+			body["code"] = restErr.Code
+		}
+		c.JSON(restErr.Status, body)
 		return
 	}
 

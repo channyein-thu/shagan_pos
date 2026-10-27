@@ -30,6 +30,7 @@ GitHub issue. Paths are relative to the repo root. See the status section and
 | 21 | No unique index on `stock_levels (product_id, branch_id)` | Data integrity | — |
 | 22 | No database foreign keys | Data integrity (design) | — |
 | 23 | Branch-specific product prices | **Feature (decided)** | Selling one catalog at different prices per branch |
+| 24 | Subscription tiers (Basic / Pro / Enterprise) | **Feature (decided)** | Charging by shop size; gating the next features |
 
 ---
 
@@ -349,3 +350,179 @@ DELETE /products/:id/branch-prices/:branchId  → back to the catalog price
   badge.
 - **The till needs no change.** It shows whatever price the API returns for its
   branch.
+
+## 24. Subscription tiers (decided 2026-10-27)
+**Status: built 2026-10-27** - see WORKFLOWS.md Section 2 ("Subscription tiers") for the rules as built and where they differ from the defaults below.
+
+**Need:** Shagan sells the POS in tiers. Everything built so far is the
+**Basic** tier; higher tiers add size (more branches and tills) and features
+that aren't built yet. The Shagan team (shagan_team, over `/internal`) sets
+each organization's tier, alongside the suspend it already controls.
+
+**The tier belongs to the organization**, not to a POS account: every login of
+that org (owner, service center, POS devices, staff) gets it.
+
+> **Status and tier are separate.** `status` (active / suspended, already
+> built) decides whether the org can use Shagan at all. `plan` decides which
+> features and how many branches / devices. An expired or unpaid tier never
+> suspends an org or stops a till from selling - it drops the org to Basic.
+
+### The tiers
+| | **Basic** | **Pro** | **Enterprise** |
+|---|---|---|---|
+| Active branches | 1 | 5 | unlimited |
+| Active devices | 2 | 10 | unlimited |
+| Everything built today | yes | yes | yes |
+| Offline mode (when built) | yes | yes | yes |
+| `customer_display` | - | yes | yes |
+| `advanced_reports`, `report_export` | - | yes | yes |
+| `promotions` (incl. near-expiry markdowns) | - | yes | yes |
+| `loyalty`, `sms_receipts` | - | - | yes |
+| `api_access` | - | - | yes |
+
+Only the limits apply today: none of the gated features exists yet
+(`POST /reports/export` is still a 501 stub). Each one is gated when it's built.
+
+### Defaults assumed (change before building if wrong)
+| Question | Default |
+|---|---|
+| Current features | All in every tier, including branch pricing and custom roles. (Moving either to Pro is easiest **before** the first paying customer.) |
+| New organizations | Start on a **14-day Pro trial**, then drop to Basic. |
+| Expiry | A paid plan with `plan_expires_at` keeps working for a **7-day grace period**, then the org drops to Basic. No suspension. |
+| Over the limit after a downgrade | Nothing is deleted or switched off. Existing branches and devices keep working; creating or reactivating more is blocked. shagan_team shows the org as "over limit". |
+| Who the limits apply to | Everyone, including `/internal` creates: the team raises the tier or adds extras first. One rule, no hidden bypass. |
+| Extra branches / devices | Per-org add-ons (`extra_branches`, `extra_devices`) on top of the tier, so a 6-branch shop needn't jump to Enterprise. |
+| Billing | Not in the POS backend. Payments and invoices live in shagan_team; the team sets the tier by hand. |
+| Existing organizations | Set to Basic, no trial. |
+
+### Schema
+```go
+// internal/identity/identity_model.go - Organization gains:
+Plan           string     `gorm:"size:30;not null;default:'basic'" json:"plan"`
+PlanExpiresAt  *time.Time `json:"plan_expires_at"` // nil = no end date
+PlanTrial      bool       `gorm:"not null;default:false" json:"plan_trial"`
+ExtraBranches  int        `gorm:"not null;default:0" json:"extra_branches"`
+ExtraDevices   int        `gorm:"not null;default:0" json:"extra_devices"`
+
+// internal/subscription/subscription_model.go
+type OrgFeatureOverride struct { // a deal or beta: switch one feature on/off for one org
+    ID        uint      `gorm:"primaryKey;autoIncrement" json:"id"`
+    OrgID     uint      `gorm:"not null;uniqueIndex:ux_org_feature" json:"org_id"`
+    Feature   string    `gorm:"size:50;not null;uniqueIndex:ux_org_feature" json:"feature"`
+    Enabled   bool      `gorm:"not null" json:"enabled"`
+    UpdatedAt time.Time `gorm:"autoUpdateTime;not null" json:"updated_at"`
+}
+
+type OrgPlanChange struct { // append-only history, shown in shagan_team
+    ID            uint       `gorm:"primaryKey;autoIncrement" json:"id"`
+    OrgID         uint       `gorm:"not null;index" json:"org_id"`
+    FromPlan      string     `gorm:"size:30;not null" json:"from_plan"`
+    ToPlan        string     `gorm:"size:30;not null" json:"to_plan"`
+    ExpiresAt     *time.Time `json:"expires_at"`
+    Trial         bool       `gorm:"not null" json:"trial"`
+    ExtraBranches int        `gorm:"not null" json:"extra_branches"`
+    ExtraDevices  int        `gorm:"not null" json:"extra_devices"`
+    Note          string     `gorm:"size:500" json:"note"`
+    ChangedBy     string     `gorm:"size:255;not null" json:"changed_by"` // shagan_team admin email (internal auth has no user)
+    CreatedAt     time.Time  `gorm:"autoCreateTime;not null" json:"created_at"`
+}
+```
+- The tiers themselves are **defined in code** (a new `internal/subscription`
+  package): plan code → features and limits. Features are code anyway, and
+  there are only three tiers.
+- Plan codes are validated against that list on write.
+
+### One resolver
+`subscription.Entitlements(ctx, orgID, now)` returns the **effective** plan,
+features and limits:
+1. Start from `org.Plan`.
+2. If `plan_expires_at` has passed: within 7 days → keep the plan with
+   `in_grace: true`; after that → `basic`. Worked out on read, so **no cron
+   job** is needed.
+3. Apply `org_feature_overrides`.
+4. Limits = the plan's limit + `extra_branches` / `extra_devices`
+   (unlimited stays unlimited).
+
+Cache it per org for a short time (e.g. 60 s), and clear the cache when a
+`/internal` subscription write happens. **Don't put the plan in the JWT** as
+the thing that's enforced: staff tokens live 12 h and device refresh tokens
+30 days.
+
+### Enforcement
+- **Features:** a `RequireFeature(code)` middleware, next to the ones in
+  `internal/middleware/access_permissions.go`. It's added to each gated route
+  as that feature is built. It responds 403 with
+  `{ "success": false, "code": "feature_not_in_plan", "feature": "...", "plan": "basic", "message": "..." }`.
+- **Limits:** these checks count **active** branches / devices of the org:
+  - Branches: `POST /branches` (owner), `POST /internal/branches`, and
+    reactivating a branch (`PATCH /internal/branches/:id/status` to active).
+  - Devices: `POST /devices`, `POST /internal/devices`, and reactivating a
+    device.
+
+  Over the limit, they respond 403 with
+  `{ "code": "plan_limit_reached", "limit": "branches", "max": 1, "current": 1 }`.
+  Do the count in the same transaction as the insert, so two parallel creates
+  can't both pass.
+- **Never blocked by the plan:** login, selling (`POST /sales`,
+  `/sync/sales`), shifts, receipts, returns. A downgrade must not stop a till.
+
+### Exposed to the apps
+- `GET /me` gains:
+  ```json
+  "subscription": {
+    "plan": "pro", "trial": true, "expires_at": "...", "in_grace": false,
+    "features": ["customer_display", "..."],
+    "limits": { "branches": 5, "devices": 10 },
+    "usage":  { "branches": 2, "devices": 3 }
+  }
+  ```
+  `null` in a limit means unlimited. This will need a response DTO for `/me`,
+  which today returns the `User` model.
+- `GET /sync/catalog` includes the same `features`, so an offline till knows
+  them. Include the plan in the **ETag**.
+
+### `/internal` API for shagan_team
+```
+GET    /internal/plans                              → the tier catalog (codes, names, features, limits)
+GET    /internal/organizations/:id/subscription     → effective entitlements + usage + raw fields + overrides + history
+PATCH  /internal/organizations/:id/subscription     → { "plan", "expires_at"|null, "trial", "extra_branches", "extra_devices", "note", "changed_by" }
+PUT    /internal/organizations/:id/features/:code   → { "enabled": true }      override one feature
+DELETE /internal/organizations/:id/features/:code   → back to the plan's default
+```
+- `GET /internal/organizations` (and `/:id`) also return `plan`,
+  `plan_expires_at`, `plan_trial` and an `over_limit` flag, so the team can
+  filter by tier.
+- `POST /internal/accounts` (create organization) starts the 14-day Pro trial.
+- Every subscription write appends an `OrgPlanChange` row, and also writes
+  `audit_log` (before / after).
+
+### Migration
+A named data migration (like `2026-10-24-manager-manage-branch-prices`) adds
+the columns with their defaults. Existing orgs become `basic` with no trial.
+
+### Tests to add
+- Entitlements: each tier; expiry inside and after the grace period; a trial
+  ending; a feature override on and off; extras added to a limit; unlimited.
+- Limits: create branch / device at the limit is refused (owner and
+  `/internal`); reactivation is refused at the limit; suspended ones don't
+  count; two parallel creates can't both pass.
+- A downgrade leaves existing branches and devices working, and a sale at an
+  over-limit branch still succeeds.
+- `RequireFeature` returns `feature_not_in_plan` (test it on a dummy route
+  until a real gated feature exists).
+- `/me` and `/sync/catalog` show the entitlements; the ETag changes with the
+  plan.
+- A new org starts on the Pro trial; every subscription change writes history.
+
+### Frontend follow-up (once the API exists)
+- **shagan_team:**
+  - A tier badge, trial / expiry and an "over limit" warning on the buyer and
+    organization pages.
+  - A "Change tier" dialog (plan, expiry date, extras, note) and the change
+    history.
+  - A tier filter on the buyers list.
+- **shagan-retail:**
+  - Read `subscription` from `/me`.
+  - Gated items show a "Pro" badge and an upgrade message instead of
+    disappearing.
+  - At a limit, "Add branch / device" explains why it's blocked.

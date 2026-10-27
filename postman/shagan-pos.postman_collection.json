@@ -1548,7 +1548,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["internal", "accounts"]
             },
-            "description": "Shagan-team-only. Protected by X-Internal-Key (INTERNAL_API_KEY), not the regular bearer token - creates Organization + owner User + service_center User in one call. timezone is optional (an IANA zone name; omitted means Asia/Yangon, an unknown name is 400): it defines the org's calendar day for every report's \"today\", date ranges and daily buckets, and for GET /sales' from/to. No Branch is created here; use POST /branches (as the owner) afterward, then POST /devices, then POST /internal/accounts/pos to attach a pos-type login to a device."
+            "description": "Shagan-team-only. Protected by X-Internal-Key (INTERNAL_API_KEY), not the regular bearer token - creates Organization + owner User + service_center User in one call. timezone is optional (an IANA zone name; omitted means Asia/Yangon, an unknown name is 400): it defines the org's calendar day for every report's \"today\", date ranges and daily buckets, and for GET /sales' from/to. No Branch is created here; use POST /branches (as the owner) afterward, then POST /devices, then POST /internal/accounts/pos to attach a pos-type login to a device. The new organization starts on a 14-day Pro trial (plan pro, plan_trial true, plan_expires_at +14 days; then it drops to Basic - see GET /internal/organizations/:id/subscription). An optional \"changed_by\" (the admin's email) is recorded on the first history row; \"system\" when omitted."
           },
           "response": []
         },
@@ -1622,7 +1622,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["internal", "branches"]
             },
-            "description": "Shagan-team-only. Protected by X-Internal-Key (INTERNAL_API_KEY). Creates a Branch for org_id without needing an authenticated owner session - used right after CreateAccount, before the owner has ever logged in. Same validation/logic as the authenticated POST /branches, just with an explicit org_id instead of one read from the JWT."
+            "description": "Shagan-team-only. Protected by X-Internal-Key (INTERNAL_API_KEY). Creates a Branch for org_id without needing an authenticated owner session - used right after CreateAccount, before the owner has ever logged in. Same validation/logic as the authenticated POST /branches, just with an explicit org_id instead of one read from the JWT. Plan limit: counts ACTIVE branches - creating (or reactivating) one more than the plan + extras allows is 403 {\"code\": \"plan_limit_reached\", \"limit\": \"branches\", \"max\": N, \"current\": N} (owner and /internal alike; an inactive one is never blocked; checked in the same transaction, so parallel creates can't both pass)."
           },
           "response": []
         },
@@ -1659,7 +1659,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["internal", "devices"]
             },
-            "description": "Shagan-team-only. Protected by X-Internal-Key (INTERNAL_API_KEY). Registers a Device on branch_id without needing an authenticated owner session - branch_id must already belong to org_id, otherwise returns 404 (not 403 - same not-found-not-forbidden reasoning as the authenticated device/branch endpoints)."
+            "description": "Shagan-team-only. Protected by X-Internal-Key (INTERNAL_API_KEY). Registers a Device on branch_id without needing an authenticated owner session - branch_id must already belong to org_id, otherwise returns 404 (not 403 - same not-found-not-forbidden reasoning as the authenticated device/branch endpoints). Plan limit: counts ACTIVE devices - creating (or reactivating) one more than the plan + extras allows is 403 {\"code\": \"plan_limit_reached\", \"limit\": \"devices\", \"max\": N, \"current\": N} (owner and /internal alike; an inactive one is never blocked; checked in the same transaction, so parallel creates can't both pass)."
           },
           "response": []
         },
@@ -1687,7 +1687,7 @@
                 "organizations"
               ]
             },
-            "description": "Shagan-team-only. Every organization, no filter - there's no tenant JWT to scope this from."
+            "description": "Shagan-team-only. Every organization, no filter - there's no tenant JWT to scope this from. Each org also carries its plan fields - plan, plan_expires_at, plan_trial, extra_branches, extra_devices - plus effective_plan (after expiry and grace) and over_limit (more active branches or devices than the effective plan + extras allows), so the portal can filter by tier."
           }
         },
         {
@@ -1782,6 +1782,232 @@
           }
         },
         {
+          "name": "ListPlans - GET /internal/plans",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Internal-Key",
+                "value": "{{internalKey}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/internal/plans",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "plans"
+              ]
+            },
+            "description": "Shagan-team-only. The tier catalogue: {plans: [{code, name, features[], limits: {branches, devices}}], features: [every feature code an override may name]}. basic (1 branch / 2 devices), pro (5 / 10; customer_display, advanced_reports, report_export, promotions), enterprise (unlimited; + loyalty, sms_receipts, api_access). A null limit is unlimited. Everything built today is in every tier - none of the gated features exists yet."
+          },
+          "response": []
+        },
+        {
+          "name": "GetOrganizationSubscription - GET /internal/organizations/:id/subscription",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Internal-Key",
+                "value": "{{internalKey}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/internal/organizations/:id/subscription",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "organizations",
+                ":id",
+                "subscription"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": "Organization id"
+                }
+              ]
+            },
+            "description": "Shagan-team-only. One org's subscription: {organization_id, effective: {plan, trial, expires_at, in_grace, expired, features[], limits: {branches, devices}, usage: {branches, devices}} (the same object GET /me shows - plan AFTER expiry/grace and overrides; null limit = unlimited), raw: {plan, expires_at, trial, extra_branches, extra_devices} (what is stored), over_limit (more ACTIVE branches/devices than the effective plan + extras allows - e.g. after a downgrade), overrides: [{id, org_id, feature, enabled, updated_at}], history: [newest first, at most 100 - each {id, org_id, from_plan, to_plan, expires_at, trial, extra_branches, extra_devices, note, changed_by, created_at}]}. 404 for an unknown org."
+          },
+          "response": []
+        },
+        {
+          "name": "UpdateOrganizationSubscription - PATCH /internal/organizations/:id/subscription",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-Internal-Key",
+                "value": "{{internalKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/internal/organizations/:id/subscription",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "organizations",
+                ":id",
+                "subscription"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": "Organization id"
+                }
+              ]
+            },
+            "description": "Shagan-team-only. Changes the org's plan. PARTIAL: an omitted field is left as it is; \"expires_at\": null clears the end date. plan = basic | pro | enterprise; trial marks the Pro trial (a trial has no grace period); extra_branches / extra_devices (>= 0) are per-org add-ons on top of the plan's limits; note (max 500) is kept with the history row; changed_by (the shagan_team admin's email) is REQUIRED. 400 for an unknown plan, a negative extra, a bad date or a missing changed_by; 404 for an unknown org. A paid plan past expires_at keeps working for 7 days (in_grace: true), then the org drops to Basic - it is never suspended. A downgrade deletes and switches off nothing: an org over its new limits keeps what it has and just can't add more (over_limit: true). Writes an org_plan_changes row and an audit_log entry, clears the entitlements cache, and returns the same body as GET .../subscription.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"plan\": \"pro\",\n  \"expires_at\": \"2026-12-31T23:59:59Z\",\n  \"trial\": false,\n  \"extra_branches\": 1,\n  \"extra_devices\": 0,\n  \"note\": \"paid, invoice 114\",\n  \"changed_by\": \"admin@shagan.test\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "SetFeatureOverride - PUT /internal/organizations/:id/features/:code",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "PUT",
+            "header": [
+              {
+                "key": "X-Internal-Key",
+                "value": "{{internalKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/internal/organizations/:id/features/:code",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "organizations",
+                ":id",
+                "features",
+                ":code"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": "Organization id"
+                },
+                {
+                  "key": "code",
+                  "value": "loyalty",
+                  "description": "customer_display | advanced_reports | report_export | promotions | loyalty | sms_receipts | api_access"
+                }
+              ]
+            },
+            "description": "Shagan-team-only. Switches ONE feature on or off for this org whatever its plan says (a deal or a beta): {enabled: true|false, note?, changed_by}. :code is one of the feature codes from GET /internal/plans (400 for an unknown code, a missing enabled or a missing changed_by). Applies on top of the plan - also after the plan lapses to Basic. Writes a history row (the plan fields repeated, the note saying what happened) and an audit_log entry, clears the cache, and returns the same body as GET .../subscription.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enabled\": true,\n  \"note\": \"loyalty beta\",\n  \"changed_by\": \"admin@shagan.test\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "ClearFeatureOverride - DELETE /internal/organizations/:id/features/:code",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-Internal-Key",
+                "value": "{{internalKey}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/internal/organizations/:id/features/:code?changed_by=admin@shagan.test",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "organizations",
+                ":id",
+                "features",
+                ":code"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": "Organization id"
+                },
+                {
+                  "key": "code",
+                  "value": "loyalty"
+                }
+              ],
+              "query": [
+                {
+                  "key": "changed_by",
+                  "value": "admin@shagan.test"
+                },
+                {
+                  "key": "note",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Shagan-team-only. Removes the override: the feature goes back to the plan's default. changed_by (required) and note come from an optional JSON body OR the ?changed_by= / ?note= query (a DELETE often has no body). Deleting an override that isn't there is a no-op (200, no history row). Returns the same body as GET .../subscription."
+          },
+          "response": []
+        },
+        {
           "name": "GetOrganizationInternal - GET /internal/organizations/:id",
           "request": {
             "auth": {
@@ -1806,7 +2032,7 @@
                 }
               ]
             },
-            "description": "Shagan-team-only. One tenant (id, name, status, timezone, timestamps), so the portal doesn't have to list every org and filter. 404 if the id doesn't exist, 400 if it isn't a number."
+            "description": "Shagan-team-only. One tenant (id, name, status, timezone, timestamps), so the portal doesn't have to list every org and filter. 404 if the id doesn't exist, 400 if it isn't a number. Carries the same plan fields, effective_plan and over_limit as the list."
           }
         },
         {
@@ -1913,7 +2139,7 @@
                 }
               }
             },
-            "description": "Shagan-team-only. status is \"active\" or \"inactive\" (400 otherwise); 204 on success, 404 for an unknown branch. Not org-scoped - the portal has no tenant token. An inactive branch can't have a new shift opened (409); a shift already open is not interrupted."
+            "description": "Shagan-team-only. status is \"active\" or \"inactive\" (400 otherwise); 204 on success, 404 for an unknown branch. Not org-scoped - the portal has no tenant token. An inactive branch can't have a new shift opened (409); a shift already open is not interrupted. Setting a branch to active that is not already active counts against the branch's own org's plan limit (403 plan_limit_reached). Setting it inactive is never blocked."
           }
         },
         {
@@ -1955,7 +2181,7 @@
                 }
               }
             },
-            "description": "Shagan-team-only. status is \"active\", \"inactive\" or \"revoked\" (400 otherwise); 204 on success, 404 for an unknown device. A device that isn't active can't have a new shift opened (409); a shift already open is not interrupted, and the device's pos account can still log in (suspend it with UpdatePosAccountStatus to block that)."
+            "description": "Shagan-team-only. status is \"active\", \"inactive\" or \"revoked\" (400 otherwise); 204 on success, 404 for an unknown device. A device that isn't active can't have a new shift opened (409); a shift already open is not interrupted, and the device's pos account can still log in (suspend it with UpdatePosAccountStatus to block that). Setting a device to active that is not already active counts against its org's device limit (403 plan_limit_reached). inactive / revoked are never blocked."
           }
         },
         {
@@ -2307,7 +2533,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "me"]
             },
-            "description": "Caller's identity + roles/permissions"
+            "description": "The caller (as before: id, org_id, account_type, name, email, device_id, branch_id, status, created_at ...) plus the ORGANIZATION's subscription: \"subscription\": {plan, trial, expires_at, in_grace, expired, features[], limits: {branches, devices}, usage: {branches, devices}}. plan is the EFFECTIVE plan (a paid plan past its end date keeps its plan for 7 days with in_grace: true, then reads basic with expired: true; a trial drops at its end date). features are the plan's features after per-org overrides; a null limit is unlimited; usage counts ACTIVE branches / devices live. Read it for upgrade badges and the add-branch / add-device limit message; it is looked up per request (cached ~60 s), never taken from the JWT. Gated items should show a \"Pro\" badge, not disappear."
           },
           "response": []
         },
@@ -2483,7 +2709,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "devices"]
             },
-            "description": "CreateDevice"
+            "description": "CreateDevice Plan limit: counts ACTIVE devices - creating (or reactivating) one more than the plan + extras allows is 403 {\"code\": \"plan_limit_reached\", \"limit\": \"devices\", \"max\": N, \"current\": N} (owner and /internal alike; an inactive one is never blocked; checked in the same transaction, so parallel creates can't both pass)."
           },
           "response": []
         },
@@ -2543,7 +2769,7 @@
                 }
               ]
             },
-            "description": "UpdateDevice"
+            "description": "UpdateDevice Reactivating an inactive / revoked device (status active) counts as adding one: 403 plan_limit_reached when the org is at its device limit. A rename or branch move of an active device never trips it."
           },
           "response": []
         },
@@ -2597,7 +2823,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "branches"]
             },
-            "description": "CreateBranch"
+            "description": "CreateBranch Plan limit: counts ACTIVE branches - creating (or reactivating) one more than the plan + extras allows is 403 {\"code\": \"plan_limit_reached\", \"limit\": \"branches\", \"max\": N, \"current\": N} (owner and /internal alike; an inactive one is never blocked; checked in the same transaction, so parallel creates can't both pass)."
           },
           "response": []
         },
@@ -2663,7 +2889,7 @@
                 }
               ]
             },
-            "description": "UpdateBranch"
+            "description": "UpdateBranch Reactivating an inactive branch (status active) counts as adding one: 403 plan_limit_reached when the org is at its branch limit. Edits to an already-active branch never trip it."
           },
           "response": []
         },
@@ -5640,7 +5866,7 @@
                 }
               ]
             },
-            "description": "Snapshot + ETag for offline caching (products/categories/combos) - everything a device needs cached locally to ring up sales offline. Send the ETag response header back as If-None-Match on a later call - a 304 with no body means the device's cached copy is still current, saving the re-download. The ETag is stable across calls even though each image's URL is a freshly re-signed link every time (it hashes a redacted copy with URLs blanked out, not the raw response). Each product carries tax_percent, so the ETag changes when an Owner changes a rate - cache it per product and tax offline lines from it. Products are PRICED FOR THE CALLER'S BRANCH (price, discount_percent, sale_price, price_source - see ListProducts), and the ETag covers the branch itself, so a till never gets a 304 for another branch's prices; an owner / service_center token passes ?branch_id= (without it: plain catalog prices)."
+            "description": "Snapshot + ETag for offline caching (products/categories/combos) - everything a device needs cached locally to ring up sales offline. Send the ETag response header back as If-None-Match on a later call - a 304 with no body means the device's cached copy is still current, saving the re-download. The ETag is stable across calls even though each image's URL is a freshly re-signed link every time (it hashes a redacted copy with URLs blanked out, not the raw response). Each product carries tax_percent, so the ETag changes when an Owner changes a rate - cache it per product and tax offline lines from it. The snapshot also carries the org's effective plan and feature list (top-level \"plan\" and \"features\") so an offline till knows which features to show; they are in the hashed body, so a plan or feature-override change gives a fresh snapshot, not a 304. Products are PRICED FOR THE CALLER'S BRANCH (price, discount_percent, sale_price, price_source - see ListProducts), and the ETag covers the branch itself, so a till never gets a 304 for another branch's prices; an owner / service_center token passes ?branch_id= (without it: plain catalog prices)."
           },
           "response": []
         },

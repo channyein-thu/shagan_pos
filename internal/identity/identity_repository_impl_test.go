@@ -133,15 +133,15 @@ func TestRepository_UpdateBranchStatusInternal(t *testing.T) {
 	b := &Branch{OrgID: 7, Name: "B", Status: BranchStatusActive, Address: "-", Phone: "-"}
 	require.NoError(t, db.Create(b).Error)
 
-	require.NoError(t, repo.UpdateBranchStatusInternal(context.Background(), b.ID, BranchStatusInactive))
+	require.NoError(t, repo.UpdateBranchStatusInternal(db, b.ID, BranchStatusInactive))
 	var got Branch
 	require.NoError(t, db.First(&got, b.ID).Error)
 	require.Equal(t, BranchStatusInactive, got.Status)
 	require.Equal(t, "B", got.Name, "only the status changes")
 
 	// Setting the same value is not "not found".
-	require.NoError(t, repo.UpdateBranchStatusInternal(context.Background(), b.ID, BranchStatusInactive))
-	requireStatus(t, repo.UpdateBranchStatusInternal(context.Background(), 99999, BranchStatusActive), http.StatusNotFound)
+	require.NoError(t, repo.UpdateBranchStatusInternal(db, b.ID, BranchStatusInactive))
+	requireStatus(t, repo.UpdateBranchStatusInternal(db, 99999, BranchStatusActive), http.StatusNotFound)
 }
 
 func TestRepository_UpdateDeviceStatusInternal(t *testing.T) {
@@ -150,11 +150,11 @@ func TestRepository_UpdateDeviceStatusInternal(t *testing.T) {
 	d := &Device{BranchID: 1, Name: "R1", Status: DeviceStatusActive, LastSeenAt: time.Now()}
 	require.NoError(t, db.Create(d).Error)
 
-	require.NoError(t, repo.UpdateDeviceStatusInternal(context.Background(), d.ID, DeviceStatusRevoked))
+	require.NoError(t, repo.UpdateDeviceStatusInternal(db, d.ID, DeviceStatusRevoked))
 	var got Device
 	require.NoError(t, db.First(&got, d.ID).Error)
 	require.Equal(t, DeviceStatusRevoked, got.Status)
 	require.Equal(t, "R1", got.Name)
 
-	requireStatus(t, repo.UpdateDeviceStatusInternal(context.Background(), 99999, DeviceStatusActive), http.StatusNotFound)
+	requireStatus(t, repo.UpdateDeviceStatusInternal(db, 99999, DeviceStatusActive), http.StatusNotFound)
 }

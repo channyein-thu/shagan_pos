@@ -2,11 +2,25 @@ package identity
 
 import (
 	"context"
+	"time"
 
 	"gorm.io/gorm"
 
 	"shagan_pos/internal/audit"
+	"shagan_pos/internal/subscription"
 )
+
+// Subscriptions is what identity needs from subscription: the plan summary on
+// GET /me, usage for the organization list's over_limit flag, the limit check
+// that runs in the same transaction as a branch / device insert or
+// reactivation, and the history row of a new org's trial.
+// subscription.Service already satisfies this signature - no adapter needed.
+type Subscriptions interface {
+	Summary(ctx context.Context, orgID uint, now time.Time) (*subscription.Summary, error)
+	UsageByOrg(ctx context.Context) (map[uint]subscription.Usage, error)
+	EnforceLimit(tx *gorm.DB, orgID uint, kind subscription.LimitKind, now time.Time) error
+	RecordChange(tx *gorm.DB, c *subscription.OrgPlanChange) error
+}
 
 // AuditWriter is what identity needs from audit: recording a privileged
 // staff change as an audit entry, same reasoning as sales.AuditWriter.
@@ -20,7 +34,8 @@ type Interface interface {
 	Login(ctx context.Context, in LoginRequest) (*SessionResult, error)
 	RefreshSession(ctx context.Context, in RefreshRequest) (*SessionResult, error)
 	Logout(ctx context.Context, in LogoutRequest) error
-	GetMe(ctx context.Context, userID uint) (*User, error)
+	// GetMe returns the caller plus their organization's subscription.
+	GetMe(ctx context.Context, userID uint) (*MeResult, error)
 	UpdateMe(ctx context.Context, userID uint, in UpdateMeRequest) (*User, error)
 	// VerifyManagerPIN backs `POST /staff/:id/manager-pin/verify`. Same
 	// org/branch scoping and generic-401 reasoning as VerifyStaffPIN below,
@@ -45,6 +60,13 @@ type Interface interface {
 	// into the same generic 401 as a wrong PIN so a terminal can't enumerate
 	// staff IDs by probing.
 	VerifyStaffPIN(ctx context.Context, orgID uint, branchID *uint, id uint, in VerifyStaffPINRequest) (*VerifyStaffPINResult, error)
+	// CreateDevice, CreateBranch and the UpdateDevice / UpdateBranch /
+	// UpdateBranchStatus / UpdateDeviceStatus calls that reactivate something
+	// are bound by the organization's plan: adding or reactivating one more
+	// ACTIVE branch / device than the plan (plus extras) allows is a 403
+	// plan_limit_reached. The count and the write share one transaction, under a
+	// lock on the organization, so two parallel calls can't both pass. Inactive
+	// and revoked ones don't count, and nothing ever switches an existing one off.
 	CreateDevice(ctx context.Context, orgID uint, in CreateDeviceRequest) (*Device, error)
 	ListDevices(ctx context.Context, orgID uint) ([]Device, error)
 	UpdateDevice(ctx context.Context, orgID uint, id uint, in UpdateDeviceRequest) (*Device, error)
@@ -90,9 +112,9 @@ type Interface interface {
 	DeleteRole(ctx context.Context, orgID uint, actorUserID uint, id uint) error
 	CreateAccount(ctx context.Context, in CreateAccountInput) (*CreateAccountResult, error)
 	CreatePosAccount(ctx context.Context, in CreatePosAccountInput) (*User, error)
-	ListOrganizations(ctx context.Context) ([]Organization, error)
+	ListOrganizations(ctx context.Context) ([]OrganizationSummary, error)
 	// GetOrganization is `GET /internal/organizations/:id` (404 if unknown).
-	GetOrganization(ctx context.Context, id uint) (*Organization, error)
+	GetOrganization(ctx context.Context, id uint) (*OrganizationSummary, error)
 	// ListOrgWideAccounts lists orgID's owner and service_center logins -
 	// the accounts ListPosAccounts doesn't cover.
 	ListOrgWideAccounts(ctx context.Context, orgID uint) ([]User, error)

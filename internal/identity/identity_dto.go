@@ -2,6 +2,8 @@ package identity
 
 import (
 	"time"
+
+	"shagan_pos/internal/subscription"
 )
 
 // CreateBranchRequest is the request body for the endpoint that creates a
@@ -102,6 +104,29 @@ type CreateAccountInput struct {
 	OwnerPassword         string `json:"owner_password" binding:"required,min=8"`
 	ServiceCenterEmail    string `json:"service_center_email" binding:"required,email"`
 	ServiceCenterPassword string `json:"service_center_password" binding:"required,min=8"`
+	// ChangedBy is the shagan_team admin's email, recorded on the organization's
+	// first subscription history row (the 14-day Pro trial every new org starts
+	// on). Optional; "system" when omitted.
+	ChangedBy string `json:"changed_by"`
+}
+
+// OrganizationSummary is what the internal organization list and get-by-id
+// return: the Organization (its stored plan block included) plus what the plan
+// means today - EffectivePlan (after expiry and grace) and OverLimit (the org
+// has more active branches or devices than that plan allows, e.g. after a
+// downgrade - shagan_team shows it as "over limit").
+type OrganizationSummary struct {
+	Organization
+	EffectivePlan string `json:"effective_plan"`
+	OverLimit     bool   `json:"over_limit"`
+}
+
+// MeResult is `GET /me`: the User plus the organization's subscription - plan,
+// trial, expiry, features, limits and usage (see subscription.Summary; a null
+// limit is unlimited).
+type MeResult struct {
+	User
+	Subscription *subscription.Summary `json:"subscription"`
 }
 
 // CreateAccountResult is returned after provisioning a new tenant.

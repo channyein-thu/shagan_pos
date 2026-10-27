@@ -16,6 +16,12 @@ type CatalogSnapshot struct {
 	Products   []catalog.ProductResult `json:"products"`
 	Categories []catalog.Category      `json:"categories"`
 	Combos     []catalog.ComboResult   `json:"combos"`
+	// Plan and Features are the organization's effective subscription (see
+	// subscription.Resolve), so an offline till knows which features it may
+	// show. They are part of the body the ETag hashes: a plan or feature-override
+	// change gives the till a fresh snapshot instead of a 304.
+	Plan     string   `json:"plan"`
+	Features []string `json:"features"`
 }
 
 // IngestQueuedSalesRequest is the request body for `POST /sync/sales` - a

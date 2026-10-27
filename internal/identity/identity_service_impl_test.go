@@ -18,6 +18,7 @@ import (
 	"shagan_pos/internal/audit"
 	"shagan_pos/internal/authtoken"
 	"shagan_pos/internal/common"
+	"shagan_pos/internal/subscription"
 )
 
 // testJWTSecret is a fixed secret for tests only - never read from the environment.
@@ -34,8 +35,28 @@ func (fakeTransactioner) Transaction(fc func(tx *gorm.DB) error, _ ...*sql.TxOpt
 	return fc(nil)
 }
 
+// fakeSubscriptions is a Subscriptions that never refuses anything: a Basic org
+// with nothing in use. Tests of the plan limits use newServiceWithSubscriptions
+// and a MockSubscriptions instead.
+type fakeSubscriptions struct{}
+
+func (fakeSubscriptions) Summary(context.Context, uint, time.Time) (*subscription.Summary, error) {
+	return &subscription.Summary{Entitlements: subscription.Entitlements{Plan: subscription.PlanBasic, Features: []string{}}}, nil
+}
+func (fakeSubscriptions) UsageByOrg(context.Context) (map[uint]subscription.Usage, error) {
+	return map[uint]subscription.Usage{}, nil
+}
+func (fakeSubscriptions) EnforceLimit(*gorm.DB, uint, subscription.LimitKind, time.Time) error {
+	return nil
+}
+func (fakeSubscriptions) RecordChange(*gorm.DB, *subscription.OrgPlanChange) error { return nil }
+
 func newTestService(repo Repository, auditWriter AuditWriter) *Service {
-	return NewService(repo, auditWriter, fakeTransactioner{}, testJWTSecret, DefaultAccessTokenTTL, DefaultRefreshTokenTTL, DefaultStaffPINTokenTTL, DefaultManagerPINTokenTTL)
+	return newServiceWithSubscriptions(repo, auditWriter, fakeSubscriptions{})
+}
+
+func newServiceWithSubscriptions(repo Repository, auditWriter AuditWriter, subs Subscriptions) *Service {
+	return NewService(repo, auditWriter, subs, fakeTransactioner{}, testJWTSecret, DefaultAccessTokenTTL, DefaultRefreshTokenTTL, DefaultStaffPINTokenTTL, DefaultManagerPINTokenTTL)
 }
 
 func TestService_CreateAccount_HashesPasswordBeforePersisting(t *testing.T) {
@@ -53,6 +74,7 @@ func TestService_CreateAccount_HashesPasswordBeforePersisting(t *testing.T) {
 		ServiceCenterPassword: serviceCenterPlaintext,
 	}
 
+	audW.EXPECT().CreateAuditLog(mock.Anything, mock.Anything).Return(nil).Once()
 	repo.EXPECT().
 		CreateOrganization(mock.Anything, mock.MatchedBy(func(org *Organization) bool {
 			return org.Name == in.OrganizationName
@@ -102,7 +124,9 @@ func TestService_CreateAccount_Timezone_DefaultsToYangonAndRejectsUnknownZones(t
 	}
 	create := func(t *testing.T, tz string) string {
 		repo := NewMockRepository(t)
-		svc := newTestService(repo, NewMockAuditWriter(t))
+		audW := NewMockAuditWriter(t)
+		audW.EXPECT().CreateAuditLog(mock.Anything, mock.Anything).Return(nil).Once()
+		svc := newTestService(repo, audW)
 		var stored string
 		repo.EXPECT().CreateOrganization(mock.Anything, mock.Anything).
 			Run(func(_ *gorm.DB, org *Organization) { org.ID = 1; stored = org.Timezone }).Return(nil).Once()
@@ -151,6 +175,7 @@ func TestService_CreateAccount_OwnerCreationFails_RollsBackAndNeverCreatesServic
 	audW := NewMockAuditWriter(t)
 	svc := newTestService(repo, audW)
 
+	audW.EXPECT().CreateAuditLog(mock.Anything, mock.Anything).Return(nil).Once()
 	repo.EXPECT().
 		CreateOrganization(mock.Anything, mock.Anything).
 		Run(func(_ *gorm.DB, org *Organization) { org.ID = 1 }).
@@ -246,7 +271,9 @@ func TestService_ListOrganizations_DelegatesToRepository(t *testing.T) {
 
 	got, err := svc.ListOrganizations(context.Background())
 	require.NoError(t, err)
-	require.Equal(t, want, got)
+	require.Len(t, got, 2)
+	require.Equal(t, want[0], got[0].Organization)
+	require.Equal(t, want[1], got[1].Organization)
 }
 
 func TestService_ListOrganizations_PropagatesRepositoryError(t *testing.T) {
@@ -388,7 +415,7 @@ func TestService_GetOrganization_Delegates(t *testing.T) {
 	repo.EXPECT().GetOrganization(mock.Anything, uint(3)).Return(want, nil).Once()
 	got, err := svc.GetOrganization(context.Background(), 3)
 	require.NoError(t, err)
-	require.Same(t, want, got)
+	require.Equal(t, *want, got.Organization)
 
 	repo.EXPECT().GetOrganization(mock.Anything, uint(99)).Return(nil, common.NotFoundError("organization not found")).Once()
 	_, err = svc.GetOrganization(context.Background(), 99)
@@ -413,12 +440,13 @@ func TestService_UpdateBranchAndDeviceStatus_DelegateAndPropagateNotFound(t *tes
 
 	repo.EXPECT().UpdateBranchStatusInternal(mock.Anything, uint(1), BranchStatusInactive).Return(nil).Once()
 	require.NoError(t, svc.UpdateBranchStatus(context.Background(), 1, BranchStatusInactive))
-	repo.EXPECT().UpdateBranchStatusInternal(mock.Anything, uint(9), BranchStatusActive).Return(common.NotFoundError("branch not found")).Once()
+	// activating looks the branch up first (to tell a reactivation and to know whose plan applies)
+	repo.EXPECT().GetBranchAnyOrg(mock.Anything, uint(9)).Return(nil, common.NotFoundError("branch not found")).Once()
 	requireRestErrorStatus(t, svc.UpdateBranchStatus(context.Background(), 9, BranchStatusActive), http.StatusNotFound)
 
 	repo.EXPECT().UpdateDeviceStatusInternal(mock.Anything, uint(2), DeviceStatusRevoked).Return(nil).Once()
 	require.NoError(t, svc.UpdateDeviceStatus(context.Background(), 2, DeviceStatusRevoked))
-	repo.EXPECT().UpdateDeviceStatusInternal(mock.Anything, uint(9), DeviceStatusActive).Return(common.NotFoundError("device not found")).Once()
+	repo.EXPECT().GetDeviceAnyOrg(mock.Anything, uint(9)).Return(nil, uint(0), common.NotFoundError("device not found")).Once()
 	requireRestErrorStatus(t, svc.UpdateDeviceStatus(context.Background(), 9, DeviceStatusActive), http.StatusNotFound)
 }
 
@@ -857,7 +885,8 @@ func TestService_GetMe_DelegatesToRepository(t *testing.T) {
 
 	got, err := svc.GetMe(context.Background(), 42)
 	require.NoError(t, err)
-	require.Same(t, want, got)
+	require.Equal(t, *want, got.User)
+	require.NotNil(t, got.Subscription)
 }
 
 func TestService_GetMe_PropagatesRepositoryError(t *testing.T) {
@@ -1520,6 +1549,7 @@ func TestService_CreateDevice_DelegatesToRepository(t *testing.T) {
 
 	in := CreateDeviceRequest{BranchID: 1, Name: "Front Counter iPad", Status: DeviceStatusActive}
 	want := &Device{ID: 1, BranchID: 1}
+	repo.EXPECT().GetBranch(mock.Anything, uint(7), uint(1)).Return(&Branch{ID: 1, OrgID: 7}, nil).Once()
 	repo.EXPECT().CreateDevice(mock.Anything, uint(7), in).Return(want, nil).Once()
 
 	got, err := svc.CreateDevice(context.Background(), 7, in)
@@ -1534,7 +1564,7 @@ func TestService_CreateDevice_PropagatesRepositoryError(t *testing.T) {
 
 	in := CreateDeviceRequest{BranchID: 999, Name: "Sneaky Device", Status: DeviceStatusActive}
 	wantErr := common.NotFoundError("branch not found")
-	repo.EXPECT().CreateDevice(mock.Anything, uint(7), in).Return(nil, wantErr).Once()
+	repo.EXPECT().GetBranch(mock.Anything, uint(7), uint(999)).Return(nil, wantErr).Once()
 
 	_, err := svc.CreateDevice(context.Background(), 7, in)
 	require.Error(t, err)

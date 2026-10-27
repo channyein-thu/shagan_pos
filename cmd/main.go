@@ -73,6 +73,7 @@ func main() {
 	internalGroup := r.Group("/internal")
 	internalGroup.Use(middleware.InternalAuth(os.Getenv("INTERNAL_API_KEY")))
 	identityAPI.RegisterInternalRoutes(internalGroup)
+	api.NewSubscriptionAPI(db).RegisterInternalRoutes(internalGroup)
 
 	port := os.Getenv("PORT")
 	if port == "" {

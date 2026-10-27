@@ -596,7 +596,8 @@ func TestService_UpdateStaff_OwnOrgsRole_IsAccepted(t *testing.T) {
 // ---- a new org gets its roles ----
 
 func TestService_CreateAccount_ProvisionsManagerAndCashierInTheSameTransaction(t *testing.T) {
-	svc, repo, _ := newRolesService(t)
+	svc, repo, audW := newRolesService(t)
+	audW.EXPECT().CreateAuditLog(mock.Anything, mock.Anything).Return(nil).Once()
 	repo.EXPECT().CreateOrganization(mock.Anything, mock.Anything).Run(func(_ *gorm.DB, org *Organization) { org.ID = 41 }).Return(nil).Once()
 	repo.EXPECT().ProvisionDefaultRoles(mock.Anything, uint(41)).Return(nil).Once()
 	repo.EXPECT().CreateUser(mock.Anything, mock.Anything).Run(func(_ *gorm.DB, u *User) { u.ID = 1 }).Return(nil).Twice()
@@ -610,7 +611,8 @@ func TestService_CreateAccount_ProvisionsManagerAndCashierInTheSameTransaction(t
 }
 
 func TestService_CreateAccount_ProvisioningFails_NoUsersAreCreated(t *testing.T) {
-	svc, repo, _ := newRolesService(t)
+	svc, repo, audW := newRolesService(t)
+	audW.EXPECT().CreateAuditLog(mock.Anything, mock.Anything).Return(nil).Once()
 	repo.EXPECT().CreateOrganization(mock.Anything, mock.Anything).Run(func(_ *gorm.DB, org *Organization) { org.ID = 42 }).Return(nil).Once()
 	repo.EXPECT().ProvisionDefaultRoles(mock.Anything, uint(42)).Return(common.SystemError("roles failed")).Once()
 	// CreateUser must never be called

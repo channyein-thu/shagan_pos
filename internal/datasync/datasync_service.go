@@ -2,12 +2,14 @@ package datasync
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 
 	"shagan_pos/internal/catalog"
 	"shagan_pos/internal/identity"
 	"shagan_pos/internal/sales"
+	"shagan_pos/internal/subscription"
 )
 
 // BranchLookup is what datasync needs from identity: resolving an owner's
@@ -44,6 +46,13 @@ type CatalogReader interface {
 	ListCombos(ctx context.Context, orgID uint) ([]catalog.ComboResult, error)
 }
 
+// EntitlementsReader is what datasync needs from subscription: the org's
+// effective plan and features, carried in the offline catalog snapshot.
+// subscription.Service already satisfies this signature - no adapter needed.
+type EntitlementsReader interface {
+	Entitlements(ctx context.Context, orgID uint, now time.Time) (*subscription.Entitlements, error)
+}
+
 // SalesWriter is what datasync needs from sales: checking whether a queued
 // sale already arrived (idempotent retry) and creating it when it hasn't -
 // see Service.IngestQueuedSales. sales.Interface already satisfies this
@@ -59,7 +68,7 @@ type Interface interface {
 	// offline, plus an ETag over that content - if the caller's
 	// If-None-Match header (compared by the handler, not here) matches, the
 	// device already has the latest snapshot and gets a 304 instead of the
-	// full body. Products carry branchID's effective prices (nil = the plain
+	// full body. The snapshot also carries the org's plan and features. Products carry branchID's effective prices (nil = the plain
 	// catalog prices, for an org-wide caller that names no branch), and the
 	// ETag covers the branch itself, not only the content - so a till never
 	// keeps another branch's prices on a 304.

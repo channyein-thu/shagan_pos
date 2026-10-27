@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -15,6 +16,7 @@ import (
 	"shagan_pos/internal/audit"
 	"shagan_pos/internal/authtoken"
 	"shagan_pos/internal/common"
+	"shagan_pos/internal/subscription"
 )
 
 const (
@@ -58,6 +60,7 @@ const invalidManagerPINMessage = "invalid staff, pin, or permission"
 type Service struct {
 	repo               Repository
 	audit              AuditWriter
+	subs               Subscriptions
 	db                 common.Transactioner
 	jwtSecret          []byte
 	accessTokenTTL     time.Duration
@@ -66,10 +69,11 @@ type Service struct {
 	managerPINTokenTTL time.Duration
 }
 
-func NewService(repo Repository, auditWriter AuditWriter, db common.Transactioner, jwtSecret []byte, accessTokenTTL, refreshTokenTTL, staffPINTokenTTL, managerPINTokenTTL time.Duration) *Service {
+func NewService(repo Repository, auditWriter AuditWriter, subs Subscriptions, db common.Transactioner, jwtSecret []byte, accessTokenTTL, refreshTokenTTL, staffPINTokenTTL, managerPINTokenTTL time.Duration) *Service {
 	return &Service{
 		repo:               repo,
 		audit:              auditWriter,
+		subs:               subs,
 		db:                 db,
 		jwtSecret:          jwtSecret,
 		accessTokenTTL:     accessTokenTTL,
@@ -246,8 +250,16 @@ func (s *Service) Logout(ctx context.Context, in LogoutRequest) error {
 	return s.repo.RevokeSession(ctx, session.ID)
 }
 
-func (s *Service) GetMe(ctx context.Context, userID uint) (*User, error) {
-	return s.repo.GetUserByID(ctx, userID)
+func (s *Service) GetMe(ctx context.Context, userID uint) (*MeResult, error) {
+	user, err := s.repo.GetUserByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	sub, err := s.subs.Summary(ctx, user.OrgID, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	return &MeResult{User: *user, Subscription: sub}, nil
 }
 
 func (s *Service) UpdateMe(ctx context.Context, userID uint, in UpdateMeRequest) (*User, error) {
@@ -417,7 +429,26 @@ func permissionCodes(permissions []Permission) []string {
 }
 
 func (s *Service) CreateDevice(ctx context.Context, orgID uint, in CreateDeviceRequest) (*Device, error) {
-	return s.repo.CreateDevice(ctx, orgID, in)
+	var device *Device
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if in.Status == DeviceStatusActive {
+			// the branch must be the org's before the limit is looked at, so a
+			// foreign branch id is a 404 whatever the org's plan says
+			if _, err := s.repo.GetBranch(ctx, orgID, in.BranchID); err != nil {
+				return err
+			}
+			if err := s.subs.EnforceLimit(tx, orgID, subscription.LimitDevices, time.Now()); err != nil {
+				return err
+			}
+		}
+		var err error
+		device, err = s.repo.CreateDevice(tx, orgID, in)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return device, nil
 }
 
 func (s *Service) ListDevices(ctx context.Context, orgID uint) ([]Device, error) {
@@ -425,7 +456,29 @@ func (s *Service) ListDevices(ctx context.Context, orgID uint) ([]Device, error)
 }
 
 func (s *Service) UpdateDevice(ctx context.Context, orgID uint, id uint, in UpdateDeviceRequest) (*Device, error) {
-	return s.repo.UpdateDevice(ctx, orgID, id, in)
+	var device *Device
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if in.Status != nil && *in.Status == DeviceStatusActive {
+			// only a REactivation counts as adding one: a device that is already
+			// active (a rename, a branch move) never trips the limit
+			current, err := s.repo.GetDevice(ctx, orgID, id)
+			if err != nil {
+				return err
+			}
+			if current.Status != DeviceStatusActive {
+				if err := s.subs.EnforceLimit(tx, orgID, subscription.LimitDevices, time.Now()); err != nil {
+					return err
+				}
+			}
+		}
+		var err error
+		device, err = s.repo.UpdateDevice(tx, orgID, id, in)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return device, nil
 }
 
 func (s *Service) ListBranches(ctx context.Context, orgID uint) ([]Branch, error) {
@@ -433,7 +486,21 @@ func (s *Service) ListBranches(ctx context.Context, orgID uint) ([]Branch, error
 }
 
 func (s *Service) CreateBranch(ctx context.Context, orgID uint, in CreateBranchRequest) (*Branch, error) {
-	return s.repo.CreateBranch(ctx, orgID, in)
+	var branch *Branch
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if in.Status == BranchStatusActive {
+			if err := s.subs.EnforceLimit(tx, orgID, subscription.LimitBranches, time.Now()); err != nil {
+				return err
+			}
+		}
+		var err error
+		branch, err = s.repo.CreateBranch(tx, orgID, in)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return branch, nil
 }
 
 func (s *Service) GetBranch(ctx context.Context, orgID uint, id uint) (*Branch, error) {
@@ -441,7 +508,28 @@ func (s *Service) GetBranch(ctx context.Context, orgID uint, id uint) (*Branch, 
 }
 
 func (s *Service) UpdateBranch(ctx context.Context, orgID uint, id uint, in UpdateBranchRequest) (*Branch, error) {
-	return s.repo.UpdateBranch(ctx, orgID, id, in)
+	var branch *Branch
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if in.Status != nil && *in.Status == BranchStatusActive {
+			// only a REactivation counts as adding one
+			current, err := s.repo.GetBranch(ctx, orgID, id)
+			if err != nil {
+				return err
+			}
+			if current.Status != BranchStatusActive {
+				if err := s.subs.EnforceLimit(tx, orgID, subscription.LimitBranches, time.Now()); err != nil {
+					return err
+				}
+			}
+		}
+		var err error
+		branch, err = s.repo.UpdateBranch(tx, orgID, id, in)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return branch, nil
 }
 
 func (s *Service) ListBranchStaff(ctx context.Context, orgID uint, id uint) ([]Staff, error) {
@@ -542,10 +630,32 @@ func (s *Service) CreateAccount(ctx context.Context, in CreateAccountInput) (*Cr
 	}
 	in.ServiceCenterPassword = string(serviceCenterHash)
 
+	changedBy := strings.TrimSpace(in.ChangedBy)
+	if changedBy == "" {
+		changedBy = "system"
+	}
 	var result CreateAccountResult
 	err = s.db.Transaction(func(tx *gorm.DB) error {
-		org := Organization{Name: in.OrganizationName, Timezone: timezone}
+		// every new org starts on the 14-day Pro trial, then drops to Basic
+		trial := subscription.NewTrial(time.Now())
+		org := Organization{
+			Name: in.OrganizationName, Timezone: timezone,
+			Plan: trial.Plan, PlanExpiresAt: trial.ExpiresAt, PlanTrial: trial.Trial,
+		}
 		if err := s.repo.CreateOrganization(tx, &org); err != nil {
+			return err
+		}
+		if err := s.subs.RecordChange(tx, &subscription.OrgPlanChange{
+			OrgID: org.ID, FromPlan: "", ToPlan: trial.Plan, ExpiresAt: trial.ExpiresAt, Trial: true,
+			Note: "new organization: 14-day Pro trial", ChangedBy: changedBy,
+		}); err != nil {
+			return err
+		}
+		if err := s.audit.CreateAuditLog(tx, &audit.AuditLog{
+			OrgID: org.ID, Entity: "organization_subscription", EntityID: strconv.FormatUint(uint64(org.ID), 10), Action: "subscription_trial_started",
+			Before: audit.ToJSON(nil),
+			After:  audit.ToJSON(map[string]any{"plan": trial.Plan, "expires_at": trial.ExpiresAt, "trial": true, "changed_by": changedBy}),
+		}); err != nil {
 			return err
 		}
 		// every org starts with a Manager and a Cashier role, so staff can be
@@ -599,8 +709,31 @@ func (s *Service) CreatePosAccount(ctx context.Context, in CreatePosAccountInput
 	return s.repo.CreatePosAccount(ctx, in)
 }
 
-func (s *Service) ListOrganizations(ctx context.Context) ([]Organization, error) {
-	return s.repo.ListOrganizations(ctx)
+// summarizeOrganization adds what the stored plan means today: the effective plan and
+// whether the org is over its limits.
+func summarizeOrganization(org Organization, usage subscription.Usage, now time.Time) OrganizationSummary {
+	ent := subscription.Resolve(subscription.OrgPlan{
+		Plan: org.Plan, ExpiresAt: org.PlanExpiresAt, Trial: org.PlanTrial,
+		ExtraBranches: org.ExtraBranches, ExtraDevices: org.ExtraDevices,
+	}, nil, now)
+	return OrganizationSummary{Organization: org, EffectivePlan: ent.Plan, OverLimit: ent.Limits.Exceeded(usage)}
+}
+
+func (s *Service) ListOrganizations(ctx context.Context) ([]OrganizationSummary, error) {
+	orgs, err := s.repo.ListOrganizations(ctx)
+	if err != nil {
+		return nil, err
+	}
+	usage, err := s.subs.UsageByOrg(ctx)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	out := make([]OrganizationSummary, len(orgs))
+	for i, org := range orgs {
+		out[i] = summarizeOrganization(org, usage[org.ID], now)
+	}
+	return out, nil
 }
 
 func (s *Service) ListPosAccounts(ctx context.Context, orgID uint) ([]User, error) {
@@ -634,8 +767,17 @@ func (s *Service) UpdateOrganizationTimezone(ctx context.Context, id uint, timez
 	return s.repo.UpdateOrganizationTimezone(ctx, id, name)
 }
 
-func (s *Service) GetOrganization(ctx context.Context, id uint) (*Organization, error) {
-	return s.repo.GetOrganization(ctx, id)
+func (s *Service) GetOrganization(ctx context.Context, id uint) (*OrganizationSummary, error) {
+	org, err := s.repo.GetOrganization(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	usage, err := s.subs.UsageByOrg(ctx)
+	if err != nil {
+		return nil, err
+	}
+	summary := summarizeOrganization(*org, usage[org.ID], time.Now())
+	return &summary, nil
 }
 
 func (s *Service) ListOrgWideAccounts(ctx context.Context, orgID uint) ([]User, error) {
@@ -653,11 +795,38 @@ func (s *Service) ResetOrgWideAccountPassword(ctx context.Context, id uint, plai
 }
 
 func (s *Service) UpdateBranchStatus(ctx context.Context, id uint, status BranchStatus) error {
-	return s.repo.UpdateBranchStatusInternal(ctx, id, status)
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		if status == BranchStatusActive {
+			// reactivating counts as adding one, for the branch's own org
+			branch, err := s.repo.GetBranchAnyOrg(tx, id)
+			if err != nil {
+				return err
+			}
+			if branch.Status != BranchStatusActive {
+				if err := s.subs.EnforceLimit(tx, branch.OrgID, subscription.LimitBranches, time.Now()); err != nil {
+					return err
+				}
+			}
+		}
+		return s.repo.UpdateBranchStatusInternal(tx, id, status)
+	})
 }
 
 func (s *Service) UpdateDeviceStatus(ctx context.Context, id uint, status DeviceStatus) error {
-	return s.repo.UpdateDeviceStatusInternal(ctx, id, status)
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		if status == DeviceStatusActive {
+			device, orgID, err := s.repo.GetDeviceAnyOrg(tx, id)
+			if err != nil {
+				return err
+			}
+			if device.Status != DeviceStatusActive {
+				if err := s.subs.EnforceLimit(tx, orgID, subscription.LimitDevices, time.Now()); err != nil {
+					return err
+				}
+			}
+		}
+		return s.repo.UpdateDeviceStatusInternal(tx, id, status)
+	})
 }
 
 func (s *Service) UpdatePosAccountStatus(ctx context.Context, id uint, status UserStatus) error {

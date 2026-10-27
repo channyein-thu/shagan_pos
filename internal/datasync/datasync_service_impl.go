@@ -22,12 +22,13 @@ type Service struct {
 	branches BranchLookup
 	staff    StaffLookup
 	catalog  CatalogReader
+	subs     EntitlementsReader
 	sales    SalesWriter
 	db       common.Transactioner
 }
 
-func NewService(repo Repository, branches BranchLookup, staff StaffLookup, catalogReader CatalogReader, salesWriter SalesWriter, db common.Transactioner) *Service {
-	return &Service{repo: repo, branches: branches, staff: staff, catalog: catalogReader, sales: salesWriter, db: db}
+func NewService(repo Repository, branches BranchLookup, staff StaffLookup, catalogReader CatalogReader, entitlements EntitlementsReader, salesWriter SalesWriter, db common.Transactioner) *Service {
+	return &Service{repo: repo, branches: branches, staff: staff, catalog: catalogReader, subs: entitlements, sales: salesWriter, db: db}
 }
 
 var _ Interface = (*Service)(nil)
@@ -66,7 +67,11 @@ func (s *Service) GetCatalogSnapshot(ctx context.Context, orgID uint, branchID *
 	if err != nil {
 		return nil, "", err
 	}
-	snapshot := &CatalogSnapshot{Products: products, Categories: categories, Combos: combos}
+	ent, err := s.subs.Entitlements(ctx, orgID, time.Now())
+	if err != nil {
+		return nil, "", err
+	}
+	snapshot := &CatalogSnapshot{Products: products, Categories: categories, Combos: combos, Plan: ent.Plan, Features: ent.Features}
 
 	etag, err := etagFor(snapshot, branchID)
 	if err != nil {

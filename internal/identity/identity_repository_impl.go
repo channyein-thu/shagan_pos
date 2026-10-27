@@ -113,9 +113,15 @@ func (r *RepositoryImpl) UpdateMe(ctx context.Context, userID uint, in UpdateMeR
 // getDeviceInOrg fetches a device, scoped to orgID via its branch - same
 // not-found-not-forbidden reasoning as getBranch/getStaff.
 func (r *RepositoryImpl) getDeviceInOrg(ctx context.Context, orgID uint, id uint) (*Device, error) {
+	return r.getDevice(r.db.WithContext(ctx), orgID, id)
+}
+
+// getDevice is getDeviceInOrg on db - the repository's connection or an
+// in-flight transaction.
+func (r *RepositoryImpl) getDevice(db *gorm.DB, orgID uint, id uint) (*Device, error) {
 	var device Device
-	err := r.db.WithContext(ctx).
-		Where("id = ? AND branch_id IN (?)", id, r.orgBranchIDs(ctx, orgID)).
+	err := db.
+		Where("id = ? AND branch_id IN (?)", id, db.Session(&gorm.Session{NewDB: true}).Model(&Branch{}).Where("org_id = ?", orgID).Select("id")).
 		First(&device).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -127,9 +133,9 @@ func (r *RepositoryImpl) getDeviceInOrg(ctx context.Context, orgID uint, id uint
 }
 
 // CreateDevice backs `POST /devices`. Provisions a pos-type login seat
-func (r *RepositoryImpl) CreateDevice(ctx context.Context, orgID uint, in CreateDeviceRequest) (*Device, error) {
+func (r *RepositoryImpl) CreateDevice(db *gorm.DB, orgID uint, in CreateDeviceRequest) (*Device, error) {
 	// the target branch must belong to this org, same check as CreateStaff.
-	if _, err := r.GetBranch(ctx, orgID, in.BranchID); err != nil {
+	if _, err := r.getBranch(db, orgID, in.BranchID); err != nil {
 		return nil, err
 	}
 
@@ -139,10 +145,15 @@ func (r *RepositoryImpl) CreateDevice(ctx context.Context, orgID uint, in Create
 		Status:     in.Status,
 		LastSeenAt: time.Now(),
 	}
-	if err := r.db.WithContext(ctx).Create(&device).Error; err != nil {
+	if err := db.Create(&device).Error; err != nil {
 		return nil, err
 	}
 	return &device, nil
+}
+
+// GetDevice backs Service.UpdateDevice's reactivation check.
+func (r *RepositoryImpl) GetDevice(ctx context.Context, orgID uint, id uint) (*Device, error) {
+	return r.getDeviceInOrg(ctx, orgID, id)
 }
 
 // ListDevices backs `GET /devices`.
@@ -158,8 +169,8 @@ func (r *RepositoryImpl) ListDevices(ctx context.Context, orgID uint) ([]Device,
 }
 
 // UpdateDevice backs `PATCH /devices/:id`.
-func (r *RepositoryImpl) UpdateDevice(ctx context.Context, orgID uint, id uint, in UpdateDeviceRequest) (*Device, error) {
-	if _, err := r.getDeviceInOrg(ctx, orgID, id); err != nil {
+func (r *RepositoryImpl) UpdateDevice(db *gorm.DB, orgID uint, id uint, in UpdateDeviceRequest) (*Device, error) {
+	if _, err := r.getDevice(db, orgID, id); err != nil {
 		return nil, err
 	}
 
@@ -167,7 +178,7 @@ func (r *RepositoryImpl) UpdateDevice(ctx context.Context, orgID uint, id uint, 
 	if in.BranchID != nil {
 		// moving a device to a different branch - that branch must belong to
 		// this org too, same check as CreateStaff/UpdateStaff.
-		if _, err := r.GetBranch(ctx, orgID, *in.BranchID); err != nil {
+		if _, err := r.getBranch(db, orgID, *in.BranchID); err != nil {
 			return nil, err
 		}
 		updates["branch_id"] = *in.BranchID
@@ -180,12 +191,12 @@ func (r *RepositoryImpl) UpdateDevice(ctx context.Context, orgID uint, id uint, 
 	}
 
 	if len(updates) > 0 {
-		if err := r.db.WithContext(ctx).Model(&Device{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		if err := db.Model(&Device{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 			return nil, err
 		}
 	}
 
-	return r.getDeviceInOrg(ctx, orgID, id)
+	return r.getDevice(db, orgID, id)
 }
 
 // ListBranches backs `GET /branches`.
@@ -198,7 +209,7 @@ func (r *RepositoryImpl) ListBranches(ctx context.Context, orgID uint) ([]Branch
 }
 
 // CreateBranch backs `POST /branches`.
-func (r *RepositoryImpl) CreateBranch(ctx context.Context, orgID uint, in CreateBranchRequest) (*Branch, error) {
+func (r *RepositoryImpl) CreateBranch(db *gorm.DB, orgID uint, in CreateBranchRequest) (*Branch, error) {
 	branch := Branch{
 		OrgID:   orgID,
 		Name:    in.Name,
@@ -206,7 +217,7 @@ func (r *RepositoryImpl) CreateBranch(ctx context.Context, orgID uint, in Create
 		Address: in.Address,
 		Phone:   in.Phone,
 	}
-	if err := r.db.WithContext(ctx).Create(&branch).Error; err != nil {
+	if err := db.Create(&branch).Error; err != nil {
 		return nil, err
 	}
 	return &branch, nil
@@ -215,8 +226,14 @@ func (r *RepositoryImpl) CreateBranch(ctx context.Context, orgID uint, in Create
 // GetBranch backs `GET /branches/:id`. Scoped to orgID - see the Repository
 // interface doc on why a cross-org ID returns 404, not 403.
 func (r *RepositoryImpl) GetBranch(ctx context.Context, orgID uint, id uint) (*Branch, error) {
+	return r.getBranch(r.db.WithContext(ctx), orgID, id)
+}
+
+// getBranch is GetBranch on db - the repository's connection or an in-flight
+// transaction.
+func (r *RepositoryImpl) getBranch(db *gorm.DB, orgID uint, id uint) (*Branch, error) {
 	var branch Branch
-	err := r.db.WithContext(ctx).Where("id = ? AND org_id = ?", id, orgID).First(&branch).Error
+	err := db.Where("id = ? AND org_id = ?", id, orgID).First(&branch).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, common.NotFoundError("branch not found")
@@ -227,9 +244,9 @@ func (r *RepositoryImpl) GetBranch(ctx context.Context, orgID uint, id uint) (*B
 }
 
 // UpdateBranch backs `PATCH /branches/:id`.
-func (r *RepositoryImpl) UpdateBranch(ctx context.Context, orgID uint, id uint, in UpdateBranchRequest) (*Branch, error) {
+func (r *RepositoryImpl) UpdateBranch(db *gorm.DB, orgID uint, id uint, in UpdateBranchRequest) (*Branch, error) {
 	// confirms the branch exists AND belongs to orgID before touching anything
-	if _, err := r.GetBranch(ctx, orgID, id); err != nil {
+	if _, err := r.getBranch(db, orgID, id); err != nil {
 		return nil, err
 	}
 
@@ -248,12 +265,12 @@ func (r *RepositoryImpl) UpdateBranch(ctx context.Context, orgID uint, id uint, 
 	}
 
 	if len(updates) > 0 {
-		if err := r.db.WithContext(ctx).Model(&Branch{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		if err := db.Model(&Branch{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 			return nil, err
 		}
 	}
 
-	return r.GetBranch(ctx, orgID, id)
+	return r.getBranch(db, orgID, id)
 }
 
 // ListBranchStaff backs `GET /branches/:id/staff`.
@@ -730,8 +747,8 @@ func (r *RepositoryImpl) ResetOrgWideAccountPassword(ctx context.Context, id uin
 }
 
 // UpdateBranchStatusInternal backs `PATCH /internal/branches/:id/status`.
-func (r *RepositoryImpl) UpdateBranchStatusInternal(ctx context.Context, id uint, status BranchStatus) error {
-	res := r.db.WithContext(ctx).Model(&Branch{}).Where("id = ?", id).Update("status", status)
+func (r *RepositoryImpl) UpdateBranchStatusInternal(db *gorm.DB, id uint, status BranchStatus) error {
+	res := db.Model(&Branch{}).Where("id = ?", id).Update("status", status)
 	if res.Error != nil {
 		return res.Error
 	}
@@ -742,8 +759,8 @@ func (r *RepositoryImpl) UpdateBranchStatusInternal(ctx context.Context, id uint
 }
 
 // UpdateDeviceStatusInternal backs `PATCH /internal/devices/:id/status`.
-func (r *RepositoryImpl) UpdateDeviceStatusInternal(ctx context.Context, id uint, status DeviceStatus) error {
-	res := r.db.WithContext(ctx).Model(&Device{}).Where("id = ?", id).Update("status", status)
+func (r *RepositoryImpl) UpdateDeviceStatusInternal(db *gorm.DB, id uint, status DeviceStatus) error {
+	res := db.Model(&Device{}).Where("id = ?", id).Update("status", status)
 	if res.Error != nil {
 		return res.Error
 	}
@@ -751,4 +768,38 @@ func (r *RepositoryImpl) UpdateDeviceStatusInternal(ctx context.Context, id uint
 		return common.NotFoundError("device not found")
 	}
 	return nil
+}
+
+// GetBranchAnyOrg is GetBranch without the org scope, for the Shagan-team
+// status lever (which has an id but no tenant token). NotFound only if the id
+// doesn't exist at all.
+func (r *RepositoryImpl) GetBranchAnyOrg(db *gorm.DB, id uint) (*Branch, error) {
+	var branch Branch
+	if err := db.Where("id = ?", id).First(&branch).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, common.NotFoundError("branch not found")
+		}
+		return nil, err
+	}
+	return &branch, nil
+}
+
+// GetDeviceAnyOrg is GetBranchAnyOrg for a device; it also returns the org the
+// device belongs to through its branch.
+func (r *RepositoryImpl) GetDeviceAnyOrg(db *gorm.DB, id uint) (*Device, uint, error) {
+	var device Device
+	if err := db.Where("id = ?", id).First(&device).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, 0, common.NotFoundError("device not found")
+		}
+		return nil, 0, err
+	}
+	var branch Branch
+	if err := db.Where("id = ?", device.BranchID).First(&branch).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, 0, common.NotFoundError("device not found")
+		}
+		return nil, 0, err
+	}
+	return &device, branch.OrgID, nil
 }

@@ -75,9 +75,21 @@ type Organization struct {
 	// from/to dates and daily buckets fall. Defaults to Asia/Yangon for every
 	// existing and new row (applied at the DB level by AutoMigrate, same as
 	// Status). Validated on write - see common.LoadTimezone.
-	Timezone  string    `gorm:"size:64;not null;default:'Asia/Yangon'" json:"timezone"`
-	CreatedAt time.Time `gorm:"autoCreateTime;not null" json:"created_at"`
-	UpdatedAt time.Time `gorm:"autoUpdateTime;not null" json:"updated_at"`
+	Timezone string `gorm:"size:64;not null;default:'Asia/Yangon'" json:"timezone"`
+	// The subscription block - see internal/subscription. Plan is a plan code
+	// (basic | pro | enterprise); PlanExpiresAt nil = no end date; PlanTrial marks
+	// the 14-day Pro trial a new org starts on. ExtraBranches / ExtraDevices are
+	// per-org add-ons on top of the plan's limits. These are the STORED fields:
+	// what an org may do right now (after expiry and grace) is
+	// subscription.Resolve. default 'basic' / false / 0 lets AutoMigrate add the
+	// columns to a table with rows - every existing org is Basic, no trial.
+	Plan          string     `gorm:"size:30;not null;default:'basic'" json:"plan"`
+	PlanExpiresAt *time.Time `json:"plan_expires_at"`
+	PlanTrial     bool       `gorm:"not null;default:false" json:"plan_trial"`
+	ExtraBranches int        `gorm:"not null;default:0" json:"extra_branches"`
+	ExtraDevices  int        `gorm:"not null;default:0" json:"extra_devices"`
+	CreatedAt     time.Time  `gorm:"autoCreateTime;not null" json:"created_at"`
+	UpdatedAt     time.Time  `gorm:"autoUpdateTime;not null" json:"updated_at"`
 }
 
 // Branch maps to the "Branches" table in the ERD.

@@ -16,6 +16,7 @@ import (
 	"shagan_pos/internal/returns"
 	"shagan_pos/internal/sales"
 	"shagan_pos/internal/shift"
+	"shagan_pos/internal/subscription"
 )
 
 // Run auto-migrates every domain's models against db. Order doesn't matter for
@@ -30,6 +31,9 @@ func Run(db *gorm.DB) error {
 		// moves global roles to per-org roles and keeps the permission
 		// catalogue complete - idempotent, and needs the identity tables
 		{"identity access rights", identity.MigrateAccessRights},
+		// the subscription tables, and the one-time start-on-Basic migration; the
+		// plan columns themselves are on identity's Organization
+		{"subscription", subscription.AutoMigrate},
 		{"customer", customer.AutoMigrate},
 		{"platform", platform.AutoMigrate},
 		{"catalog", catalog.AutoMigrate},

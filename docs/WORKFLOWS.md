@@ -196,6 +196,10 @@ Three distinct tokens exist, often needed together on one request:
 - `middleware.RequireBackOfficePermission(jwtSecret, code)` — Owner / Service
   Center always pass; a till needs a staff token carrying **both**
   `access_backoffice` and `code`. Used on every back office write (table below).
+- `middleware.RequireFeature(checker, code)` — a **plan** gate, not a permission
+  one: 403 `feature_not_in_plan` unless the org's current plan includes the
+  feature (see "Subscription tiers"). Nothing built today uses it; each
+  Pro / Enterprise feature gets it when it's built.
 - `middleware.RequireViewPermission(jwtSecret, code)` — for reads the till also
   uses. Restricts **only a caller using Back Office** (a staff token with
   `access_backoffice`), who then needs `code`; a plain till read (no staff
@@ -316,6 +320,121 @@ provisioning (`POST /internal/accounts`, `/branches`, `/devices`,
 - Not built (not requested): suspending an individual owner/service_center
   account — suspending the whole org (`PATCH /internal/organizations/:id/status`)
   already blocks every login.
+- Subscription tiers: `GET /internal/plans`, `GET|PATCH
+  /internal/organizations/:id/subscription`, `PUT|DELETE
+  /internal/organizations/:id/features/:code`; the organization list and
+  get-by-id also carry the plan fields - see "Subscription tiers" below.
+
+### Subscription tiers — Basic / Pro / Enterprise (built 2026-10-27)
+
+An organization has a **plan**: `basic` (default) / `pro` / `enterprise`. It
+belongs to the **organization** - every login of the org (owner, service center,
+POS devices, staff) gets it. It is separate from `status`: `status` decides
+whether the org can use Shagan at all; the plan decides features and how many
+branches / devices. **A plan never suspends an org or stops a till from
+selling** - an expired or unpaid plan only drops the org to Basic. The shagan_team
+portal sets it by hand over `/internal`; billing lives in shagan_team, not here.
+
+| | Basic | Pro | Enterprise |
+|---|---|---|---|
+| Active branches | 1 | 5 | unlimited |
+| Active devices | 2 | 10 | unlimited |
+| Everything built today (incl. branch prices, custom roles, offline mode) | yes | yes | yes |
+| `customer_display`, `advanced_reports`, `report_export`, `promotions` | - | yes | yes |
+| `loyalty`, `sms_receipts`, `api_access` | - | - | yes |
+
+The tiers live in code (`internal/subscription/subscription_plans.go`). **None
+of the gated features exists yet** (and no existing route is gated): only the
+limits apply today. Each feature gets `RequireFeature(code)` on its routes when
+it is built.
+
+**Stored fields** (on `organizations`): `plan`, `plan_expires_at` (null = no end
+date), `plan_trial`, `extra_branches`, `extra_devices` (per-org add-ons on top
+of the plan's limits, so a 6-branch shop needn't buy Enterprise). Two tables:
+`org_feature_overrides` (one feature on/off for one org, unique per org+feature -
+a deal or a beta) and `org_plan_changes` (append-only history; `changed_by` is
+the shagan_team admin's **email**, sent in the request body since `/internal` has
+no user). A named data migration (`2026-10-27-organization-plans`) left every
+existing org on `basic`, no trial, with one history row (`changed_by:
+"migration"`). A **new** org starts on a **14-day Pro trial**
+(`POST /internal/accounts`: `plan: pro`, `plan_trial: true`, history row +
+audit entry; an optional `changed_by` in that body, else `"system"`).
+
+**The one resolver** - `subscription.Resolve` (pure) behind
+`Entitlements(orgID, now)`:
+1. start from the stored plan (an unknown code reads as Basic);
+2. if `plan_expires_at` has passed: a **paid** plan keeps working for a
+   **7-day grace period** (`in_grace: true`), then drops to Basic
+   (`expired: true`); a **trial has no grace** - it drops at its end date. All
+   worked out on read, so there is **no cron job**;
+3. apply the feature overrides (on adds, off removes; they still apply after a
+   drop to Basic);
+4. limits = the effective plan's limit + `extra_branches` / `extra_devices`
+   (unlimited stays unlimited; extras survive a drop to Basic).
+
+It is cached **60 s per org, in the process**, and every `/internal`
+subscription write clears that org's entry, so a change shows at once on the
+instance that took it. **The plan is not in the JWT** (staff tokens live 12 h,
+device refresh tokens 30 days), so it is never a stale claim. The cache is
+used for features (`RequireFeature`, `/me`, `/sync/catalog`); the **limit check
+never uses it** (below).
+
+**Limits** count **active** rows only (`status = "active"`; inactive / revoked
+ones don't count). Adding or **reactivating** one more active branch / device
+than the limit is **403**
+`{"success":false,"code":"plan_limit_reached","limit":"branches"|"devices","max":1,"current":1,"message":"..."}`.
+It applies to **everyone, no bypass**: `POST /branches`, `POST /devices`,
+`POST /internal/branches`, `POST /internal/devices`, and reactivation through
+`PATCH /branches/:id` / `PATCH /devices/:id` (owner) and
+`PATCH /internal/branches/:id/status` / `/devices/:id/status`. Creating an
+*inactive* branch/device is never blocked; re-sending "active" to one that is
+already active, a rename or a branch move never counts. The check runs in the
+**same transaction as the write**, after taking a row lock on the organization
+and reading the stored plan fresh, so two parallel creates (owner and `/internal`
+alike) can't both pass the same count. **A downgrade deletes and switches off
+nothing**: an org over its new limits keeps what it has and just can't add more;
+the portal shows it as `over_limit`. **Never blocked by the plan**: login,
+selling (`POST /sales`, `/sync/sales`), shifts, receipts, returns.
+
+**`RequireFeature(code)`**: 403
+`{"success":false,"code":"feature_not_in_plan","feature":"promotions","plan":"basic","message":"..."}`
+(`plan` is the effective plan). A lookup failure is a 500/404, never mistaken for
+"not in plan".
+
+**Exposed to the apps**:
+- `GET /me` = the user (as before, flattened) plus `subscription`:
+  `{plan, trial, expires_at, in_grace, expired, features[], limits:{branches,devices},
+  usage:{branches,devices}}`; a `null` limit is unlimited; `usage` is live (never
+  cached). (`PATCH /me` still returns the plain user.)
+- `GET /sync/catalog` adds top-level `plan` and `features`; they are in the body
+  the ETag hashes, so a plan or override change gives the till a fresh snapshot,
+  not a 304.
+
+**`/internal` (shagan_team)**:
+- `GET /internal/plans` -> `{plans: [{code, name, features[], limits}], features: [every code]}`.
+- `GET /internal/organizations/:id/subscription` -> `{organization_id, effective:
+  <the /me object>, raw: {plan, expires_at, trial, extra_branches, extra_devices},
+  over_limit, overrides: [{id, org_id, feature, enabled, updated_at}], history:
+  [newest first, at most 100]}`.
+- `PATCH` the same path: `{plan?, expires_at? (null clears), trial?, extra_branches?,
+  extra_devices?, note?, changed_by}` - **partial** (an omitted field is left as
+  is); 400 for an unknown plan, a negative extra, a bad date or a missing
+  `changed_by`; a PATCH that changes nothing writes nothing. Returns the detail.
+- `PUT /internal/organizations/:id/features/:code` `{enabled, note?, changed_by}`
+  and `DELETE` (`changed_by` / `note` in an optional body or as `?changed_by=` /
+  `?note=`): override one feature / go back to the plan's default (DELETE of
+  nothing is a no-op). 400 for an unknown feature code. Return the detail.
+- `GET /internal/organizations` and `/:id` carry `plan`, `plan_expires_at`,
+  `plan_trial`, `extra_branches`, `extra_devices` plus **`effective_plan`** and
+  **`over_limit`** (more active branches or devices than the effective plan +
+  extras allows).
+- **Every** subscription write (plan change, feature override set / cleared,
+  the trial) appends an `org_plan_changes` row (an override change repeats the
+  unchanged plan fields and says what happened in `note`) **and** writes
+  `audit_log` (`entity: organization_subscription`, `entity_id` = org id, action
+  `subscription_updated` / `feature_override_set` / `feature_override_cleared` /
+  `subscription_trial_started`, before / after, `changed_by` in `after`).
+- The demo seed (`db/demo_seed.sql`) puts its org on Enterprise.
 
 ---
 
@@ -1107,6 +1226,10 @@ distinct methods used on the sale, sorted (`["cash"]`, `["qr"]`,
    2026-10-24: yes, with `manage_branch_prices`, own branch only (Section 8).
    Still deferred: combo prices per branch, scheduled price changes, "not sold
    at this branch", bulk edit.
+10. **Subscription tiers** - built on the spec's defaults (all current features
+   in every tier incl. branch prices and custom roles; 14-day Pro trial; 7-day
+   grace; limits for everyone). Still the business's call before the first paying
+   customer: moving branch prices or custom roles up to Pro.
 
 ---
 

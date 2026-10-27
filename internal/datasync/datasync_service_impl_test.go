@@ -19,6 +19,7 @@ import (
 	"shagan_pos/internal/common"
 	"shagan_pos/internal/identity"
 	"shagan_pos/internal/sales"
+	"shagan_pos/internal/subscription"
 )
 
 func requireRestErrorStatus(t *testing.T, err error, status int) {
@@ -37,13 +38,23 @@ func (fakeTransactioner) Transaction(fc func(tx *gorm.DB) error, _ ...*sql.TxOpt
 	return fc(nil)
 }
 
+// fakeEntitlements answers every org with the same fixed entitlements.
+type fakeEntitlements struct{ ent subscription.Entitlements }
+
+func (f fakeEntitlements) Entitlements(context.Context, uint, time.Time) (*subscription.Entitlements, error) {
+	ent := f.ent
+	return &ent, nil
+}
+
+var basicEntitlements = fakeEntitlements{subscription.Entitlements{Plan: subscription.PlanBasic, Features: []string{}}}
+
 func newTestService(repo Repository, branches BranchLookup, catalogReader CatalogReader, salesWriter SalesWriter) *Service {
 	// No staff lookup: only IngestQueuedSales needs one - see newIngestService.
-	return NewService(repo, branches, nil, catalogReader, salesWriter, fakeTransactioner{})
+	return NewService(repo, branches, nil, catalogReader, basicEntitlements, salesWriter, fakeTransactioner{})
 }
 
 func newIngestService(repo Repository, staff StaffLookup, salesWriter SalesWriter) *Service {
-	return NewService(repo, nil, staff, nil, salesWriter, fakeTransactioner{})
+	return NewService(repo, nil, staff, nil, basicEntitlements, salesWriter, fakeTransactioner{})
 }
 
 // --- GetCatalogSnapshot ---
@@ -646,4 +657,56 @@ func TestService_GetCatalogSnapshot_SameContentAtTwoBranches_YieldsDifferentETag
 
 	require.NotEqual(t, etag3, etag4)
 	require.Equal(t, etag3, etag3Again, "still stable for one branch")
+}
+
+// --- the plan and features in the snapshot ---
+
+func TestService_GetCatalogSnapshot_CarriesThePlanAndFeatures(t *testing.T) {
+	svc, cat := catalogForBranch(t)
+	svc.subs = fakeEntitlements{subscription.Entitlements{Plan: "pro", Features: []string{"customer_display", "promotions"}}}
+	cat.EXPECT().ListProducts(mock.Anything, uint(7), (*uint)(nil)).Return(nil, nil).Once()
+
+	snap, _, err := svc.GetCatalogSnapshot(context.Background(), 7, nil)
+
+	require.NoError(t, err)
+	require.Equal(t, "pro", snap.Plan)
+	require.Equal(t, []string{"customer_display", "promotions"}, snap.Features)
+}
+
+// A plan (or feature-override) change must give the till a fresh snapshot, not a 304.
+func TestService_GetCatalogSnapshot_ThePlanIsPartOfTheETag(t *testing.T) {
+	svc, cat := catalogForBranch(t)
+	cat.EXPECT().ListProducts(mock.Anything, uint(7), (*uint)(nil)).Return(nil, nil).Times(4)
+	snapshotETag := func(ent subscription.Entitlements) string {
+		svc.subs = fakeEntitlements{ent}
+		_, etag, err := svc.GetCatalogSnapshot(context.Background(), 7, nil)
+		require.NoError(t, err)
+		return etag
+	}
+
+	basic := snapshotETag(subscription.Entitlements{Plan: "basic", Features: []string{}})
+	basicAgain := snapshotETag(subscription.Entitlements{Plan: "basic", Features: []string{}})
+	pro := snapshotETag(subscription.Entitlements{Plan: "pro", Features: []string{"customer_display"}})
+	// same plan, but one feature switched on for this org
+	basicWithBeta := snapshotETag(subscription.Entitlements{Plan: "basic", Features: []string{"loyalty"}})
+
+	require.Equal(t, basic, basicAgain)
+	require.NotEqual(t, basic, pro)
+	require.NotEqual(t, basic, basicWithBeta)
+}
+
+func TestService_GetCatalogSnapshot_AnEntitlementsFailureIsPropagated(t *testing.T) {
+	svc, cat := catalogForBranch(t)
+	svc.subs = failingEntitlements{}
+	cat.EXPECT().ListProducts(mock.Anything, uint(7), (*uint)(nil)).Return(nil, nil).Once()
+
+	_, _, err := svc.GetCatalogSnapshot(context.Background(), 7, nil)
+
+	require.Error(t, err)
+}
+
+type failingEntitlements struct{}
+
+func (failingEntitlements) Entitlements(context.Context, uint, time.Time) (*subscription.Entitlements, error) {
+	return nil, errors.New("boom")
 }

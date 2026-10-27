@@ -32,18 +32,24 @@ type Repository interface {
 	// by ID is the exact same query as fetching anyone else's.
 	UpdateMe(ctx context.Context, userID uint, in UpdateMeRequest) (*User, error)
 	// Devices are scoped to orgID via their branch, same as Staff.
-	CreateDevice(ctx context.Context, orgID uint, in CreateDeviceRequest) (*Device, error)
+	// CreateDevice, UpdateDevice, CreateBranch and UpdateBranch take db - the
+	// repository's connection or an in-flight transaction - because the service
+	// runs the plan-limit check and the write in one transaction.
+	CreateDevice(db *gorm.DB, orgID uint, in CreateDeviceRequest) (*Device, error)
+	// GetDevice returns one device of orgID (NotFound for another org's) -
+	// UpdateDevice's service reads it to tell a reactivation from a no-op.
+	GetDevice(ctx context.Context, orgID uint, id uint) (*Device, error)
 	ListDevices(ctx context.Context, orgID uint) ([]Device, error)
-	UpdateDevice(ctx context.Context, orgID uint, id uint, in UpdateDeviceRequest) (*Device, error)
+	UpdateDevice(db *gorm.DB, orgID uint, id uint, in UpdateDeviceRequest) (*Device, error)
 	// Branches are always scoped to orgID (the authenticated caller's own
 	// organization) - GetBranch/UpdateBranch/ListBranchStaff return
 	// common.NotFoundError for a branch that exists but belongs to a
 	// different org, same as one that doesn't exist at all, so a caller can
 	// never distinguish "not mine" from "doesn't exist" by probing IDs.
 	ListBranches(ctx context.Context, orgID uint) ([]Branch, error)
-	CreateBranch(ctx context.Context, orgID uint, in CreateBranchRequest) (*Branch, error)
+	CreateBranch(db *gorm.DB, orgID uint, in CreateBranchRequest) (*Branch, error)
 	GetBranch(ctx context.Context, orgID uint, id uint) (*Branch, error)
-	UpdateBranch(ctx context.Context, orgID uint, id uint, in UpdateBranchRequest) (*Branch, error)
+	UpdateBranch(db *gorm.DB, orgID uint, id uint, in UpdateBranchRequest) (*Branch, error)
 	ListBranchStaff(ctx context.Context, orgID uint, id uint) ([]Staff, error)
 	// ListBranchManagers is ListBranchStaff further filtered to staff whose
 	// role (in this org) grants permissionCode - "manager" isn't one role,
@@ -144,8 +150,15 @@ type Repository interface {
 	// Shagan-team status levers. Unlike the tenant-facing UpdateBranch/
 	// UpdateDevice they are not org-scoped (the portal has no tenant token) -
 	// NotFound only if the id doesn't exist at all.
-	UpdateBranchStatusInternal(ctx context.Context, id uint, status BranchStatus) error
-	UpdateDeviceStatusInternal(ctx context.Context, id uint, status DeviceStatus) error
+	// Both take db (a transaction when the service checks the plan limit first).
+	UpdateBranchStatusInternal(db *gorm.DB, id uint, status BranchStatus) error
+	UpdateDeviceStatusInternal(db *gorm.DB, id uint, status DeviceStatus) error
+	// GetBranchAnyOrg / GetDeviceAnyOrg read a row by id with no org scope (the
+	// internal status levers carry no tenant); GetDeviceAnyOrg also returns the
+	// org the device's branch belongs to. They tell a reactivation from a no-op
+	// and say whose plan limit applies.
+	GetBranchAnyOrg(db *gorm.DB, id uint) (*Branch, error)
+	GetDeviceAnyOrg(db *gorm.DB, id uint) (*Device, uint, error)
 	// UpdatePosAccountStatus and ResetPosAccountPassword return
 	// common.NotFoundError if id isn't a pos-type User - same
 	// not-found-not-forbidden reasoning as everywhere else, and it keeps

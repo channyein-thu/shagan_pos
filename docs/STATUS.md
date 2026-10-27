@@ -103,6 +103,7 @@ Full text in [backend-recommendations.md](backend-recommendations.md).
 | 21 | No unique index on `stock_levels (product, branch)` | Open (found 2026-10-23) |
 | 22 | No database foreign keys | Open - design decision to revisit |
 | 23 | Branch-specific product prices | **Built 2026-10-23** (branch price overrides; API in WORKFLOWS §8) - Back Office screens follow |
+| 24 | Subscription tiers (Basic / Pro / Enterprise) | **Built 2026-10-27** (limits + trial + /internal; WORKFLOWS §2 "Subscription tiers") - no feature is gated yet; shagan_team / retail screens follow |
 
 ## Risks
 

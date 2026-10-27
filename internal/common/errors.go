@@ -9,6 +9,14 @@ type RestError struct {
 	Status  int          `json:"-"`
 	Message string       `json:"message"`
 	Errors  []FieldError `json:"errors,omitempty"`
+	// Code is a stable, machine-readable reason ("plan_limit_reached",
+	// "feature_not_in_plan") an app can branch on without parsing Message.
+	// Empty for the plain errors that have only a status and a message.
+	Code string `json:"code,omitempty"`
+	// Details are extra top-level fields sent next to Code (e.g. the limit,
+	// its maximum and the current count). HandleError merges them into the
+	// response body; they never replace success/message/errors/code.
+	Details map[string]any `json:"-"`
 }
 
 func (e RestError) Error() string {
@@ -71,3 +79,9 @@ func ValidationError(message string, errs []FieldError) RestError {
 // their real logic is written. It's a RestError so HandleError already
 // reports it as 501 with no extra handling needed at the call site.
 var ErrNotImplemented = NotImplementedError("not implemented")
+
+// CodedError is a RestError with a machine-readable code and extra response
+// fields - see RestError.Code / Details.
+func CodedError(status int, code, message string, details map[string]any) RestError {
+	return RestError{Status: status, Message: message, Code: code, Details: details}
+}

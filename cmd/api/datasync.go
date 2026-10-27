@@ -29,6 +29,7 @@ func NewSyncAPI(db *gorm.DB, store storage.Storage, jwtSecret []byte) *SyncAPI {
 			identity.NewRepository(db),
 			identity.NewRepository(db),
 			catalog.NewService(catalog.NewRepository(db), identity.NewRepository(db), audit.NewRepository(db), db, store),
+			sharedSubscription(db),
 			newSalesService(db, jwtSecret),
 			db,
 		),

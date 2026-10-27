@@ -22,7 +22,7 @@ type IdentityAPI struct {
 
 func NewIdentityAPI(db *gorm.DB, jwtSecret []byte, accessTokenTTL, refreshTokenTTL, staffPINTokenTTL, managerPINTokenTTL time.Duration) *IdentityAPI {
 	return &IdentityAPI{
-		service:   identity.NewService(identity.NewRepository(db), audit.NewRepository(db), db, jwtSecret, accessTokenTTL, refreshTokenTTL, staffPINTokenTTL, managerPINTokenTTL),
+		service:   identity.NewService(identity.NewRepository(db), audit.NewRepository(db), sharedSubscription(db), db, jwtSecret, accessTokenTTL, refreshTokenTTL, staffPINTokenTTL, managerPINTokenTTL),
 		jwtSecret: jwtSecret,
 	}
 }

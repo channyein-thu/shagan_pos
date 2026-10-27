@@ -12,6 +12,9 @@ packages:
       AuditWriter:
         config:
           filename: "mock_identity_audit_writer_test.go"
+      Subscriptions:
+        config:
+          filename: "mock_identity_subscriptions_test.go"
   shagan_pos/internal/catalog:
     config:
       dir: "internal/catalog"
@@ -176,6 +179,9 @@ packages:
       CatalogReader:
         config:
           filename: "mock_datasync_catalog_reader_test.go"
+      EntitlementsReader:
+        config:
+          filename: "mock_datasync_entitlements_reader_test.go"
       SalesWriter:
         config:
           filename: "mock_datasync_sales_writer_test.go"
@@ -191,3 +197,15 @@ packages:
       BranchLookup:
         config:
           filename: "mock_platform_branch_lookup_test.go"
+  shagan_pos/internal/subscription:
+    config:
+      dir: "internal/subscription"
+      outpkg: subscription
+      inpackage: true
+    interfaces:
+      Repository:
+        config:
+          filename: "mock_subscription_repository_test.go"
+      AuditWriter:
+        config:
+          filename: "mock_subscription_audit_writer_test.go"

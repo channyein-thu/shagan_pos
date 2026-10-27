@@ -31,7 +31,7 @@ func NewSalesAPI(db *gorm.DB, jwtSecret []byte) *SalesAPI {
 // repository) is passed as the StaffDirectory because it owns the PIN check -
 // lockout counter included - that approves a custom discount.
 func newSalesService(db *gorm.DB, jwtSecret []byte) *sales.Service {
-	staff := identity.NewService(identity.NewRepository(db), audit.NewRepository(db), db, jwtSecret,
+	staff := identity.NewService(identity.NewRepository(db), audit.NewRepository(db), sharedSubscription(db), db, jwtSecret,
 		identity.DefaultAccessTokenTTL, identity.DefaultRefreshTokenTTL, identity.DefaultStaffPINTokenTTL, identity.DefaultManagerPINTokenTTL)
 	return sales.NewService(sales.NewRepository(db), inventory.NewRepository(db), catalog.NewRepository(db), audit.NewRepository(db), identity.NewRepository(db), returns.NewRepository(db), staff, db)
 }

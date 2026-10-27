@@ -8,7 +8,9 @@
 -- inventory ledger, audit log, held sales, sync conflicts, receipt settings).
 --
 -- PREREQUISITE: the tables must exist - run the API once (`go run ./cmd`) so
--- it migrates. This file still creates the OLD global roles (staff, super_staff,
+-- it migrates (that also creates the subscription tables: the demo org is put on
+-- the Enterprise plan so its 3 branches / 6 registers are within the limits).
+-- This file still creates the OLD global roles (staff, super_staff,
 -- manager) as the staff's roles; roles are per organization now, so AFTER
 -- loading it run `go run ./cmd/seed` (or just restart `go run ./cmd`): the
 -- start-up migration gives the demo org its own Manager / Cashier / Super Staff
@@ -151,8 +153,11 @@ BEGIN
   SELECT COALESCE(MAX(id), 0) INTO o_payment_qr_codes FROM payment_qr_codes;
   SELECT COALESCE(MAX(id), 0) INTO o_organizations FROM organizations;
 
-  INSERT INTO organizations (id, name, status, timezone, created_at, updated_at) VALUES
-    (o_organizations + 1, 'Golden Mart Myanmar', 'active', 'Asia/Yangon', (base + interval '-24 days 09:00:00'), (base + interval '-24 days 09:00:00'));
+  -- Enterprise (unlimited), so the demo's 3 branches / 6 registers are within its plan
+  INSERT INTO organizations (id, name, status, timezone, plan, plan_trial, extra_branches, extra_devices, created_at, updated_at) VALUES
+    (o_organizations + 1, 'Golden Mart Myanmar', 'active', 'Asia/Yangon', 'enterprise', false, 0, 0, (base + interval '-24 days 09:00:00'), (base + interval '-24 days 09:00:00'));
+  INSERT INTO org_plan_changes (org_id, from_plan, to_plan, trial, extra_branches, extra_devices, note, changed_by, created_at) VALUES
+    (o_organizations + 1, '', 'enterprise', false, 0, 0, 'demo organization', 'demo-seed', (base + interval '-24 days 09:00:00'));
   INSERT INTO branches (id, org_id, name, status, address, phone, created_at, updated_at) VALUES
     (o_branches + 1, o_organizations + 1, 'Golden Mart - Yangon Downtown', 'active', 'No. 45, Sule Pagoda Road, Kyauktada Township, Yangon', '01-253-1101', (base + interval '-24 days 09:00:00'), (base + interval '-24 days 09:00:00')),
     (o_branches + 2, o_organizations + 1, 'Golden Mart - Mandalay', 'active', 'No. 120, 78th Street, Chanayethazan Township, Mandalay', '02-402-2202', (base + interval '-24 days 09:00:00'), (base + interval '-24 days 09:00:00')),
