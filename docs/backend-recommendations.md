@@ -31,6 +31,7 @@ GitHub issue. Paths are relative to the repo root. See the status section and
 | 22 | No database foreign keys | Data integrity (design) | — |
 | 23 | Branch-specific product prices | **Feature (decided)** | Selling one catalog at different prices per branch |
 | 24 | Subscription tiers (Basic / Pro / Enterprise) | **Feature (decided)** | Charging by shop size; gating the next features |
+| 25 | Shift history (list shifts + `view_shift_history`) | **Feature (decided)** | Back Office "Shift History" screen |
 
 ---
 
@@ -526,3 +527,119 @@ the columns with their defaults. Existing orgs become `basic` with no trial.
   - Gated items show a "Pro" badge and an upgrade message instead of
     disappearing.
   - At a limit, "Add branch / device" explains why it's blocked.
+
+## 25. Shift history (decided 2026-10-27)
+**Status: built 2026-10-27** - see WORKFLOWS.md Section 11 ("Shift history") for the rules as built and where they differ from the defaults below.
+
+**Need:** the Back Office shows past shifts, with who worked them, what they
+sold, and whether the cash was short or over. Today the API can only read a
+shift whose id you already know (`GET /shifts/current`, `/shifts/:id`,
+`/shifts/:id/summary`, `/shifts/:id/reconciliations`). There is **no way to
+list shifts**. Working them out from sales would miss shifts with no sales, and
+it doesn't scale.
+
+### Defaults assumed (change before building if wrong)
+| Question | Default |
+|---|---|
+| Who can see it | A new Back Office permission **`view_shift_history`** ("shift history and cash differences"). The Owner and Service Center always can. The built-in **Manager** gets it (like every Back Office permission except `manage_staff`); Cashier and custom roles don't until the Owner grants it. |
+| Which shifts | Open and closed. An open shift shows live totals with no counted cash yet. |
+| Branch scope | Owner: every branch, or one with `branch_id`. A manager at a till: **their own branch only** (403 for another `branch_id`, like branch prices). |
+| Dates | `from` / `to` are calendar dates in the **organization's timezone** (as the reports use), matched against `opened_at`. |
+| Audit | Reading isn't audited. |
+
+### Permission
+- Add `view_shift_history` to the permission catalogue (category
+  `backoffice`, `internal/identity/identity_access.go`), with the label "Shift
+  history and cash differences".
+- A named data migration (like
+  `2026-10-24-manager-manage-branch-prices`) grants it once to every org's
+  **system Manager** role. Custom roles, Cashier and Super Staff are left as
+  the Owner set them.
+- Also add it to `legacyBackOfficePermissions`
+  (`internal/authtoken/authtoken.go`), so a manager token issued before the
+  deploy keeps working the same way.
+- Update the WORKFLOWS.md permission table and the `RequireBackOfficePermission`
+  row.
+
+### `GET /shifts`
+Guarded by `RequireBackOfficePermission(jwtSecret, "view_shift_history")`.
+It's a Back Office read, so a plain till (a cashier's staff token, or none)
+can't list its colleagues' cash differences.
+
+```
+GET /shifts?branch_id=&from=2026-10-01&to=2026-10-27&status=open|closed&staff_id=&device_id=&discrepancy=short|over|any&page=1&page_size=25
+```
+- Newest first (`opened_at` desc). Paginated with the same envelope as
+  `GET /reports/transactions`:
+  `{ "shifts": [...], "page": 1, "page_size": 25, "total_count": 132 }`.
+- `discrepancy` (closed shifts only): `short` = counted cash < expected,
+  `over` = counted > expected, `any` = either.
+
+Each row:
+```json
+{
+  "id": 412, "status": "closed",
+  "branch_id": 3, "branch_name": "Main Street",
+  "device_id": 7, "device_name": "Counter 1",
+  "staff_id": 21, "staff_name": "Ma Thida",
+  "closed_by_staff_id": 9, "closed_by_name": "Ko Zaw",
+  "force_closed": true,
+  "opened_at": "...", "closed_at": "...",
+  "opening_cash": "50000.00",
+  "sales_count": 38, "sales_total": "412500.00",
+  "payment_totals": { "cash": "301000.00", "qr": "111500.00" },
+  "expected_cash": "351000.00",
+  "counted_cash": "349500.00",
+  "cash_difference": "-1500.00",
+  "difference_reason": "Gave wrong change"
+}
+```
+- **The figures are the same as `GET /shifts/:id/summary`.** Reuse its
+  calculation (opening cash + cash sales + cash adjustments), so the list and
+  the close-shift screen can never disagree.
+- For an open shift: `counted_cash`, `cash_difference`, `difference_reason`
+  and `closed_*` are `null`, and the totals are live.
+- `force_closed` = `closed_by_staff_id` is set and differs from `staff_id`.
+- `counted_cash` / `cash_difference` / `difference_reason` come from the cash
+  reconciliation row.
+- **Compute the totals in grouped queries over the page's shift ids**: one
+  query for sales, one for payments, one for adjustments. Not one query set
+  per shift.
+
+### Filters for the detail page
+- `GET /drawer-events?shift_id=` and `GET /expenses?shift_id=`. Today both
+  return every row in the org / branch.
+- `GET /sales?shift_id=`, so Back Office can link to a shift's sales (see also
+  #13, filters on `GET /sales`).
+- The detail page otherwise uses the existing `GET /shifts/:id/summary` and
+  `/reconciliations`. When called with a staff token carrying
+  `access_backoffice`, those should also accept `view_shift_history` (today
+  they have no permission gate; the till needs them for its own close-shift
+  screen, so keep that working).
+
+### Tests to add
+- List: newest first; paging and `total_count`; each filter (branch, dates in
+  the org's timezone, status, staff, device, discrepancy).
+- Totals equal `GET /shifts/:id/summary` for the same shift (closed and open).
+- `force_closed` is true only when someone else closed it.
+- Permission: an Owner sees every branch; a manager with `view_shift_history`
+  sees only their branch, and gets 403 for another `branch_id`; a manager
+  without it gets 403; a plain till token gets 403.
+- The migration grants it to the system Manager role only, and only once.
+- `shift_id` filters on drawer events, expenses and sales.
+
+### Frontend follow-up (shagan-retail, once the API exists)
+- A **Shift History** card on "Choose a section", next to Sales History
+  (shown when the viewer has `view_shift_history`).
+- **List:**
+  - Follows the branch selector, with date range, staff, status and "only
+    differences" filters.
+  - Columns: date, staff, till, opened → closed, sales, expected, counted,
+    difference.
+  - Short in red, over in amber, plus a "Force-closed" badge.
+- **Detail:**
+  - The summary and the per-method reconciliation, with reasons.
+  - The shift's no-sale drawer opens and expenses.
+  - A link to its sales in Sales History.
+- `view_shift_history` appears in Roles & Access under Back Office, like the
+  other permissions.

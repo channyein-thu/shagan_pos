@@ -80,6 +80,13 @@ type Expense struct {
 	// CreatedByUserID is the org-wide account (identity.User, an Owner or
 	// Service Center) that logged the expense directly, with no PIN.
 	CreatedByUserID *uint `gorm:"index" json:"created_by_user_id"`
+	// ShiftID is the shift the expense was logged during: set from the logging
+	// staff member's own open shift at the moment they log it at the till
+	// (nil when the Owner logged it, when there was no open shift, and for every
+	// expense logged before this column existed). It backs `GET
+	// /expenses?shift_id=` on the Back Office shift detail page; it never
+	// changes a shift's cash figures.
+	ShiftID *uint `gorm:"index" json:"shift_id"`
 }
 
 // createdByStaff reports whether staffID is the staff member who logged

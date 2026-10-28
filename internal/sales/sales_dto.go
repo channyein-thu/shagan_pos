@@ -115,7 +115,10 @@ type SaleFilter struct {
 	BranchID *uint
 	// StaffID restricts to the sales one staff member rang up - set for a
 	// cashier whose role lacks view_all_receipts.
-	StaffID  *uint
+	StaffID *uint
+	// ShiftID restricts to the sales rung up during one shift (Back Office's
+	// link from a shift to its sales).
+	ShiftID  *uint
 	Start    *time.Time
 	End      *time.Time
 	Page     int

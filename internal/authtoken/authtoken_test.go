@@ -57,7 +57,7 @@ func TestEffectivePermissions_LegacyManagerTokenKeepsBackOfficeAndForceClose(t *
 	got := legacyClaims("access_pos_portal", "access_backoffice", "approve_void").EffectivePermissions()
 
 	for _, want := range []string{
-		"access_backoffice", "force_close_shift", "view_reports", "view_item_cost", "view_sales", "view_audit_log",
+		"access_backoffice", "force_close_shift", "view_reports", "view_item_cost", "view_sales", "view_shift_history", "view_audit_log",
 		"manage_catalog", "view_inventory", "manage_stock", "manage_suppliers", "manage_purchase_orders",
 		"receive_stock", "view_customers", "manage_customers", "view_staff", "manage_expenses",
 		"manage_receipt_settings", "resolve_sync_conflicts", "accept_payments", "approve_void",
@@ -66,6 +66,15 @@ func TestEffectivePermissions_LegacyManagerTokenKeepsBackOfficeAndForceClose(t *
 	}
 	// staff management was Owner-only before and stays so
 	assert.NotContains(t, got, "manage_staff")
+}
+
+// A manager's token issued before view_shift_history existed keeps opening what
+// the Manager can open now - the shift history included - until it expires; a
+// Super Staff or cashier token gains nothing.
+func TestEffectivePermissions_LegacyTokens_ViewShiftHistoryOnlyWithBackOffice(t *testing.T) {
+	assert.Contains(t, legacyClaims("access_pos_portal", "access_backoffice").EffectivePermissions(), "view_shift_history")
+	assert.NotContains(t, legacyClaims("access_pos_portal").EffectivePermissions(), "view_shift_history")
+	assert.NotContains(t, legacyClaims("access_pos_portal", "open_drawer_no_sale").EffectivePermissions(), "view_shift_history")
 }
 
 // Super Staff had no back office: its legacy token must not gain any.

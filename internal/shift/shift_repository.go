@@ -34,8 +34,13 @@ type Repository interface {
 	GetShiftSummary(ctx context.Context, scope AccessScope, id uint) (map[string]any, error)
 	ListShiftReconciliations(ctx context.Context, scope AccessScope, id uint) ([]ShiftReconciliation, error)
 	CreateDrawerEvent(ctx context.Context, scope AccessScope, in CreateDrawerEventRequest) (*DrawerEvent, error)
-	ListDrawerEvents(ctx context.Context, scope AccessScope) ([]DrawerEvent, error)
-	ListExpenses(ctx context.Context, scope AccessScope) ([]Expense, error)
+	// ListShifts backs `GET /shifts` (see the implementation). The service has
+	// already validated f and turned its dates into instants.
+	ListShifts(ctx context.Context, scope AccessScope, f ShiftFilter) ([]ShiftRow, int64, error)
+	// ListDrawerEvents / ListExpenses take an optional shiftID: only that
+	// shift's rows (the Back Office shift detail page).
+	ListDrawerEvents(ctx context.Context, scope AccessScope, shiftID *uint) ([]DrawerEvent, error)
+	ListExpenses(ctx context.Context, scope AccessScope, shiftID *uint) ([]Expense, error)
 	CreateExpense(ctx context.Context, scope AccessScope, in CreateExpenseRequest) (*Expense, error)
 	// UpdateExpense and DeleteExpense return common.ForbiddenError if actor
 	// isn't the expense's own CreatedBy and doesn't have CanManageAny (a

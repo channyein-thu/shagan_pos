@@ -73,7 +73,7 @@ func TestService_ListSales_DefaultsPaginationAndLeavesFiltersOpen(t *testing.T) 
 	repo.EXPECT().ListSales(mock.Anything, uint(7), SaleFilter{Page: 1, PageSize: 20}).Return([]Sale{}, int64(0), nil).Once()
 	repo.EXPECT().ListPaymentMethods(mock.Anything, mock.Anything).Return(map[uuid.UUID][]PaymentMethod{}, nil).Once()
 
-	got, err := svc.ListSales(context.Background(), 7, nil, nil, nil, nil, 0, 0)
+	got, err := svc.ListSales(context.Background(), 7, nil, nil, nil, nil, nil, 0, 0)
 	require.NoError(t, err)
 	require.Equal(t, 1, got.Page)
 	require.Equal(t, 20, got.PageSize)
@@ -87,7 +87,7 @@ func TestService_ListSales_ClampsPageSizeToMax(t *testing.T) {
 	repo.EXPECT().ListSales(mock.Anything, uint(7), SaleFilter{Page: 3, PageSize: 100}).Return([]Sale{}, int64(250), nil).Once()
 	repo.EXPECT().ListPaymentMethods(mock.Anything, mock.Anything).Return(map[uuid.UUID][]PaymentMethod{}, nil).Once()
 
-	got, err := svc.ListSales(context.Background(), 7, nil, nil, nil, nil, 3, 5000)
+	got, err := svc.ListSales(context.Background(), 7, nil, nil, nil, nil, nil, 3, 5000)
 	require.NoError(t, err)
 	require.Equal(t, 100, got.PageSize)
 	require.Equal(t, int64(250), got.TotalCount)
@@ -112,7 +112,7 @@ func TestService_ListSales_DatesAreOrgLocalDaysAndBranchPassesThrough(t *testing
 	})).Return([]Sale{}, int64(0), nil).Once()
 	repo.EXPECT().ListPaymentMethods(mock.Anything, mock.Anything).Return(map[uuid.UUID][]PaymentMethod{}, nil).Once()
 
-	_, err := svc.ListSales(context.Background(), 7, &branch, nil, &from, &to, 1, 20)
+	_, err := svc.ListSales(context.Background(), 7, &branch, nil, nil, &from, &to, 1, 20)
 	require.NoError(t, err)
 }
 
@@ -127,7 +127,7 @@ func TestService_ListSales_DifferentOrgZoneMovesTheWindow(t *testing.T) {
 	})).Return([]Sale{}, int64(0), nil).Once()
 	repo.EXPECT().ListPaymentMethods(mock.Anything, mock.Anything).Return(map[uuid.UUID][]PaymentMethod{}, nil).Once()
 
-	_, err := svc.ListSales(context.Background(), 7, nil, nil, &from, nil, 1, 20)
+	_, err := svc.ListSales(context.Background(), 7, nil, nil, nil, &from, nil, 1, 20)
 	require.NoError(t, err)
 }
 
@@ -137,7 +137,7 @@ func TestService_ListSales_NoDateBounds_DoesNotLookUpTheOrg(t *testing.T) {
 	repo.EXPECT().ListSales(mock.Anything, uint(7), SaleFilter{Page: 1, PageSize: 20}).Return([]Sale{}, int64(0), nil).Once()
 	repo.EXPECT().ListPaymentMethods(mock.Anything, mock.Anything).Return(map[uuid.UUID][]PaymentMethod{}, nil).Once()
 
-	_, err := svc.ListSales(context.Background(), 7, nil, nil, nil, nil, 1, 20)
+	_, err := svc.ListSales(context.Background(), 7, nil, nil, nil, nil, nil, 1, 20)
 	require.NoError(t, err)
 }
 
@@ -147,7 +147,7 @@ func TestService_ListSales_OrgLookupFails_PropagatesBeforeQuerying(t *testing.T)
 	from := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
 	orgs.EXPECT().GetOrganization(mock.Anything, uint(7)).Return(nil, boom).Once()
 
-	_, err := svc.ListSales(context.Background(), 7, nil, nil, &from, nil, 1, 20)
+	_, err := svc.ListSales(context.Background(), 7, nil, nil, nil, &from, nil, 1, 20)
 	require.ErrorIs(t, err, boom)
 }
 
@@ -166,7 +166,7 @@ func TestService_ListSales_AttachesPaymentMethodsPerRow(t *testing.T) {
 	svc.returns.(*MockReturnActivityReader).EXPECT().ReturnSummaries(mock.Anything, []uuid.UUID{cashOnly, split, none}).
 		Return(map[uuid.UUID]ReturnSummary{}, nil).Once()
 
-	got, err := svc.ListSales(context.Background(), 7, nil, nil, nil, nil, 1, 20)
+	got, err := svc.ListSales(context.Background(), 7, nil, nil, nil, nil, nil, 1, 20)
 	require.NoError(t, err)
 	require.Len(t, got.Sales, 3)
 	require.Equal(t, []PaymentMethod{PaymentMethodCash}, got.Sales[0].PaymentMethods)
@@ -181,14 +181,14 @@ func TestService_ListSales_RepositoryErrorsPropagate(t *testing.T) {
 	t.Run("list", func(t *testing.T) {
 		svc, repo := newListSalesService(t)
 		repo.EXPECT().ListSales(mock.Anything, uint(7), mock.Anything).Return(nil, int64(0), boom).Once()
-		_, err := svc.ListSales(context.Background(), 7, nil, nil, nil, nil, 1, 20)
+		_, err := svc.ListSales(context.Background(), 7, nil, nil, nil, nil, nil, 1, 20)
 		require.ErrorIs(t, err, boom)
 	})
 	t.Run("payment methods", func(t *testing.T) {
 		svc, repo := newListSalesService(t)
 		repo.EXPECT().ListSales(mock.Anything, uint(7), mock.Anything).Return([]Sale{{ID: uuid.New()}}, int64(1), nil).Once()
 		repo.EXPECT().ListPaymentMethods(mock.Anything, mock.Anything).Return(nil, boom).Once()
-		_, err := svc.ListSales(context.Background(), 7, nil, nil, nil, nil, 1, 20)
+		_, err := svc.ListSales(context.Background(), 7, nil, nil, nil, nil, nil, 1, 20)
 		require.ErrorIs(t, err, boom)
 	})
 }
@@ -510,7 +510,7 @@ func TestService_ListSales_RowsCarryReturnSummary_AndUntouchedSalesDefaultToNone
 		ReturnSummaries(mock.Anything, []uuid.UUID{returned, plain}).
 		Return(map[uuid.UUID]ReturnSummary{returned: {HasReturn: true, RefundedTotal: d("12.50")}}, nil).Once()
 
-	got, err := svc.ListSales(context.Background(), 7, nil, nil, nil, nil, 1, 20)
+	got, err := svc.ListSales(context.Background(), 7, nil, nil, nil, nil, nil, 1, 20)
 
 	require.NoError(t, err)
 	require.Len(t, got.Sales, 2)
@@ -530,7 +530,7 @@ func TestService_ListSales_ReturnSummaryFails_PropagatesAsIs(t *testing.T) {
 	repo.EXPECT().ListPaymentMethods(mock.Anything, mock.Anything).Return(map[uuid.UUID][]PaymentMethod{}, nil).Once()
 	svc.returns.(*MockReturnActivityReader).EXPECT().ReturnSummaries(mock.Anything, mock.Anything).Return(nil, boom).Once()
 
-	_, err := svc.ListSales(context.Background(), 7, nil, nil, nil, nil, 1, 20)
+	_, err := svc.ListSales(context.Background(), 7, nil, nil, nil, nil, nil, 1, 20)
 
 	require.ErrorIs(t, err, boom)
 }
@@ -543,7 +543,7 @@ func TestService_ListSales_StaffFilterIsPassedToTheRepository(t *testing.T) {
 	repo.EXPECT().ListSales(mock.Anything, uint(7), SaleFilter{StaffID: &staff, Page: 1, PageSize: 20}).Return([]Sale{}, int64(0), nil).Once()
 	repo.EXPECT().ListPaymentMethods(mock.Anything, mock.Anything).Return(map[uuid.UUID][]PaymentMethod{}, nil).Once()
 
-	_, err := svc.ListSales(context.Background(), 7, nil, &staff, nil, nil, 1, 20)
+	_, err := svc.ListSales(context.Background(), 7, nil, &staff, nil, nil, nil, 1, 20)
 
 	require.NoError(t, err)
 }
@@ -743,4 +743,15 @@ func TestService_GetSaleReceipt_SaleFromBeforeInclusiveTax_IsNotMarkedInclusive(
 	require.NoError(t, err)
 	require.Equal(t, false, got["tax_inclusive"])
 	require.True(t, d("840").Equal(got["sale"].(ReceiptSale).Total), "stored totals are never recomputed")
+}
+
+func TestService_ListSales_PassesTheShiftFilterToTheRepository(t *testing.T) {
+	svc, repo, _ := newListSalesServiceWithOrgs(t)
+	shift := uint(412)
+	repo.EXPECT().ListSales(mock.Anything, uint(7), SaleFilter{ShiftID: &shift, Page: 1, PageSize: 20}).Return([]Sale{}, int64(0), nil).Once()
+	repo.EXPECT().ListPaymentMethods(mock.Anything, mock.Anything).Return(map[uuid.UUID][]PaymentMethod{}, nil).Once()
+
+	_, err := svc.ListSales(context.Background(), 7, nil, nil, &shift, nil, nil, 1, 20)
+
+	require.NoError(t, err)
 }

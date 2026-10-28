@@ -110,7 +110,7 @@ var (
 	// including the force-close override it used to gate. manage_staff is
 	// absent on purpose: staff management was Owner-only.
 	legacyBackOfficePermissions = []string{
-		"force_close_shift", "view_reports", "view_item_cost", "view_sales", "view_audit_log",
+		"force_close_shift", "view_reports", "view_item_cost", "view_sales", "view_shift_history", "view_audit_log",
 		"manage_catalog", "view_inventory", "manage_stock", "manage_suppliers", "manage_purchase_orders",
 		"receive_stock", "view_customers", "manage_customers", "view_staff", "manage_expenses",
 		"manage_receipt_settings", "resolve_sync_conflicts",

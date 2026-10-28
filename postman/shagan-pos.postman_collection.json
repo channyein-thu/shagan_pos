@@ -3243,6 +3243,94 @@
       "name": "Shift & Cash",
       "item": [
         {
+          "name": "ListShifts - GET /shifts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "X-Staff-Token",
+                "value": "{{staffToken}}",
+                "type": "text",
+                "description": "Only for a till (POS token): a manager's staff token carrying access_backoffice + view_shift_history. Not needed with an owner / service_center token."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/shifts?page=1&page_size=25",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "shifts"
+              ],
+              "query": [
+                {
+                  "key": "branch_id",
+                  "value": "1",
+                  "description": "Owner / Service Center: one branch. A till's manager may only name their own (403 otherwise).",
+                  "disabled": true
+                },
+                {
+                  "key": "from",
+                  "value": "2026-10-01",
+                  "description": "First day (YYYY-MM-DD, org timezone), on opened_at.",
+                  "disabled": true
+                },
+                {
+                  "key": "to",
+                  "value": "2026-10-27",
+                  "description": "Last day, inclusive.",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "closed",
+                  "description": "open | closed",
+                  "disabled": true
+                },
+                {
+                  "key": "staff_id",
+                  "value": "21",
+                  "description": "The staff member who worked (opened) the shift.",
+                  "disabled": true
+                },
+                {
+                  "key": "device_id",
+                  "value": "7",
+                  "description": "The till.",
+                  "disabled": true
+                },
+                {
+                  "key": "discrepancy",
+                  "value": "short",
+                  "description": "short (counted < expected) | over | any (either). Closed shifts only.",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Default 1.",
+                  "disabled": false
+                },
+                {
+                  "key": "page_size",
+                  "value": "25",
+                  "description": "Default 25, max 100.",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "Shift history for Back Office: a page of shifts, newest first (opened_at), each with who worked it, what it sold and whether the cash was short or over. Response: {shifts, page, page_size, total_count}. Each row: id, status (open|closed), branch_id, branch_name, device_id, device_name, staff_id, staff_name, closed_by_staff_id, closed_by_name, force_closed (someone other than the shift's own staff closed it), opened_at, closed_at, opening_cash, sales_count, sales_total, payment_totals (only the methods that took a payment), expected_cash, counted_cash, cash_difference (counted - expected: negative = short), difference_reason. The figures are the same calculation as GET /shifts/:id/summary. An OPEN shift has live totals and null closed_at / closed_by_* / counted_cash / cash_difference / difference_reason. Needs Back Office with view_shift_history: an Owner / Service Center, or a POS token + X-Staff-Token carrying access_backoffice AND view_shift_history (the default Manager role has it). 403 for a cashier or a role without it; 401 for a till with no staff token. A manager at a till sees ONLY their own branch: their own branch_id is fine, another branch_id is 403. from / to are calendar dates (YYYY-MM-DD, inclusive) of the ORGANIZATION's timezone, matched on opened_at. 400 for a bad status, discrepancy, id or date."
+          },
+          "response": []
+        },
+        {
           "name": "OpenShift - POST /shifts",
           "request": {
             "method": "POST",
@@ -3439,7 +3527,7 @@
                 }
               ]
             },
-            "description": "Printable summary. expected_cash = opening cash + cash sales - cash_refunds + exchange_cash_in - exchange_cash_out (the three adjustments are returned alongside it as decimal strings; they come from this shift's Returns/Exchanges)."
+            "description": "Printable summary. expected_cash = opening cash + cash sales - cash_refunds + exchange_cash_in - exchange_cash_out (the three adjustments are returned alongside it as decimal strings; they come from this shift's Returns/Exchanges). The same figures as each GET /shifts row (sales_count, sales_total, payment_totals, expected_cash). Open to the till for its own close-shift screen; a caller using Back Office (a staff token with access_backoffice) needs view_shift_history (403 otherwise)."
           },
           "response": []
         },
@@ -3465,7 +3553,7 @@
                 }
               ]
             },
-            "description": "Per-method breakdown"
+            "description": "Per-method breakdown Open to the till for its own close-shift screen; a caller using Back Office (a staff token with access_backoffice) needs view_shift_history (403 otherwise)."
           },
           "response": []
         },
@@ -3528,9 +3616,10 @@
             "url": {
               "raw": "{{baseUrl}}/api/v1/drawer-events",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "drawer-events"]
+              "path": ["api", "v1", "drawer-events"],
+              "query": [{"key": "shift_id", "value": "1", "description": "Optional - only this shift's rows (Back Office shift detail page).", "disabled": true}]
             },
-            "description": "ListDrawerEvents"
+            "description": "ListDrawerEvents Optional ?shift_id= - only that shift's drawer events (the Back Office shift detail page). 400 for a bad id."
           },
           "response": []
         },
@@ -3548,9 +3637,10 @@
             "url": {
               "raw": "{{baseUrl}}/api/v1/expenses",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "expenses"]
+              "path": ["api", "v1", "expenses"],
+              "query": [{"key": "shift_id", "value": "1", "description": "Optional - only this shift's rows (Back Office shift detail page).", "disabled": true}]
             },
-            "description": "ListExpenses"
+            "description": "ListExpenses Optional ?shift_id= - only the expenses logged during that shift. An expense carries shift_id: the logging staff member's own open shift at the till (null for an Owner-logged expense, one logged with no open shift, and older expenses)."
           },
           "response": []
         },
@@ -4717,8 +4807,9 @@
               "raw": "{{baseUrl}}/api/v1/sales?branch_id=1&from=2026-10-01&to=2026-10-08&page=1&page_size=20",
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "sales"],
-              "query": [
-                {"key": "branch_id", "value": "1", "description": "Optional - owner/service_center only (a pos-device token's own branch always wins instead)."},
+              "query": [{"key": "shift_id", "value": "1", "description": "Optional - only this shift's rows (Back Office shift detail page).", "disabled": true},
+
+                {"key": "branch_id", "value": "1", "description": "Optional - owner/service_center only (a pos-device token's own branch always wins instead). Optional ?shift_id= - only that shift's sales (Back Office's link from a shift to its sales)."},
                 {"key": "from", "value": "2026-10-01", "description": "Optional, YYYY-MM-DD, inclusive - a day of the ORG's timezone (default Asia/Yangon), not UTC. Unlike the reports there is NO default window - omit both for the whole history, paged."},
                 {"key": "to", "value": "2026-10-08", "description": "Optional, YYYY-MM-DD, inclusive (that whole day of the org's timezone counts)."},
                 {"key": "page", "value": "1", "description": "Optional, defaults to 1."},

@@ -104,6 +104,7 @@ Full text in [backend-recommendations.md](backend-recommendations.md).
 | 22 | No database foreign keys | Open - design decision to revisit |
 | 23 | Branch-specific product prices | **Built 2026-10-23** (branch price overrides; API in WORKFLOWS §8) - Back Office screens follow |
 | 24 | Subscription tiers (Basic / Pro / Enterprise) | **Built 2026-10-27** (limits + trial + /internal; WORKFLOWS §2 "Subscription tiers") - no feature is gated yet; shagan_team / retail screens follow |
+| 25 | Shift history (list shifts + `view_shift_history`) | **Built 2026-10-27** (`GET /shifts`, `shift_id` filters; WORKFLOWS §11 "Shift history") - Back Office screens follow |
 
 ## Risks
 

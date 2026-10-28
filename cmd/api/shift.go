@@ -8,6 +8,7 @@ import (
 	"gorm.io/gorm"
 
 	"shagan_pos/internal/common"
+	"shagan_pos/internal/identity"
 	"shagan_pos/internal/middleware"
 	"shagan_pos/internal/shift"
 )
@@ -18,7 +19,7 @@ type ShiftAPI struct {
 }
 
 func NewShiftAPI(db *gorm.DB, jwtSecret []byte) *ShiftAPI {
-	return &ShiftAPI{service: shift.NewService(shift.NewRepository(db)), jwtSecret: jwtSecret}
+	return &ShiftAPI{service: shift.NewService(shift.NewRepository(db), identity.NewRepository(db)), jwtSecret: jwtSecret}
 }
 
 func (a *ShiftAPI) RegisterRoutes(rg *gin.RouterGroup) {
@@ -32,13 +33,24 @@ func (a *ShiftAPI) RegisterRoutes(rg *gin.RouterGroup) {
 	requireStaff := middleware.RequireStaffToken(a.jwtSecret)
 	manageOwnShift := middleware.RequireStaffPermission(a.jwtSecret, "manage_own_shift")
 	forceClose := middleware.RequireStaffPermission(a.jwtSecret, "force_close_shift")
+	// The shift HISTORY is a Back Office read: view_shift_history with Back
+	// Office open (an Owner / Service Center always pass), so a plain till can't
+	// list its colleagues' cash differences. A manager at a till is limited to
+	// their own branch (the service answers 403 for another branch_id).
+	viewShiftHistory := middleware.RequireBackOfficePermission(a.jwtSecret, identity.PermViewShiftHistory)
+	// The till reads one shift's summary / reconciliations for its own
+	// close-shift screen, so those stay open to a plain till; only a caller
+	// using Back Office (a staff token with access_backoffice) needs
+	// view_shift_history for them.
+	viewShiftDetail := middleware.RequireViewPermission(a.jwtSecret, identity.PermViewShiftHistory)
+	rg.GET("/shifts", viewShiftHistory, a.ListShifts)
 	rg.POST("/shifts", manageOwnShift, a.OpenShift)
 	rg.GET("/shifts/current", a.GetCurrentShift)
 	rg.GET("/shifts/:id", a.GetShift)
 	rg.POST("/shifts/:id/close", manageOwnShift, a.CloseShift)
 	rg.POST("/shifts/:id/force-close", forceClose, a.ForceCloseShift)
-	rg.GET("/shifts/:id/summary", a.GetShiftSummary)
-	rg.GET("/shifts/:id/reconciliations", a.ListShiftReconciliations)
+	rg.GET("/shifts/:id/summary", viewShiftDetail, a.GetShiftSummary)
+	rg.GET("/shifts/:id/reconciliations", viewShiftDetail, a.ListShiftReconciliations)
 	rg.POST("/drawer-events", requireStaff, a.CreateDrawerEvent)
 	rg.GET("/drawer-events", a.ListDrawerEvents)
 	rg.GET("/expenses", a.ListExpenses)
@@ -302,13 +314,51 @@ func (a *ShiftAPI) CreateDrawerEvent(c *gin.Context) {
 	c.JSON(http.StatusCreated, result)
 }
 
-// ListDrawerEvents handles `GET /drawer-events`.
-func (a *ShiftAPI) ListDrawerEvents(c *gin.Context) {
+// optionalUintQuery reads an optional positive-integer query param: nil when it
+// is absent, a 400 when it is present but not a positive integer.
+func optionalUintQuery(c *gin.Context, name string) (*uint, bool) {
+	v := c.Query(name)
+	if v == "" {
+		return nil, true
+	}
+	n, err := strconv.ParseUint(v, 10, 64)
+	if err != nil || n == 0 {
+		common.HandleError(c, common.BadRequestError("invalid "+name))
+		return nil, false
+	}
+	id := uint(n)
+	return &id, true
+}
+
+// ListShifts handles `GET /shifts` - the Back Office shift history: a page of
+// shifts, newest first, with who worked each, what it sold and whether the cash
+// was short or over. Query: branch_id, from / to (YYYY-MM-DD, days of the
+// organization's timezone, matched on opened_at), status (open|closed),
+// staff_id, device_id, discrepancy (short|over|any), page, page_size. An Owner /
+// Service Center sees every branch (or one with branch_id); a manager at a till
+// only their own - another branch_id is a 403.
+func (a *ShiftAPI) ListShifts(c *gin.Context) {
 	scope, ok := shiftAccessScope(c)
 	if !ok {
 		return
 	}
-	result, err := a.service.ListDrawerEvents(c.Request.Context(), scope)
+	var q shift.ShiftListQuery
+	if q.BranchID, ok = optionalUintQuery(c, "branch_id"); !ok {
+		return
+	}
+	if q.StaffID, ok = optionalUintQuery(c, "staff_id"); !ok {
+		return
+	}
+	if q.DeviceID, ok = optionalUintQuery(c, "device_id"); !ok {
+		return
+	}
+	if q.From, q.To, ok = reportDateRange(c); !ok {
+		return
+	}
+	q.Status, q.Discrepancy = c.Query("status"), c.Query("discrepancy")
+	q.Page, _ = strconv.Atoi(c.Query("page"))
+	q.PageSize, _ = strconv.Atoi(c.Query("page_size"))
+	result, err := a.service.ListShifts(c.Request.Context(), scope, q)
 	if err != nil {
 		common.HandleError(c, err)
 		return
@@ -316,13 +366,37 @@ func (a *ShiftAPI) ListDrawerEvents(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// ListExpenses handles `GET /expenses`.
+// ListDrawerEvents handles `GET /drawer-events`. Optional ?shift_id= - only
+// that shift's drawer events (the shift detail page).
+func (a *ShiftAPI) ListDrawerEvents(c *gin.Context) {
+	scope, ok := shiftAccessScope(c)
+	if !ok {
+		return
+	}
+	shiftID, ok := optionalUintQuery(c, "shift_id")
+	if !ok {
+		return
+	}
+	result, err := a.service.ListDrawerEvents(c.Request.Context(), scope, shiftID)
+	if err != nil {
+		common.HandleError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// ListExpenses handles `GET /expenses`. Optional ?shift_id= - only the expenses
+// logged during that shift.
 func (a *ShiftAPI) ListExpenses(c *gin.Context) {
 	scope, ok := shiftAccessScope(c)
 	if !ok {
 		return
 	}
-	result, err := a.service.ListExpenses(c.Request.Context(), scope)
+	shiftID, ok := optionalUintQuery(c, "shift_id")
+	if !ok {
+		return
+	}
+	result, err := a.service.ListExpenses(c.Request.Context(), scope, shiftID)
 	if err != nil {
 		common.HandleError(c, err)
 		return

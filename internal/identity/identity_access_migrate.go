@@ -142,7 +142,26 @@ func MigrateAccessRights(db *gorm.DB) error {
 	if err := common.RunOnce(db, migrationCashierMayAskForDiscounts, grantCashierApplyManualDiscount); err != nil {
 		return err
 	}
-	return common.RunOnce(db, migrationManagerSetsBranchPrices, grantManagerManageBranchPrices)
+	if err := common.RunOnce(db, migrationManagerSetsBranchPrices, grantManagerManageBranchPrices); err != nil {
+		return err
+	}
+	return common.RunOnce(db, migrationManagerViewsShiftHistory, grantManagerViewShiftHistory)
+}
+
+const migrationManagerViewsShiftHistory = "2026-10-27-manager-view-shift-history"
+
+// grantManagerViewShiftHistory gives every org's built-in Manager role
+// view_shift_history ("shift history and cash differences", GET /shifts), once -
+// the default Manager now holds it. Only the system Manager role is touched:
+// Cashier, Super Staff and any custom role stay exactly as the Owner set them,
+// and a Manager that already has it is skipped. Run once (not on every start)
+// so an Owner who later switches it off isn't overridden.
+func grantManagerViewShiftHistory(tx *gorm.DB) error {
+	return tx.Exec(`INSERT INTO org_role_permission (org_id, role_id, permission_id)
+		SELECT r.org_id, r.id, p.id FROM roles r, permissions p
+		WHERE r.org_id IS NOT NULL AND r.code = ? AND r.is_system = ? AND p.code = ?
+		AND NOT EXISTS (SELECT 1 FROM org_role_permission x WHERE x.role_id = r.id AND x.permission_id = p.id)`,
+		RoleCodeManager, true, PermViewShiftHistory).Error
 }
 
 const migrationManagerSetsBranchPrices = "2026-10-24-manager-manage-branch-prices"

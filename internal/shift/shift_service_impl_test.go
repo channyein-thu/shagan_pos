@@ -97,7 +97,7 @@ func TestService_OpenShift_NormalizesServerOwnedStateBeforePersisting(t *testing
 	closedAt := fixedNow.Add(-time.Hour)
 	want := &Shift{ID: 42, Status: ShiftStatusOpen}
 	repo := &openShiftRepositoryStub{result: want}
-	svc := NewService(repo)
+	svc := NewService(repo, nil)
 	svc.now = func() time.Time { return fixedNow }
 
 	got, err := svc.OpenShift(context.Background(), OpenShiftRequest{
@@ -141,7 +141,7 @@ func TestService_OpenShift_RejectsInvalidInputWithoutPersisting(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := &openShiftRepositoryStub{}
-			svc := NewService(repo)
+			svc := NewService(repo, nil)
 
 			got, err := svc.OpenShift(context.Background(), tt.in)
 
@@ -155,7 +155,7 @@ func TestService_OpenShift_RejectsInvalidInputWithoutPersisting(t *testing.T) {
 func TestService_OpenShift_PropagatesRepositoryError(t *testing.T) {
 	wantErr := common.ConflictError("staff or device already has an open shift")
 	repo := &openShiftRepositoryStub{err: wantErr}
-	svc := NewService(repo)
+	svc := NewService(repo, nil)
 
 	got, err := svc.OpenShift(context.Background(), validOpenShiftRequest(nil))
 
@@ -168,7 +168,7 @@ func TestService_OpenShift_PropagatesRepositoryError(t *testing.T) {
 func TestService_GetCurrentShift_UsesAuthenticatedScope(t *testing.T) {
 	want := &Shift{ID: 42, BranchID: 7, DeviceID: 9, Status: ShiftStatusOpen}
 	repo := &openShiftRepositoryStub{getCurrentResult: want}
-	svc := NewService(repo)
+	svc := NewService(repo, nil)
 
 	got, err := svc.GetCurrentShift(context.Background(), 3, 11)
 
@@ -182,7 +182,7 @@ func TestService_GetCurrentShift_UsesAuthenticatedScope(t *testing.T) {
 func TestService_GetCurrentShift_PropagatesRepositoryError(t *testing.T) {
 	wantErr := common.NotFoundError("no open shift for current device")
 	repo := &openShiftRepositoryStub{getCurrentError: wantErr}
-	svc := NewService(repo)
+	svc := NewService(repo, nil)
 
 	got, err := svc.GetCurrentShift(context.Background(), 3, 11)
 
@@ -195,7 +195,7 @@ func TestService_GetCurrentShift_PropagatesRepositoryError(t *testing.T) {
 func TestService_GetShift_UsesAuthenticatedOrganization(t *testing.T) {
 	want := &Shift{ID: 42, BranchID: 7, Status: ShiftStatusClosed}
 	repo := &openShiftRepositoryStub{getShiftResult: want}
-	svc := NewService(repo)
+	svc := NewService(repo, nil)
 
 	scope := AccessScope{OrgID: 3}
 	got, err := svc.GetShift(context.Background(), scope, 42)
@@ -210,7 +210,7 @@ func TestService_GetShift_UsesAuthenticatedOrganization(t *testing.T) {
 func TestService_GetShift_PropagatesRepositoryError(t *testing.T) {
 	wantErr := common.NotFoundError("shift not found")
 	repo := &openShiftRepositoryStub{getShiftError: wantErr}
-	svc := NewService(repo)
+	svc := NewService(repo, nil)
 
 	got, err := svc.GetShift(context.Background(), AccessScope{OrgID: 3}, 999)
 
@@ -224,7 +224,7 @@ func TestService_CloseShift_UsesAuthenticatedOrganizationAndServerTime(t *testin
 	fixedNow := time.Date(2026, time.September, 15, 21, 45, 0, 0, time.FixedZone("ICT", 7*60*60))
 	want := &Shift{ID: 42, Status: ShiftStatusClosed}
 	repo := &openShiftRepositoryStub{closeShiftResult: want}
-	svc := NewService(repo)
+	svc := NewService(repo, nil)
 	svc.now = func() time.Time { return fixedNow }
 
 	scope := AccessScope{OrgID: 3}
@@ -257,7 +257,7 @@ func TestService_CloseShift_RejectsInvalidClosingCashWithoutPersisting(t *testin
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := &openShiftRepositoryStub{}
-			svc := NewService(repo)
+			svc := NewService(repo, nil)
 
 			got, err := svc.CloseShift(context.Background(), AccessScope{OrgID: 3}, 42, 9, tt.in)
 
@@ -271,7 +271,7 @@ func TestService_CloseShift_RejectsInvalidClosingCashWithoutPersisting(t *testin
 func TestService_CloseShift_PropagatesRepositoryError(t *testing.T) {
 	wantErr := common.ConflictError("shift is already closed")
 	repo := &openShiftRepositoryStub{closeShiftError: wantErr}
-	svc := NewService(repo)
+	svc := NewService(repo, nil)
 
 	got, err := svc.CloseShift(context.Background(), AccessScope{OrgID: 3}, 42, 9, CloseShiftRequest{ClosingCash: decimal.NewFromInt(100)})
 
@@ -284,7 +284,7 @@ func TestService_CloseShift_PropagatesRepositoryError(t *testing.T) {
 func TestService_ForceCloseShift_DelegatesWithTrimmedReason(t *testing.T) {
 	want := &Shift{ID: 42, Status: ShiftStatusClosed}
 	repo := &openShiftRepositoryStub{forceCloseShiftResult: want}
-	svc := NewService(repo)
+	svc := NewService(repo, nil)
 	fixedNow := time.Date(2026, time.September, 15, 21, 45, 0, 0, time.UTC)
 	svc.now = func() time.Time { return fixedNow }
 
@@ -306,7 +306,7 @@ func TestService_ForceCloseShift_DelegatesWithTrimmedReason(t *testing.T) {
 
 func TestService_ForceCloseShift_RequiresReasonEvenWhenCashMatches(t *testing.T) {
 	repo := &openShiftRepositoryStub{}
-	svc := NewService(repo)
+	svc := NewService(repo, nil)
 
 	got, err := svc.ForceCloseShift(context.Background(), AccessScope{OrgID: 3}, 42, 20, CloseShiftRequest{
 		ClosingCash: decimal.NewFromInt(100),
@@ -319,7 +319,7 @@ func TestService_ForceCloseShift_RequiresReasonEvenWhenCashMatches(t *testing.T)
 
 func TestService_ForceCloseShift_RejectsInvalidClosingCashWithoutPersisting(t *testing.T) {
 	repo := &openShiftRepositoryStub{}
-	svc := NewService(repo)
+	svc := NewService(repo, nil)
 
 	got, err := svc.ForceCloseShift(context.Background(), AccessScope{OrgID: 3}, 42, 20, CloseShiftRequest{
 		ClosingCash: decimal.RequireFromString("-0.01"),
@@ -334,7 +334,7 @@ func TestService_ForceCloseShift_RejectsInvalidClosingCashWithoutPersisting(t *t
 func TestService_ForceCloseShift_PropagatesRepositoryError(t *testing.T) {
 	wantErr := common.NotFoundError("shift not found")
 	repo := &openShiftRepositoryStub{forceCloseShiftError: wantErr}
-	svc := NewService(repo)
+	svc := NewService(repo, nil)
 
 	got, err := svc.ForceCloseShift(context.Background(), AccessScope{OrgID: 3}, 42, 20, CloseShiftRequest{
 		ClosingCash: decimal.NewFromInt(100),
@@ -400,12 +400,12 @@ func (r *remainingRepositoryStub) CreateDrawerEvent(_ context.Context, scope Acc
 	return r.drawerEvent, r.err
 }
 
-func (r *remainingRepositoryStub) ListDrawerEvents(_ context.Context, scope AccessScope) ([]DrawerEvent, error) {
+func (r *remainingRepositoryStub) ListDrawerEvents(_ context.Context, scope AccessScope, _ *uint) ([]DrawerEvent, error) {
 	r.method, r.scope = "ListDrawerEvents", scope
 	return r.drawerEvents, r.err
 }
 
-func (r *remainingRepositoryStub) ListExpenses(_ context.Context, scope AccessScope) ([]Expense, error) {
+func (r *remainingRepositoryStub) ListExpenses(_ context.Context, scope AccessScope, _ *uint) ([]Expense, error) {
 	r.method, r.scope = "ListExpenses", scope
 	return r.expenses, r.err
 }
@@ -432,7 +432,7 @@ func TestService_ShiftReadMethodsForwardAuthenticatedScope(t *testing.T) {
 	t.Run("summary", func(t *testing.T) {
 		want := map[string]any{"sales_count": int64(2)}
 		repo := &remainingRepositoryStub{shiftSummary: want}
-		got, err := NewService(repo).GetShiftSummary(context.Background(), scope, 42)
+		got, err := NewService(repo, nil).GetShiftSummary(context.Background(), scope, 42)
 		require.NoError(t, err)
 		require.Equal(t, want, got)
 		require.Equal(t, "GetShiftSummary", repo.method)
@@ -443,7 +443,7 @@ func TestService_ShiftReadMethodsForwardAuthenticatedScope(t *testing.T) {
 	t.Run("reconciliations", func(t *testing.T) {
 		want := []ShiftReconciliation{{ID: 1, ShiftID: 42}}
 		repo := &remainingRepositoryStub{reconciliations: want}
-		got, err := NewService(repo).ListShiftReconciliations(context.Background(), scope, 42)
+		got, err := NewService(repo, nil).ListShiftReconciliations(context.Background(), scope, 42)
 		require.NoError(t, err)
 		require.Equal(t, want, got)
 		require.Equal(t, "ListShiftReconciliations", repo.method)
@@ -456,7 +456,7 @@ func TestService_CreateDrawerEvent_TrimsReasonAndPersists(t *testing.T) {
 	want := &DrawerEvent{ID: 1, ShiftID: 2, StaffID: 3, Reason: "cash count"}
 	repo := &remainingRepositoryStub{drawerEvent: want}
 
-	got, err := NewService(repo).CreateDrawerEvent(context.Background(), scope, true, CreateDrawerEventRequest{
+	got, err := NewService(repo, nil).CreateDrawerEvent(context.Background(), scope, true, CreateDrawerEventRequest{
 		ShiftID: 2, StaffID: 3, Reason: "  cash count  ",
 	})
 
@@ -476,7 +476,7 @@ func TestService_CreateDrawerEvent_RejectsInvalidInput(t *testing.T) {
 	}
 	for _, in := range tests {
 		repo := &remainingRepositoryStub{}
-		got, err := NewService(repo).CreateDrawerEvent(context.Background(), AccessScope{OrgID: 7}, true, in)
+		got, err := NewService(repo, nil).CreateDrawerEvent(context.Background(), AccessScope{OrgID: 7}, true, in)
 		require.Nil(t, got)
 		require.Empty(t, repo.method)
 		requireRestErrorStatus(t, err, http.StatusBadRequest)
@@ -486,7 +486,7 @@ func TestService_CreateDrawerEvent_RejectsInvalidInput(t *testing.T) {
 func TestService_CreateDrawerEvent_NoSaleWithoutPermission_Rejects(t *testing.T) {
 	repo := &remainingRepositoryStub{}
 
-	got, err := NewService(repo).CreateDrawerEvent(context.Background(), AccessScope{OrgID: 7}, false, CreateDrawerEventRequest{
+	got, err := NewService(repo, nil).CreateDrawerEvent(context.Background(), AccessScope{OrgID: 7}, false, CreateDrawerEventRequest{
 		ShiftID: 2, StaffID: 3, Reason: "cash count",
 	})
 
@@ -500,7 +500,7 @@ func TestService_CreateDrawerEvent_WithSaleID_NoPermissionNeeded(t *testing.T) {
 	want := &DrawerEvent{ID: 1, ShiftID: 2, StaffID: 3, SaleID: &saleID}
 	repo := &remainingRepositoryStub{drawerEvent: want}
 
-	got, err := NewService(repo).CreateDrawerEvent(context.Background(), AccessScope{OrgID: 7}, false, CreateDrawerEventRequest{
+	got, err := NewService(repo, nil).CreateDrawerEvent(context.Background(), AccessScope{OrgID: 7}, false, CreateDrawerEventRequest{
 		ShiftID: 2, StaffID: 3, Reason: "drawer opened for sale", SaleID: &saleID,
 	})
 
@@ -513,7 +513,7 @@ func TestService_ListDrawerEventsAndExpenses_ForwardScope(t *testing.T) {
 	t.Run("drawer events", func(t *testing.T) {
 		want := []DrawerEvent{{ID: 1}}
 		repo := &remainingRepositoryStub{drawerEvents: want}
-		got, err := NewService(repo).ListDrawerEvents(context.Background(), scope)
+		got, err := NewService(repo, nil).ListDrawerEvents(context.Background(), scope, nil)
 		require.NoError(t, err)
 		require.Equal(t, want, got)
 		require.Equal(t, "ListDrawerEvents", repo.method)
@@ -522,7 +522,7 @@ func TestService_ListDrawerEventsAndExpenses_ForwardScope(t *testing.T) {
 	t.Run("expenses", func(t *testing.T) {
 		want := []Expense{{ID: 1}}
 		repo := &remainingRepositoryStub{expenses: want}
-		got, err := NewService(repo).ListExpenses(context.Background(), scope)
+		got, err := NewService(repo, nil).ListExpenses(context.Background(), scope, nil)
 		require.NoError(t, err)
 		require.Equal(t, want, got)
 		require.Equal(t, "ListExpenses", repo.method)
@@ -539,7 +539,7 @@ func TestService_CreateExpense_ValidatesNormalizesAndPersists(t *testing.T) {
 		Amount: decimal.RequireFromString("12.50"), CreatedBy: 3,
 	}
 
-	got, err := NewService(repo).CreateExpense(context.Background(), scope, in)
+	got, err := NewService(repo, nil).CreateExpense(context.Background(), scope, in)
 
 	require.NoError(t, err)
 	require.Same(t, want, got)
@@ -556,7 +556,7 @@ func TestService_CreateExpense_ByOrgWideAccount_Persists(t *testing.T) {
 		Amount: decimal.NewFromInt(900), CreatedByUserID: 55,
 	}
 
-	_, err := NewService(repo).CreateExpense(context.Background(), AccessScope{OrgID: 7}, in)
+	_, err := NewService(repo, nil).CreateExpense(context.Background(), AccessScope{OrgID: 7}, in)
 
 	require.NoError(t, err)
 	require.Equal(t, "CreateExpense", repo.method)
@@ -570,7 +570,7 @@ func TestService_CreateExpense_RejectsBothOrNeitherActor(t *testing.T) {
 		{BranchID: 1, Date: time.Now(), Category: "x", Amount: decimal.NewFromInt(1)},
 	} {
 		repo := &remainingRepositoryStub{}
-		_, err := NewService(repo).CreateExpense(context.Background(), AccessScope{OrgID: 7}, in)
+		_, err := NewService(repo, nil).CreateExpense(context.Background(), AccessScope{OrgID: 7}, in)
 		require.Empty(t, repo.method)
 		requireRestErrorStatus(t, err, http.StatusBadRequest)
 	}
@@ -587,7 +587,7 @@ func TestService_CreateExpense_RejectsInvalidInput(t *testing.T) {
 	}
 	for _, in := range tests {
 		repo := &remainingRepositoryStub{}
-		got, err := NewService(repo).CreateExpense(context.Background(), AccessScope{OrgID: 7}, in)
+		got, err := NewService(repo, nil).CreateExpense(context.Background(), AccessScope{OrgID: 7}, in)
 		require.Nil(t, got)
 		require.Empty(t, repo.method)
 		requireRestErrorStatus(t, err, http.StatusBadRequest)
@@ -602,7 +602,7 @@ func TestService_UpdateExpense_ValidatesNormalizesAndPersists(t *testing.T) {
 	repo := &remainingRepositoryStub{expense: want}
 
 	actor := ExpenseActor{StaffID: 4, CanManageAny: true}
-	got, err := NewService(repo).UpdateExpense(context.Background(), scope, 9, actor, UpdateExpenseRequest{
+	got, err := NewService(repo, nil).UpdateExpense(context.Background(), scope, 9, actor, UpdateExpenseRequest{
 		Category: &category, Amount: &amount,
 	})
 
@@ -630,7 +630,7 @@ func TestService_UpdateExpense_RejectsInvalidInput(t *testing.T) {
 	}
 	for _, in := range tests {
 		repo := &remainingRepositoryStub{}
-		got, err := NewService(repo).UpdateExpense(context.Background(), AccessScope{OrgID: 7}, 1, ExpenseActor{StaffID: 4}, in)
+		got, err := NewService(repo, nil).UpdateExpense(context.Background(), AccessScope{OrgID: 7}, 1, ExpenseActor{StaffID: 4}, in)
 		require.Nil(t, got)
 		require.Empty(t, repo.method)
 		requireRestErrorStatus(t, err, http.StatusBadRequest)
@@ -642,7 +642,7 @@ func TestService_DeleteExpense_ForwardsScopeAndError(t *testing.T) {
 	wantErr := common.NotFoundError("expense not found")
 	repo := &remainingRepositoryStub{err: wantErr}
 
-	err := NewService(repo).DeleteExpense(context.Background(), scope, 9, ExpenseActor{StaffID: 4})
+	err := NewService(repo, nil).DeleteExpense(context.Background(), scope, 9, ExpenseActor{StaffID: 4})
 
 	var restErr common.RestError
 	require.True(t, errors.As(err, &restErr))

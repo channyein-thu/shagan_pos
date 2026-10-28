@@ -64,6 +64,9 @@ func (r *RepositoryImpl) ListSales(ctx context.Context, orgID uint, f SaleFilter
 	if f.StaffID != nil {
 		base = base.Where("staff_id = ?", *f.StaffID)
 	}
+	if f.ShiftID != nil {
+		base = base.Where("shift_id = ?", *f.ShiftID)
+	}
 	if f.Start != nil {
 		base = base.Where("completed_at >= ?", *f.Start)
 	}

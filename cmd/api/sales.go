@@ -117,7 +117,7 @@ func (a *SalesAPI) CreateSale(c *gin.Context) {
 	c.JSON(http.StatusCreated, result)
 }
 
-// ListSales handles `GET /sales`. Optional ?branch_id= (owner/service_center
+// ListSales handles `GET /sales`. Optional ?shift_id= (only the sales of one shift). Optional ?branch_id= (owner/service_center
 // only - a pos-device token's own branch always wins, same as the reports),
 // ?from=/?to= (YYYY-MM-DD, inclusive), ?page= and ?page_size= (default 20,
 // max 100). Each row carries payment_methods.
@@ -136,6 +136,10 @@ func (a *SalesAPI) ListSales(c *gin.Context) {
 	}
 	page, _ := strconv.Atoi(c.Query("page"))
 	pageSize, _ := strconv.Atoi(c.Query("page_size"))
+	shiftID, ok := optionalUintQuery(c, "shift_id")
+	if !ok {
+		return
+	}
 	// A cashier whose role lacks view_all_receipts sees only their own sales.
 	// This is a till rule: a caller using Back Office (access_backoffice) is
 	// governed by view_sales instead and sees them all, and an Owner has no
@@ -146,7 +150,7 @@ func (a *SalesAPI) ListSales(c *gin.Context) {
 		!middleware.StaffHasPermission(c, "view_all_receipts") {
 		staffID = &id
 	}
-	result, err := a.service.ListSales(c.Request.Context(), orgID, branchID, staffID, from, to, page, pageSize)
+	result, err := a.service.ListSales(c.Request.Context(), orgID, branchID, staffID, shiftID, from, to, page, pageSize)
 	if err != nil {
 		common.HandleError(c, err)
 		return

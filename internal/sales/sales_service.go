@@ -131,7 +131,7 @@ type Interface interface {
 	// unlike the reports, no default window, so an unfiltered call is the
 	// whole history, paged. page/pageSize follow reports' convention
 	// (default 20, max 100).
-	ListSales(ctx context.Context, orgID uint, branchID *uint, staffID *uint, from, to *time.Time, page, pageSize int) (*SalesPage, error)
+	ListSales(ctx context.Context, orgID uint, branchID *uint, staffID *uint, shiftID *uint, from, to *time.Time, page, pageSize int) (*SalesPage, error)
 
 	// CreateDiscountApproval is `POST /sales/discount-approvals`: approves one
 	// custom discount at the moment the till adds it (payment never asks for a

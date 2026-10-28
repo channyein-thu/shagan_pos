@@ -985,7 +985,7 @@ func TestRepository_CreateAndListDrawerEvents_EnforcesOpenShiftAndScope(t *testi
 	require.NotZero(t, created.ID)
 	require.False(t, created.CreatedAt.IsZero())
 
-	events, err := NewRepository(db).ListDrawerEvents(context.Background(), scope)
+	events, err := NewRepository(db).ListDrawerEvents(context.Background(), scope, nil)
 	require.NoError(t, err)
 	require.Len(t, events, 1)
 	require.Equal(t, created.ID, events[0].ID)
@@ -1047,7 +1047,7 @@ func TestRepository_ExpenseCRUD_EnforcesTenantBranchAndStaff(t *testing.T) {
 	require.NoError(t, err)
 	require.NotZero(t, created.ID)
 
-	listed, err := repo.ListExpenses(context.Background(), scope)
+	listed, err := repo.ListExpenses(context.Background(), scope, nil)
 	require.NoError(t, err)
 	require.Len(t, listed, 1)
 	require.Equal(t, created.ID, listed[0].ID)

@@ -647,3 +647,104 @@ func TestMigrateAccessRights_LegacyOrgMigratedLater_ManagerHasManageBranchPrices
 	require.True(t, hasGrant(t, db, org.ID, managerOf(t, db, org.ID).ID, PermManageBranchPrices))
 	require.False(t, hasGrant(t, db, org.ID, cashierOf(t, db, org.ID).ID, PermManageBranchPrices))
 }
+
+// ---- view_shift_history ----
+
+func TestViewShiftHistoryPermission_IsInTheCatalogueUnderBackOffice(t *testing.T) {
+	for _, def := range PermissionCatalogue {
+		if def.Code == PermViewShiftHistory {
+			require.Equal(t, "view_shift_history", def.Code)
+			require.Equal(t, "Shift history and cash differences", def.Name)
+			require.Equal(t, CategoryBackOffice, def.Category)
+			return
+		}
+	}
+	t.Fatal("view_shift_history missing from the catalogue")
+}
+
+// A new org's Manager holds it; Cashier and Super Staff do not.
+func TestDefaultRoles_ManagerHoldsViewShiftHistory_OthersDoNot(t *testing.T) {
+	require.Contains(t, DefaultRoles[0].Grants, PermViewShiftHistory)
+	require.NotContains(t, DefaultRoles[1].Grants, PermViewShiftHistory)
+	require.NotContains(t, SuperStaffRole.Grants, PermViewShiftHistory)
+}
+
+// An org whose roles exist already has a Manager without it; the next start
+// grants it - to the system Manager ONLY. Cashier and a custom role the Owner
+// built (even one called "Manager"-like) are untouched.
+func TestMigrateAccessRights_GrantsViewShiftHistoryToExistingSystemManagersOnly(t *testing.T) {
+	db := newAccessTestDB(t)
+	require.NoError(t, EnsurePermissionCatalogue(db))
+	var orgs []Organization
+	for _, name := range []string{"Old Org A", "Old Org B"} {
+		org := Organization{Name: name, Timezone: "Asia/Yangon"}
+		require.NoError(t, db.Create(&org).Error)
+		require.NoError(t, ProvisionDefaultRoles(db, org.ID))
+		orgs = append(orgs, org)
+	}
+	permIDs, err := permissionIDsByCode(db)
+	require.NoError(t, err)
+	custom, err := createOrgRole(db, orgs[0].ID, "shift_lead", "Shift Lead", false, []string{PermAccessPOSPortal, PermAccessBackOffice}, permIDs)
+	require.NoError(t, err)
+	for _, org := range orgs {
+		removeGrant(t, db, managerOf(t, db, org.ID).ID, PermViewShiftHistory)
+	}
+	require.NoError(t, db.Exec(`DELETE FROM data_migrations`).Error)
+	before := map[uint][]string{custom.ID: grantedCodes(t, db, custom.ID)}
+	for _, org := range orgs {
+		c := cashierOf(t, db, org.ID)
+		before[c.ID] = grantedCodes(t, db, c.ID)
+	}
+
+	require.NoError(t, MigrateAccessRights(db))
+
+	for _, org := range orgs {
+		require.True(t, hasGrant(t, db, org.ID, managerOf(t, db, org.ID).ID, PermViewShiftHistory), "every org's system Manager")
+		require.False(t, hasGrant(t, db, org.ID, cashierOf(t, db, org.ID).ID, PermViewShiftHistory))
+	}
+	require.False(t, hasGrant(t, db, orgs[0].ID, custom.ID, PermViewShiftHistory), "a custom role is left as the Owner set it")
+	for roleID, codes := range before {
+		require.Equal(t, codes, grantedCodes(t, db, roleID), "other roles are untouched")
+	}
+}
+
+// Once: re-running changes nothing, and an Owner who switched it off for Manager
+// doesn't get it handed back on the next restart.
+func TestMigrateAccessRights_ViewShiftHistoryGrantRunsOnce(t *testing.T) {
+	db := newAccessTestDB(t)
+	org := Organization{Name: "Org", Timezone: "Asia/Yangon"}
+	require.NoError(t, db.Create(&org).Error)
+	require.NoError(t, MigrateAccessRights(db))
+	manager := managerOf(t, db, org.ID)
+	require.True(t, hasGrant(t, db, org.ID, manager.ID, PermViewShiftHistory))
+
+	require.NoError(t, MigrateAccessRights(db))
+	var n int64
+	require.NoError(t, db.Table("org_role_permission").
+		Where("role_id = ? AND permission_id = (SELECT id FROM permissions WHERE code = ?)", manager.ID, PermViewShiftHistory).
+		Count(&n).Error)
+	require.Equal(t, int64(1), n, "re-running changes nothing")
+
+	removeGrant(t, db, manager.ID, PermViewShiftHistory) // the Owner turns it off
+	require.NoError(t, MigrateAccessRights(db))
+	require.NoError(t, MigrateAccessRights(db))
+	require.False(t, hasGrant(t, db, org.ID, manager.ID, PermViewShiftHistory))
+}
+
+// Even with the marker lost, a Manager that already has it isn't granted twice.
+func TestMigrateAccessRights_ViewShiftHistoryGrantDoesNotDuplicate(t *testing.T) {
+	db := newAccessTestDB(t)
+	org := Organization{Name: "Org", Timezone: "Asia/Yangon"}
+	require.NoError(t, db.Create(&org).Error)
+	require.NoError(t, MigrateAccessRights(db))
+	manager := managerOf(t, db, org.ID)
+	require.NoError(t, db.Exec(`DELETE FROM data_migrations`).Error)
+
+	require.NoError(t, MigrateAccessRights(db))
+
+	var n int64
+	require.NoError(t, db.Table("org_role_permission").
+		Where("role_id = ? AND permission_id = (SELECT id FROM permissions WHERE code = ?)", manager.ID, PermViewShiftHistory).
+		Count(&n).Error)
+	require.Equal(t, int64(1), n)
+}

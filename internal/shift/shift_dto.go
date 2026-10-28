@@ -5,6 +5,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
+
+	"shagan_pos/internal/sales"
 )
 
 // AccessScope carries tenant boundaries derived from the signed access token.
@@ -109,4 +111,113 @@ type UpdateExpenseRequest struct {
 	Category  *string          `json:"category" binding:"omitempty"`
 	Amount    *decimal.Decimal `json:"amount" binding:"omitempty"`
 	CreatedBy *uint            `json:"created_by" binding:"omitempty"`
+}
+
+// ShiftListQuery is `GET /shifts`'s filter as the handler read it. From / To are
+// calendar dates (YYYY-MM-DD, inclusive) of the ORGANIZATION's own timezone,
+// matched against opened_at; Status is "open" or "closed"; Discrepancy is
+// "short" (counted cash below expected), "over" (above) or "any" (either) and
+// only ever matches closed shifts. Page / PageSize are normalized by the
+// service (default 25, at most 100).
+type ShiftListQuery struct {
+	BranchID    *uint
+	From, To    *time.Time
+	Status      string
+	StaffID     *uint
+	DeviceID    *uint
+	Discrepancy string
+	Page        int
+	PageSize    int
+}
+
+// ShiftFilter is ShiftListQuery after the service has validated it and turned
+// the dates into instants: opened_at in [Start, End).
+type ShiftFilter struct {
+	BranchID    *uint
+	Start, End  *time.Time
+	Status      *ShiftStatus
+	StaffID     *uint
+	DeviceID    *uint
+	Discrepancy string
+	Page        int
+	PageSize    int
+}
+
+// Discrepancy filter values.
+const (
+	DiscrepancyShort = "short"
+	DiscrepancyOver  = "over"
+	DiscrepancyAny   = "any"
+)
+
+// ShiftFigures is what a shift sold and what should be in its drawer - THE one
+// calculation, shared by `GET /shifts/:id/summary` and every `GET /shifts` row
+// (see loadShiftFigures), so the list and the close-shift screen can never
+// disagree. PaymentTotals holds only the methods that took a payment, like the
+// summary always has.
+type ShiftFigures struct {
+	SalesCount      int64
+	SalesTotal      decimal.Decimal
+	PaymentTotals   map[string]decimal.Decimal
+	CashRefunds     decimal.Decimal
+	ExchangeCashIn  decimal.Decimal
+	ExchangeCashOut decimal.Decimal
+}
+
+// ExpectedCash is what the drawer should hold: the opening float, plus cash
+// sales, plus cash an exchange brought in, minus cash an exchange paid out and
+// cash refunds. QR never touches the drawer.
+func (f ShiftFigures) ExpectedCash(openingCash decimal.Decimal) decimal.Decimal {
+	return openingCash.
+		Add(f.PaymentTotals[string(sales.PaymentMethodCash)]).
+		Add(f.ExchangeCashIn).Sub(f.ExchangeCashOut).Sub(f.CashRefunds)
+}
+
+// ShiftRow is one shift as the repository reads it for the list: the shift, the
+// names behind its ids, its cash reconciliation row (nil for an open shift) and
+// its live figures.
+type ShiftRow struct {
+	Shift
+	BranchName   string
+	DeviceName   string
+	StaffName    string
+	ClosedByName *string
+	Cash         *ShiftReconciliation
+	Figures      ShiftFigures
+}
+
+// ShiftListItem is one row of `GET /shifts`. Closed-only fields are null for an
+// open shift. Money is a decimal string. ForceClosed is true only when someone
+// other than the shift's own staff closed it.
+type ShiftListItem struct {
+	ID               uint                       `json:"id"`
+	Status           ShiftStatus                `json:"status"`
+	BranchID         uint                       `json:"branch_id"`
+	BranchName       string                     `json:"branch_name"`
+	DeviceID         uint                       `json:"device_id"`
+	DeviceName       string                     `json:"device_name"`
+	StaffID          uint                       `json:"staff_id"`
+	StaffName        string                     `json:"staff_name"`
+	ClosedByStaffID  *uint                      `json:"closed_by_staff_id"`
+	ClosedByName     *string                    `json:"closed_by_name"`
+	ForceClosed      bool                       `json:"force_closed"`
+	OpenedAt         time.Time                  `json:"opened_at"`
+	ClosedAt         *time.Time                 `json:"closed_at"`
+	OpeningCash      decimal.Decimal            `json:"opening_cash"`
+	SalesCount       int64                      `json:"sales_count"`
+	SalesTotal       decimal.Decimal            `json:"sales_total"`
+	PaymentTotals    map[string]decimal.Decimal `json:"payment_totals"`
+	ExpectedCash     decimal.Decimal            `json:"expected_cash"`
+	CountedCash      *decimal.Decimal           `json:"counted_cash"`
+	CashDifference   *decimal.Decimal           `json:"cash_difference"`
+	DifferenceReason *string                    `json:"difference_reason"`
+}
+
+// ShiftsPage is the `GET /shifts` response - same envelope as
+// reports.TransactionsReport and sales.SalesPage.
+type ShiftsPage struct {
+	Shifts     []ShiftListItem `json:"shifts"`
+	Page       int             `json:"page"`
+	PageSize   int             `json:"page_size"`
+	TotalCount int64           `json:"total_count"`
 }

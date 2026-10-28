@@ -15,11 +15,12 @@ var maxOpeningCash = decimal.NewFromInt(100_000_000)
 
 type Service struct {
 	repo Repository
+	orgs OrganizationLookup
 	now  func() time.Time
 }
 
-func NewService(repo Repository) *Service {
-	return &Service{repo: repo, now: time.Now}
+func NewService(repo Repository, orgs OrganizationLookup) *Service {
+	return &Service{repo: repo, orgs: orgs, now: time.Now}
 }
 
 var _ Interface = (*Service)(nil)
@@ -137,12 +138,106 @@ func (s *Service) CreateDrawerEvent(ctx context.Context, scope AccessScope, canO
 	return s.repo.CreateDrawerEvent(ctx, scope, in)
 }
 
-func (s *Service) ListDrawerEvents(ctx context.Context, scope AccessScope) ([]DrawerEvent, error) {
-	return s.repo.ListDrawerEvents(ctx, scope)
+func (s *Service) ListDrawerEvents(ctx context.Context, scope AccessScope, shiftID *uint) ([]DrawerEvent, error) {
+	return s.repo.ListDrawerEvents(ctx, scope, shiftID)
 }
 
-func (s *Service) ListExpenses(ctx context.Context, scope AccessScope) ([]Expense, error) {
-	return s.repo.ListExpenses(ctx, scope)
+func (s *Service) ListExpenses(ctx context.Context, scope AccessScope, shiftID *uint) ([]Expense, error) {
+	return s.repo.ListExpenses(ctx, scope, shiftID)
+}
+
+const (
+	defaultShiftPageSize = 25
+	maxShiftPageSize     = 100
+)
+
+func (s *Service) ListShifts(ctx context.Context, scope AccessScope, q ShiftListQuery) (*ShiftsPage, error) {
+	if scope.BranchID != nil && q.BranchID != nil && *q.BranchID != *scope.BranchID {
+		return nil, common.ForbiddenError("you can only see your own branch's shifts")
+	}
+	f := ShiftFilter{BranchID: q.BranchID, StaffID: q.StaffID, DeviceID: q.DeviceID, Page: q.Page, PageSize: q.PageSize}
+	switch ShiftStatus(q.Status) {
+	case "":
+	case ShiftStatusOpen, ShiftStatusClosed:
+		status := ShiftStatus(q.Status)
+		f.Status = &status
+	default:
+		return nil, common.BadRequestError("status must be open or closed")
+	}
+	switch q.Discrepancy {
+	case "":
+	case DiscrepancyShort, DiscrepancyOver, DiscrepancyAny:
+		f.Discrepancy = q.Discrepancy
+	default:
+		return nil, common.BadRequestError("discrepancy must be short, over or any")
+	}
+	if f.Page < 1 {
+		f.Page = 1
+	}
+	if f.PageSize <= 0 {
+		f.PageSize = defaultShiftPageSize
+	}
+	if f.PageSize > maxShiftPageSize {
+		f.PageSize = maxShiftPageSize
+	}
+	if q.From != nil || q.To != nil {
+		// The dates are days of the org's own calendar, not UTC's.
+		org, err := s.orgs.GetOrganization(ctx, scope.OrgID)
+		if err != nil {
+			return nil, err
+		}
+		loc := common.OrgLocation(org.Timezone)
+		if q.From != nil {
+			start := common.StartOfDay(*q.From, loc)
+			f.Start = &start
+		}
+		if q.To != nil {
+			// to is an inclusive calendar date: its whole day counts.
+			end := common.NextDay(common.StartOfDay(*q.To, loc))
+			f.End = &end
+		}
+	}
+
+	rows, total, err := s.repo.ListShifts(ctx, scope, f)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]ShiftListItem, len(rows))
+	for i, row := range rows {
+		items[i] = shiftListItem(row)
+	}
+	return &ShiftsPage{Shifts: items, Page: f.Page, PageSize: f.PageSize, TotalCount: total}, nil
+}
+
+// shiftListItem shapes one row: live figures for any shift, and the closed-only
+// fields (counted cash, difference, reason, who closed it) only once it is
+// closed.
+func shiftListItem(row ShiftRow) ShiftListItem {
+	item := ShiftListItem{
+		ID: row.ID, Status: row.Status,
+		BranchID: row.BranchID, BranchName: row.BranchName,
+		DeviceID: row.DeviceID, DeviceName: row.DeviceName,
+		StaffID: row.StaffID, StaffName: row.StaffName,
+		OpenedAt: row.OpenedAt, OpeningCash: row.OpeningCash,
+		SalesCount: row.Figures.SalesCount, SalesTotal: row.Figures.SalesTotal,
+		PaymentTotals: row.Figures.PaymentTotals,
+		ExpectedCash:  row.Figures.ExpectedCash(row.OpeningCash),
+	}
+	if item.PaymentTotals == nil {
+		item.PaymentTotals = map[string]decimal.Decimal{}
+	}
+	if row.Status != ShiftStatusClosed {
+		return item
+	}
+	item.ClosedAt = row.ClosedAt
+	item.ClosedByStaffID, item.ClosedByName = row.ClosedByStaffID, row.ClosedByName
+	// a force-close is someone other than the shift's own staff closing it
+	item.ForceClosed = row.ClosedByStaffID != nil && *row.ClosedByStaffID != row.StaffID
+	if row.Cash != nil {
+		counted, difference, reason := row.Cash.Counted, row.Cash.Difference, row.Cash.Reason
+		item.CountedCash, item.CashDifference, item.DifferenceReason = &counted, &difference, &reason
+	}
+	return item
 }
 
 func (s *Service) CreateExpense(ctx context.Context, scope AccessScope, in CreateExpenseRequest) (*Expense, error) {

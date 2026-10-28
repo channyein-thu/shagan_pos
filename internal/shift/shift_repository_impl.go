@@ -303,32 +303,127 @@ func (a cashAdjustments) net() decimal.Decimal {
 	return a.ExchangeIn.Sub(a.ExchangeOut).Sub(a.Refunds)
 }
 
-// shiftCashAdjustmentsFor sums the cash refunds and cash exchange differences
-// stamped with shiftID. Shared by GetShiftSummary and closeShift so the
-// printed expected cash and the reconciliation snapshot can never disagree.
-// It reads the returns domain's tables by name rather than importing it,
-// same reason sales.RequireOpenShift does it the other way round - returns
-// already depends on sales, and shift on both would cycle.
+// shiftCashAdjustmentsFor is cashAdjustmentsByShift for one shift. Shared by
+// closeShift (the reconciliation snapshot) and loadShiftFigures (the summary
+// and the shift list), so the printed expected cash, the list and the snapshot
+// can never disagree.
 func shiftCashAdjustmentsFor(db *gorm.DB, shiftID uint) (cashAdjustments, error) {
-	var refunds struct{ Total decimal.Decimal }
-	if err := db.Table("returns").
-		Select("COALESCE(SUM(refund_total), 0) AS total").
-		Where("shift_id = ? AND refund_method = ?", shiftID, "cash").
-		Scan(&refunds).Error; err != nil {
+	all, err := cashAdjustmentsByShift(db, []uint{shiftID})
+	if err != nil {
 		return cashAdjustments{}, err
 	}
-	var exchanges struct {
+	return all[shiftID], nil
+}
+
+// cashAdjustmentsByShift sums the cash refunds and cash exchange differences
+// stamped with each of shiftIDs, in one grouped query per table - never one per
+// shift. It reads the returns domain's tables by name rather than importing it,
+// same reason sales.RequireOpenShift does it the other way round - returns
+// already depends on sales, and shift on both would cycle. A shift with none
+// has the zero cashAdjustments.
+func cashAdjustmentsByShift(db *gorm.DB, shiftIDs []uint) (map[uint]cashAdjustments, error) {
+	out := make(map[uint]cashAdjustments, len(shiftIDs))
+	if len(shiftIDs) == 0 {
+		return out, nil
+	}
+	var refunds []struct {
+		ShiftID uint
+		Total   decimal.Decimal
+	}
+	if err := db.Table("returns").
+		Select("shift_id, COALESCE(SUM(refund_total), 0) AS total").
+		Where("shift_id IN ? AND refund_method = ?", shiftIDs, "cash").
+		Group("shift_id").
+		Scan(&refunds).Error; err != nil {
+		return nil, err
+	}
+	for _, r := range refunds {
+		a := out[r.ShiftID]
+		a.Refunds = r.Total
+		out[r.ShiftID] = a
+	}
+	var exchanges []struct {
+		ShiftID uint
 		CashIn  decimal.Decimal
 		CashOut decimal.Decimal
 	}
 	if err := db.Table("exchanges").
-		Select("COALESCE(SUM(CASE WHEN net_difference > 0 THEN net_difference ELSE 0 END), 0) AS cash_in, "+
+		Select("shift_id, "+
+			"COALESCE(SUM(CASE WHEN net_difference > 0 THEN net_difference ELSE 0 END), 0) AS cash_in, "+
 			"COALESCE(SUM(CASE WHEN net_difference < 0 THEN -net_difference ELSE 0 END), 0) AS cash_out").
-		Where("shift_id = ? AND method = ?", shiftID, "cash").
+		Where("shift_id IN ? AND method = ?", shiftIDs, "cash").
+		Group("shift_id").
 		Scan(&exchanges).Error; err != nil {
-		return cashAdjustments{}, err
+		return nil, err
 	}
-	return cashAdjustments{Refunds: refunds.Total, ExchangeIn: exchanges.CashIn, ExchangeOut: exchanges.CashOut}, nil
+	for _, e := range exchanges {
+		a := out[e.ShiftID]
+		a.ExchangeIn, a.ExchangeOut = e.CashIn, e.CashOut
+		out[e.ShiftID] = a
+	}
+	return out, nil
+}
+
+// loadShiftFigures is THE calculation behind a shift's sales count and total,
+// per-method payment totals and expected cash - used by GetShiftSummary (one
+// id) and by ListShifts (a page of ids), so they cannot differ. Grouped
+// queries over shiftIDs: one for sales, one for payments, and one each for cash
+// refunds and cash exchanges (see cashAdjustmentsByShift). A shift with no
+// activity has the zero ShiftFigures (empty, non-nil PaymentTotals).
+func loadShiftFigures(db *gorm.DB, shiftIDs []uint) (map[uint]ShiftFigures, error) {
+	out := make(map[uint]ShiftFigures, len(shiftIDs))
+	if len(shiftIDs) == 0 {
+		return out, nil
+	}
+	for _, id := range shiftIDs {
+		out[id] = ShiftFigures{PaymentTotals: map[string]decimal.Decimal{}}
+	}
+
+	var salesTotals []struct {
+		ShiftID    uint
+		SalesCount int64
+		SalesTotal decimal.Decimal
+	}
+	if err := db.Model(&sales.Sale{}).
+		Select("shift_id, COUNT(*) AS sales_count, COALESCE(SUM(total), 0) AS sales_total").
+		Where("shift_id IN ? AND status IN ?", shiftIDs, settledSaleStatuses).
+		Group("shift_id").
+		Scan(&salesTotals).Error; err != nil {
+		return nil, err
+	}
+	for _, t := range salesTotals {
+		f := out[t.ShiftID]
+		f.SalesCount, f.SalesTotal = t.SalesCount, t.SalesTotal
+		out[t.ShiftID] = f
+	}
+
+	var methodTotals []struct {
+		ShiftID uint
+		Method  sales.PaymentMethod
+		Total   decimal.Decimal
+	}
+	if err := db.Model(&sales.Payment{}).
+		Select("sales.shift_id AS shift_id, payments.method AS method, COALESCE(SUM(payments.amount), 0) AS total").
+		Joins("JOIN sales ON sales.id = payments.sale_id").
+		Where("sales.shift_id IN ? AND sales.status IN ?", shiftIDs, settledSaleStatuses).
+		Group("sales.shift_id, payments.method").
+		Scan(&methodTotals).Error; err != nil {
+		return nil, err
+	}
+	for _, t := range methodTotals {
+		out[t.ShiftID].PaymentTotals[string(t.Method)] = t.Total
+	}
+
+	adjustments, err := cashAdjustmentsByShift(db, shiftIDs)
+	if err != nil {
+		return nil, err
+	}
+	for id, a := range adjustments {
+		f := out[id]
+		f.CashRefunds, f.ExchangeCashIn, f.ExchangeCashOut = a.Refunds, a.ExchangeIn, a.ExchangeOut
+		out[id] = f
+	}
+	return out, nil
 }
 
 func reconciliationMethodForPayment(method sales.PaymentMethod) ReconciliationMethod {
@@ -340,53 +435,20 @@ func reconciliationMethodForPayment(method sales.PaymentMethod) ReconciliationMe
 	}
 }
 
-// GetShiftSummary backs `GET /shifts/:id/summary`. Printable summary
+// GetShiftSummary backs `GET /shifts/:id/summary`. Printable summary. The
+// figures come from loadShiftFigures - the same calculation every `GET /shifts`
+// row uses.
 func (r *RepositoryImpl) GetShiftSummary(ctx context.Context, scope AccessScope, id uint) (map[string]any, error) {
 	db := r.db.WithContext(ctx)
 	shift, err := getShiftInScope(db, scope, id, false)
 	if err != nil {
 		return nil, err
 	}
-
-	type salesSummary struct {
-		SalesCount int64
-		SalesTotal decimal.Decimal
-	}
-	var salesTotals salesSummary
-	if err := db.Model(&sales.Sale{}).
-		Select("COUNT(*) AS sales_count, COALESCE(SUM(total), 0) AS sales_total").
-		Where("shift_id = ? AND status IN ?", shift.ID, settledSaleStatuses).
-		Scan(&salesTotals).Error; err != nil {
-		return nil, err
-	}
-
-	type methodTotal struct {
-		Method sales.PaymentMethod
-		Total  decimal.Decimal
-	}
-	var methodTotals []methodTotal
-	if err := db.Model(&sales.Payment{}).
-		Select("payments.method, COALESCE(SUM(payments.amount), 0) AS total").
-		Joins("JOIN sales ON sales.id = payments.sale_id").
-		Where("sales.shift_id = ? AND sales.status IN ?", shift.ID, settledSaleStatuses).
-		Group("payments.method").
-		Scan(&methodTotals).Error; err != nil {
-		return nil, err
-	}
-	paymentTotals := make(map[string]decimal.Decimal, len(methodTotals))
-	expectedCash := shift.OpeningCash
-	for _, total := range methodTotals {
-		paymentTotals[string(total.Method)] = total.Total
-		if total.Method == sales.PaymentMethodCash {
-			expectedCash = expectedCash.Add(total.Total)
-		}
-	}
-
-	adjustments, err := shiftCashAdjustmentsFor(db, shift.ID)
+	all, err := loadShiftFigures(db, []uint{shift.ID})
 	if err != nil {
 		return nil, err
 	}
-	expectedCash = expectedCash.Add(adjustments.net())
+	figures := all[shift.ID]
 
 	reconciliations, err := r.ListShiftReconciliations(ctx, scope, shift.ID)
 	if err != nil {
@@ -394,15 +456,152 @@ func (r *RepositoryImpl) GetShiftSummary(ctx context.Context, scope AccessScope,
 	}
 	return map[string]any{
 		"shift":             *shift,
-		"sales_count":       salesTotals.SalesCount,
-		"sales_total":       salesTotals.SalesTotal,
-		"payment_totals":    paymentTotals,
-		"expected_cash":     expectedCash,
-		"cash_refunds":      adjustments.Refunds,
-		"exchange_cash_in":  adjustments.ExchangeIn,
-		"exchange_cash_out": adjustments.ExchangeOut,
+		"sales_count":       figures.SalesCount,
+		"sales_total":       figures.SalesTotal,
+		"payment_totals":    figures.PaymentTotals,
+		"expected_cash":     figures.ExpectedCash(shift.OpeningCash),
+		"cash_refunds":      figures.CashRefunds,
+		"exchange_cash_in":  figures.ExchangeCashIn,
+		"exchange_cash_out": figures.ExchangeCashOut,
 		"reconciliations":   reconciliations,
 	}, nil
+}
+
+// ListShifts backs `GET /shifts`: one page of the scope's shifts matching f,
+// newest first (opened_at, then id, so pages never repeat or skip), with the
+// names behind the ids, each shift's cash reconciliation row and its live
+// figures - all gathered with queries over the page's ids, never per shift.
+func (r *RepositoryImpl) ListShifts(ctx context.Context, scope AccessScope, f ShiftFilter) ([]ShiftRow, int64, error) {
+	db := r.db.WithContext(ctx)
+	base := db.Model(&Shift{}).
+		Joins("JOIN branches ON branches.id = shifts.branch_id").
+		Where("branches.org_id = ?", scope.OrgID)
+	if scope.BranchID != nil {
+		base = base.Where("shifts.branch_id = ?", *scope.BranchID)
+	}
+	if f.BranchID != nil {
+		base = base.Where("shifts.branch_id = ?", *f.BranchID)
+	}
+	if f.Start != nil {
+		base = base.Where("shifts.opened_at >= ?", *f.Start)
+	}
+	if f.End != nil {
+		base = base.Where("shifts.opened_at < ?", *f.End)
+	}
+	if f.Status != nil {
+		base = base.Where("shifts.status = ?", *f.Status)
+	}
+	if f.StaffID != nil {
+		base = base.Where("shifts.staff_id = ?", *f.StaffID)
+	}
+	if f.DeviceID != nil {
+		base = base.Where("shifts.device_id = ?", *f.DeviceID)
+	}
+	if cond, ok := discrepancyCondition(f.Discrepancy); ok {
+		// only a closed shift has a counted cash to be short or over
+		base = base.Where("shifts.status = ?", ShiftStatusClosed).
+			Where("EXISTS (SELECT 1 FROM shifts_reconciliations r WHERE r.shift_id = shifts.id AND r.method = ? AND "+cond+")", ReconciliationMethodCash)
+	}
+
+	var total int64
+	if err := base.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var shifts []Shift
+	if err := base.Session(&gorm.Session{}).
+		Select("shifts.*").
+		Order("shifts.opened_at DESC, shifts.id DESC").
+		Offset((f.Page - 1) * f.PageSize).
+		Limit(f.PageSize).
+		Find(&shifts).Error; err != nil {
+		return nil, 0, err
+	}
+	rows := make([]ShiftRow, len(shifts))
+	if len(shifts) == 0 {
+		return rows, total, nil
+	}
+
+	shiftIDs := make([]uint, len(shifts))
+	branchIDs, deviceIDs, staffIDs := []uint{}, []uint{}, []uint{}
+	for i, sh := range shifts {
+		shiftIDs[i] = sh.ID
+		branchIDs = append(branchIDs, sh.BranchID)
+		deviceIDs = append(deviceIDs, sh.DeviceID)
+		staffIDs = append(staffIDs, sh.StaffID)
+		if sh.ClosedByStaffID != nil {
+			staffIDs = append(staffIDs, *sh.ClosedByStaffID)
+		}
+	}
+	branchNames, err := namesByID(db, &identity.Branch{}, branchIDs)
+	if err != nil {
+		return nil, 0, err
+	}
+	deviceNames, err := namesByID(db, &identity.Device{}, deviceIDs)
+	if err != nil {
+		return nil, 0, err
+	}
+	staffNames, err := namesByID(db, &identity.Staff{}, staffIDs)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	var cash []ShiftReconciliation
+	if err := db.Where("shift_id IN ? AND method = ?", shiftIDs, ReconciliationMethodCash).Find(&cash).Error; err != nil {
+		return nil, 0, err
+	}
+	cashByShift := make(map[uint]*ShiftReconciliation, len(cash))
+	for i := range cash {
+		cashByShift[cash[i].ShiftID] = &cash[i]
+	}
+
+	figures, err := loadShiftFigures(db, shiftIDs)
+	if err != nil {
+		return nil, 0, err
+	}
+	for i, sh := range shifts {
+		row := ShiftRow{
+			Shift:      sh,
+			BranchName: branchNames[sh.BranchID], DeviceName: deviceNames[sh.DeviceID], StaffName: staffNames[sh.StaffID],
+			Cash: cashByShift[sh.ID], Figures: figures[sh.ID],
+		}
+		if sh.ClosedByStaffID != nil {
+			name := staffNames[*sh.ClosedByStaffID]
+			row.ClosedByName = &name
+		}
+		rows[i] = row
+	}
+	return rows, total, nil
+}
+
+// discrepancyCondition is the SQL on a cash reconciliation row r for one
+// discrepancy filter value (difference = counted - expected).
+func discrepancyCondition(d string) (string, bool) {
+	switch d {
+	case DiscrepancyShort:
+		return "r.difference < 0", true
+	case DiscrepancyOver:
+		return "r.difference > 0", true
+	case DiscrepancyAny:
+		return "r.difference <> 0", true
+	}
+	return "", false
+}
+
+// namesByID reads the name column of model's rows with the given ids in one
+// query. model must have id and name columns (Branch, Device, Staff).
+func namesByID(db *gorm.DB, model any, ids []uint) (map[uint]string, error) {
+	var rows []struct {
+		ID   uint
+		Name string
+	}
+	if err := db.Model(model).Select("id, name").Where("id IN ?", ids).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make(map[uint]string, len(rows))
+	for _, r := range rows {
+		out[r.ID] = r.Name
+	}
+	return out, nil
 }
 
 // ListShiftReconciliations backs `GET /shifts/:id/reconciliations`. Per-method breakdown
@@ -450,7 +649,7 @@ func (r *RepositoryImpl) CreateDrawerEvent(ctx context.Context, scope AccessScop
 }
 
 // ListDrawerEvents backs `GET /drawer-events`.
-func (r *RepositoryImpl) ListDrawerEvents(ctx context.Context, scope AccessScope) ([]DrawerEvent, error) {
+func (r *RepositoryImpl) ListDrawerEvents(ctx context.Context, scope AccessScope, shiftID *uint) ([]DrawerEvent, error) {
 	var events []DrawerEvent
 	query := r.db.WithContext(ctx).
 		Model(&DrawerEvent{}).
@@ -461,6 +660,9 @@ func (r *RepositoryImpl) ListDrawerEvents(ctx context.Context, scope AccessScope
 	if scope.BranchID != nil {
 		query = query.Where("shifts.branch_id = ?", *scope.BranchID)
 	}
+	if shiftID != nil {
+		query = query.Where("drawer_events.shift_id = ?", *shiftID)
+	}
 	if err := query.Order("drawer_events.created_at DESC, drawer_events.id DESC").Find(&events).Error; err != nil {
 		return nil, err
 	}
@@ -468,7 +670,7 @@ func (r *RepositoryImpl) ListDrawerEvents(ctx context.Context, scope AccessScope
 }
 
 // ListExpenses backs `GET /expenses`.
-func (r *RepositoryImpl) ListExpenses(ctx context.Context, scope AccessScope) ([]Expense, error) {
+func (r *RepositoryImpl) ListExpenses(ctx context.Context, scope AccessScope, shiftID *uint) ([]Expense, error) {
 	var expenses []Expense
 	query := r.db.WithContext(ctx).
 		Model(&Expense{}).
@@ -477,6 +679,9 @@ func (r *RepositoryImpl) ListExpenses(ctx context.Context, scope AccessScope) ([
 		Where("branches.org_id = ?", scope.OrgID)
 	if scope.BranchID != nil {
 		query = query.Where("expenses.branch_id = ?", *scope.BranchID)
+	}
+	if shiftID != nil {
+		query = query.Where("expenses.shift_id = ?", *shiftID)
 	}
 	if err := query.Order("expenses.date DESC, expenses.id DESC").Find(&expenses).Error; err != nil {
 		return nil, err
@@ -502,6 +707,15 @@ func (r *RepositoryImpl) CreateExpense(ctx context.Context, scope AccessScope, i
 				return err
 			}
 			expense.CreatedBy = &in.CreatedBy
+			// logged at the till: it belongs to the shift that staff member has open
+			var open []Shift
+			if err := tx.Where("staff_id = ? AND branch_id = ? AND status = ?", in.CreatedBy, in.BranchID, ShiftStatusOpen).
+				Order("id DESC").Limit(1).Find(&open).Error; err != nil {
+				return err
+			}
+			if len(open) > 0 {
+				expense.ShiftID = &open[0].ID
+			}
 		} else {
 			expense.CreatedByUserID = &in.CreatedByUserID
 		}

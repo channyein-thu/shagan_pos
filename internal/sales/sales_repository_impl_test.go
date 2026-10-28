@@ -217,3 +217,26 @@ func TestRepository_FindOpenShift_NilWhenThereIsNone(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, otherOrg, "another org can't resolve this till")
 }
+
+func TestRepository_ListSales_ShiftFilterReturnsOnlyThatShiftsSalesAndCountsThemOnly(t *testing.T) {
+	db := newSalesRepoTestDB(t)
+	inShift := func(shiftID uint, orgID uint, ago time.Duration) Sale {
+		sale := seedSaleBy(t, db, orgID, 14, ago)
+		require.NoError(t, db.Model(&sale).Update("shift_id", shiftID).Error)
+		sale.ShiftID = shiftID
+		return sale
+	}
+	a1 := inShift(5, 7, time.Hour)
+	a2 := inShift(5, 7, 2*time.Hour)
+	inShift(6, 7, 3*time.Hour)
+	inShift(5, 8, 4*time.Hour) // another org, same shift id
+	shift := uint(5)
+
+	got, total, err := NewRepository(db).ListSales(context.Background(), 7, SaleFilter{ShiftID: &shift, Page: 1, PageSize: 20})
+
+	require.NoError(t, err)
+	require.Equal(t, int64(2), total)
+	require.Len(t, got, 2)
+	require.Equal(t, a1.ID, got[0].ID, "newest first")
+	require.Equal(t, a2.ID, got[1].ID)
+}

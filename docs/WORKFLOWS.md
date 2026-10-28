@@ -89,6 +89,7 @@ a `warnings` list.
 | `view_reports` | dashboard and reports | ✔ | `GET /reports/*` |
 | `view_item_cost` | see cost and profit | ✔ | `cogs`, `gross_profit`, `net_profit` of `GET /reports/profit-loss` |
 | `view_sales` | sales history and receipts | ✔ | `GET /sales`, `/sales/:id`, `/sales/:id/receipt` |
+| `view_shift_history` | shift history and cash differences | ✔ | `GET /shifts` (own branch only at a till); `GET /shifts/:id/summary` and `/reconciliations` for a caller using Back Office |
 | `view_audit_log` | audit log | ✔ | `GET /audit-log` |
 | `manage_catalog` | products, categories, combos | ✔ | catalog writes, `GET /products/:id/branch-prices` |
 | `manage_branch_prices` | set their branch's prices | ✔ | `PUT/DELETE /products/:id/branch-prices/:branchId` (own branch only at a till) |
@@ -234,8 +235,8 @@ existed gets **401** on any gated route (re-login / refresh), never 403.
 | Gate (`internal/middleware`) | Who passes | Routes |
 |---|---|---|
 | `RequireOrgAdmin` | Owner, Service Center (never a till, manager PIN or not) | `POST/PATCH /branches`, `POST/PATCH /devices`, **all role routes** (`GET/POST /roles`, `PATCH/DELETE /roles/:id`, `GET /roles/:id/permissions`, `GET /permissions`), **payment-QR upload/delete** |
-| `RequireBackOfficePermission(code)` | Owner, Service Center, **or** a POS token + `X-Staff-Token` carrying `access_backoffice` **and** `code` | catalog writes (`manage_catalog`), `GET /products/:id/branch-prices` (`manage_catalog`; a till sees only its own branch), supplier writes (`manage_suppliers`), `POST/PATCH /purchase-orders` (`manage_purchase_orders`), `POST /purchase-orders/:id/receipts` (`receive_stock`), `POST /inventory/adjustments` + `POST/PATCH /stock-transfers` (`manage_stock`), `PUT/DELETE /products/:id/branch-prices/:branchId` (`manage_branch_prices`; a till's manager only for **their own branch**, else 403), `PUT /receipt-settings` (`manage_receipt_settings`), `PATCH /sync/conflicts/:id/resolve` (`resolve_sync_conflicts`), `POST /staff` + `PATCH /staff/:id` (`manage_staff`) |
-| `RequireViewPermission(code)` | everyone, except a staff token with `access_backoffice` lacking `code` | `GET /reports/*` (`view_reports`), `GET /audit-log` (`view_audit_log`), `GET /sales*` (`view_sales`), `GET /stock-levels`, `/inventory/*`, `/stock-transfers` (`view_inventory`), `GET /customers*` (`view_customers`), `GET /staff*`, `GET /branches/:id/staff` (`view_staff`) |
+| `RequireBackOfficePermission(code)` | Owner, Service Center, **or** a POS token + `X-Staff-Token` carrying `access_backoffice` **and** `code` | `GET /shifts` (`view_shift_history`; a till's manager sees only their own branch), catalog writes (`manage_catalog`), `GET /products/:id/branch-prices` (`manage_catalog`; a till sees only its own branch), supplier writes (`manage_suppliers`), `POST/PATCH /purchase-orders` (`manage_purchase_orders`), `POST /purchase-orders/:id/receipts` (`receive_stock`), `POST /inventory/adjustments` + `POST/PATCH /stock-transfers` (`manage_stock`), `PUT/DELETE /products/:id/branch-prices/:branchId` (`manage_branch_prices`; a till's manager only for **their own branch**, else 403), `PUT /receipt-settings` (`manage_receipt_settings`), `PATCH /sync/conflicts/:id/resolve` (`resolve_sync_conflicts`), `POST /staff` + `PATCH /staff/:id` (`manage_staff`) |
+| `RequireViewPermission(code)` | everyone, except a staff token with `access_backoffice` lacking `code` | `GET /reports/*` (`view_reports`), `GET /audit-log` (`view_audit_log`), `GET /sales*` (`view_sales`), `GET /stock-levels`, `/inventory/*`, `/stock-transfers` (`view_inventory`), `GET /customers*` (`view_customers`), `GET /staff*`, `GET /branches/:id/staff` (`view_staff`), `GET /shifts/:id/summary` + `/reconciliations` (`view_shift_history` - a plain till's close-shift screen is unaffected) |
 | `RequireStaffPermission` / `...OrOrgAdmin` | see "Which middleware/helper, when" | the till actions listed there |
 | (none beyond `Auth`) | any authenticated caller | the reads the till needs to sell (products, receipt settings, QR codes, held sales, current shift, ...), `GET /branches*`, `GET /devices`, own-account routes, PIN verify |
 
@@ -618,6 +619,7 @@ enforced by its own permission: a role the Owner has stripped of, say,
   even on a cash match).
   One open shift per device at a time; rotation happens via normal
   close/reopen, not a shared open shift.
+- **Shift history** (built 2026-10-27): see "Shift history" below.
 - **Cash reconciliation**: only cash is physically counted at close;
   `reason` required only when counted cash differs from expected. Expected
   cash = opening cash + cash sales − cash-method refunds of this shift's
@@ -1181,6 +1183,62 @@ Timestamps stay stored as instants (UTC), so changing a zone rewrites nothing �
 it only moves where the day boundaries fall. One zone per org (not per branch);
 a per-branch override is not built. The runtime embeds the tz database
 (`time/tzdata`), so zones resolve in the alpine image too.
+
+### Shift history — `GET /shifts` (built 2026-10-27)
+
+Back Office lists past shifts: who worked them, what they sold, and whether the
+cash was short or over. Before this the API could only read a shift whose id you
+already knew.
+
+- **Permission `view_shift_history`** ("Shift history and cash differences",
+  Back Office). Owner / Service Center always; the default **Manager** holds it
+  (a data migration, `2026-10-27-manager-view-shift-history`, gave it once to
+  every org's **system** Manager role - Cashier, Super Staff and custom roles
+  were left as the Owner set them; it is also in the legacy-token Back Office
+  expansion, so a manager token issued before the deploy keeps working). The
+  route is `RequireBackOfficePermission("view_shift_history")`: a POS token needs
+  `X-Staff-Token` with `access_backoffice` **and** the permission - 403 for a
+  cashier or a role without it, **401** for a plain till with no staff token.
+- **Query**: `branch_id`, `from` / `to` (`YYYY-MM-DD`, inclusive, **days of the
+  organization's timezone**, matched on `opened_at`), `status` (`open|closed`),
+  `staff_id`, `device_id`, `discrepancy` (`short` = counted < expected, `over` =
+  counted > expected, `any` = either; closed shifts only), `page` / `page_size`
+  (default **25**, max 100). 400 for a bad value. Newest first (`opened_at`, then
+  id).
+- **Scope**: an Owner / Service Center sees every branch (or one with
+  `branch_id`); a manager at a till sees **only their own branch** - their own
+  `branch_id` is fine, **another one is 403**.
+- **Response**: `{shifts, page, page_size, total_count}`; each row has `id, status,
+  branch_id, branch_name, device_id, device_name, staff_id, staff_name,
+  closed_by_staff_id, closed_by_name, force_closed, opened_at, closed_at,
+  opening_cash, sales_count, sales_total, payment_totals, expected_cash,
+  counted_cash, cash_difference, difference_reason`. `force_closed` = someone
+  other than the shift's own staff closed it. An **open** shift shows live totals
+  and has `null` closed_at / closed_by_* / counted_cash / cash_difference /
+  difference_reason. `counted_cash`, `cash_difference` (counted - expected, so
+  negative = short) and `difference_reason` are the **cash** reconciliation row.
+- **The figures are the summary's figures**: `sales_count`, `sales_total`,
+  `payment_totals` (only the methods that took a payment) and `expected_cash`
+  (opening + cash sales + cash exchange-in - cash exchange-out - cash refunds)
+  come from the same function (`loadShiftFigures` / `ShiftFigures.ExpectedCash`)
+  that `GET /shifts/:id/summary` uses, so the list and the close-shift screen
+  can't disagree. They are computed with grouped queries over the page's shift
+  ids (sales, payments, cash refunds, cash exchanges - plus one each for names
+  and the cash reconciliation rows), never per shift.
+- **Detail page**: `GET /drawer-events?shift_id=`, `GET /expenses?shift_id=` and
+  `GET /sales?shift_id=` return only that shift's rows. An **expense carries a
+  `shift_id`**: set when a staff member logs it at the till, to that staff
+  member's own open shift (null for an Owner-logged expense, one logged with no
+  open shift, and every expense logged before this change). It never affects a
+  shift's cash figures.
+- **`GET /shifts/:id/summary` and `/reconciliations`** stay open to the till
+  (its close-shift screen reads them): only a caller **using Back Office** (a
+  staff token with `access_backoffice`) now needs `view_shift_history` for them
+  (`RequireViewPermission`), the same rule as the other Back Office reads. A
+  custom role that has `access_backoffice` but not `view_shift_history` and runs
+  a till therefore can't read its own shift's summary while Back Office is
+  unlocked - grant it, or use a cashier-style role for tills.
+- Reading the history is not audited.
 
 ### Sales history list (built 2026-10-08)
 `GET /sales` is `{sales, page, page_size, total_count}` (the same envelope and
