@@ -39,7 +39,7 @@ func d(s string) decimal.Decimal {
 }
 
 func newTestService(repo Repository, inv InventoryWriter, products ProductLookup, auditWriter AuditWriter) *Service {
-	return NewService(repo, inv, products, auditWriter, nil, nil, nil, fakeTransactioner{})
+	return NewService(repo, inv, products, nil, auditWriter, nil, nil, nil, fakeTransactioner{})
 }
 
 // noStoredSale makes CreateSale's idempotency lookup find nothing, i.e. a
@@ -63,7 +63,7 @@ func newListSalesService(t *testing.T) (*Service, *MockRepository) {
 func newListSalesServiceWithOrgs(t *testing.T) (*Service, *MockRepository, *MockOrganizationLookup) {
 	repo := NewMockRepository(t)
 	orgs := NewMockOrganizationLookup(t)
-	svc := NewService(repo, NewMockInventoryWriter(t), NewMockProductLookup(t), NewMockAuditWriter(t), orgs, NewMockReturnActivityReader(t), NewMockStaffDirectory(t), fakeTransactioner{})
+	svc := NewService(repo, NewMockInventoryWriter(t), NewMockProductLookup(t), nil, NewMockAuditWriter(t), orgs, NewMockReturnActivityReader(t), NewMockStaffDirectory(t), fakeTransactioner{})
 	return svc, repo, orgs
 }
 
@@ -338,7 +338,7 @@ func TestService_ResumeHeldSale_PropagatesNotFound(t *testing.T) {
 func newReceiptService(t *testing.T) (*Service, *MockRepository, *MockReturnActivityReader) {
 	repo := NewMockRepository(t)
 	activity := NewMockReturnActivityReader(t)
-	svc := NewService(repo, NewMockInventoryWriter(t), NewMockProductLookup(t), NewMockAuditWriter(t), nil, activity, NewMockStaffDirectory(t), fakeTransactioner{})
+	svc := NewService(repo, NewMockInventoryWriter(t), NewMockProductLookup(t), nil, NewMockAuditWriter(t), nil, activity, NewMockStaffDirectory(t), fakeTransactioner{})
 	return svc, repo, activity
 }
 
@@ -554,7 +554,7 @@ func newReceiptServiceWithStaff(t *testing.T) (*Service, *MockRepository, *MockR
 	repo := NewMockRepository(t)
 	activity := NewMockReturnActivityReader(t)
 	staff := NewMockStaffDirectory(t)
-	svc := NewService(repo, NewMockInventoryWriter(t), NewMockProductLookup(t), NewMockAuditWriter(t), nil, activity, staff, fakeTransactioner{})
+	svc := NewService(repo, NewMockInventoryWriter(t), NewMockProductLookup(t), nil, NewMockAuditWriter(t), nil, activity, staff, fakeTransactioner{})
 	return svc, repo, activity, staff
 }
 

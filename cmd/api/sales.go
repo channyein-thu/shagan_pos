@@ -33,7 +33,7 @@ func NewSalesAPI(db *gorm.DB, jwtSecret []byte) *SalesAPI {
 func newSalesService(db *gorm.DB, jwtSecret []byte) *sales.Service {
 	staff := identity.NewService(identity.NewRepository(db), audit.NewRepository(db), sharedSubscription(db), db, jwtSecret,
 		identity.DefaultAccessTokenTTL, identity.DefaultRefreshTokenTTL, identity.DefaultStaffPINTokenTTL, identity.DefaultManagerPINTokenTTL)
-	return sales.NewService(sales.NewRepository(db), inventory.NewRepository(db), catalog.NewRepository(db), audit.NewRepository(db), identity.NewRepository(db), returns.NewRepository(db), staff, db)
+	return sales.NewService(sales.NewRepository(db), inventory.NewRepository(db), catalog.NewRepository(db), catalog.NewRepository(db), audit.NewRepository(db), identity.NewRepository(db), returns.NewRepository(db), staff, db)
 }
 
 // requireBranchID reads the calling pos-device's branch from its access

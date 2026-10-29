@@ -558,9 +558,13 @@ enforced by its own permission: a role the Owner has stripped of, say,
    discount - and stores the rate on the line. There is no tax input: a `tax`
    a till sends is ignored. `Sale.Tax` is the sum across lines, informational.
 7. **Combos**: ringing up a Combo expands it into one `CreateSaleItemRequest`
-   per real product component (each with its own price and a proportional
-   share of the discount; the server adds each component's own tax %), tagged with a shared `combo_id` purely for
-   receipt/report grouping - see Section 8's design writeup for why.
+   per real product component, all tagged with the combo's `combo_id`. The
+   **server validates the combo and computes the bundle discount**: the combo
+   must exist (404), be unexpired (409), and its lines must be exactly its
+   components with the same whole number of bundles (400); each line's share of
+   the discount comes from the combo's price - a `discount` the till sends on a
+   combo line is ignored. The server adds each component's own tax % on what is
+   left. See Section 8.
 8. Opens the drawer without a sale — only if their role grants
    `open_drawer_no_sale` (Manager and the migrated Super Staff by default), **or**
    a valid manager approval for it; otherwise 403.
@@ -636,8 +640,9 @@ enforced by its own permission: a role the Owner has stripped of, say,
 - **Tax**: a % per product, already inside its price, computed by the server
   per line (after discounts) and summed into `Sale.Tax`. The total never adds
   it, and a client `tax` is ignored. See Section 8, "Tax".
-- **Combos**: expanded client-side into normal per-product line items
-  tagged with a shared `combo_id` - not a special server-side pricing path.
+- **Combos**: the till expands a combo into normal per-product lines tagged
+  with a shared `combo_id`; the server checks the combo is real and the lines
+  match it, and prices the bundle from the combo (Section 8).
 - **Stock decrement**: same transaction as `CreateSale`; blocked outright on
   insufficient stock (409), no backorder - the one exception is a sale
   ingested from an offline queue, which is let through and flagged
@@ -685,21 +690,61 @@ enforced by its own permission: a role the Owner has stripped of, say,
 
 ---
 
-## 8. Combo Pricing at Checkout (Design)
+## 8. Combo Pricing at Checkout (Built)
 
 `Combo`/`ComboItem` (Catalog) describe a bundle: several products sold
 together at one lump-sum price. The question was how ringing one up
 interacts with `SaleItem`, which is always keyed to one real `ProductID`.
 
-**Decision: expand client-side, don't add server-side combo pricing
-logic.** When a POS device rings up a Combo, it expands it into one
-`CreateSaleItemRequest` per real component product — each priced from its
-product like any standalone product sale (the server also works out its tax
-from the product's own tax %, on the line total after its share), plus a
-proportional share of the combo's bundle discount
-(allocated by each component's normal price × qty, so the line items'
-combined total lands exactly on the combo's advertised price), and a shared
-`ComboID` tag purely for grouping on receipts/reports.
+**Decision (changed 2026-10-29): the till still expands the combo, but the
+server decides whether the combo is real and what it costs.** The first
+design trusted the till completely - `combo_id` was an unchecked label and the
+`discount` on a combo line was stored as sent - so a cashier could ring any
+`combo_id` with a "discount" equal to the price and make a sale free that
+reports then counted as a bundle sale. Now, when a POS device rings up a
+Combo, it still expands it into one `CreateSaleItemRequest` per real component
+product (each priced from its product like any standalone product sale, with
+the server working out its tax from the product's own tax %), tagged with the
+shared `combo_id` - but the server then, for every distinct `combo_id` in the
+request (looked up once):
+
+| Check | Result |
+|---|---|
+| combo doesn't exist in this org (another org's looks the same) | **404** `combo not found` |
+| `now > combo.expires_at` | **409** `combo has expired` |
+| a component has no line / a line is for a product not in the combo / a product appears twice under the id | **400** (`combo 5: line for product 3 is missing`, `... is not part of the bundle`, `... is listed more than once`) |
+| a line's qty isn't `component qty x k`, or the components don't all have the same whole `k >= 1` | **400** `combo 5: quantities don't match the bundle` |
+| `discount_approval_id` on a combo line | **400** (a combo never also gets a custom discount) |
+
+and computes the discount itself, ignoring the client's:
+- `normal_total` = sum of `price at this branch x qty` over the combo's lines;
+  the product's own catalog % does **not** stack.
+- `bundle_discount = max(0, normal_total - combo.price x k)`: a combo can never
+  raise a price.
+- it is shared across the lines in proportion to each line's normal total,
+  each share rounded to 2 decimals, and **the rounding remainder goes to the
+  line with the largest normal total** (the first on a tie), so the lines add
+  up to exactly `combo.price x k`. The K 100 rounding rule is for unit prices
+  only; a bundle share is a plain 2-decimal amount.
+- each line stores `combo_discount = share` and `line_total = price x qty -
+  share`; its tax is worked out last, on that total.
+
+**Offline-queued sales (`POST /sync/sales`)** - the sale already happened at
+the till, so what is *fake* is refused and what is merely *stale* is tolerated:
+- an unknown combo, lines that don't match the combo, or a combo that had
+  already expired when the sale was rung up fail **that sale only** (the item's
+  `error` in the response; the rest of the batch still lands). Expiry is judged
+  at the sale's optional `rung_up_at` (only if it is in the past; otherwise the
+  time the server got it), so a combo that expired while the till was offline
+  still honours sales made before it did.
+- the bundle is priced from the combo's **current** price and the server's
+  prices - the till's cached `unit_price` and `discount` are not taken as
+  rung up for combo lines. If that differs from what the till charged, the sale
+  is still accepted and one `price_mismatch` conflict is raised **per combo**
+  (payload: `combo_id`, `client_bundle_total`, `current_bundle_total`). The
+  customer's payments are accepted when they equal the till's own total; a sale
+  is booked at the server's total and any difference is for the manager to
+  review in the conflict. Payments that match neither total are a 400.
 
 **What the device is given to do that (built 2026-10-08):** each combo in
 `GET /combos` and in `GET /sync/catalog` carries `items: [{product_id, qty}]`
@@ -713,13 +758,16 @@ Why this shape, not a dedicated combo-aware code path:
   decrement and reporting both work per real
   product with zero special-casing.
 - **Matches the existing offline-first pattern.** The POS device already
-  computes `NameSnapshot`/`UnitPrice` client-side from its local cache
-  (it may be ringing up while offline) - expanding a combo the device
-  already has cached locally is the same kind of client-side work, not a
-  new category of logic.
-- `ComboID` is the only schema addition (`SaleItem.ComboID *uint`,
-  `CreateSaleItemRequest.ComboID *uint`) — a label, not a pricing
-  mechanism.
+  computes `NameSnapshot` client-side from its local cache (it may be ringing up
+  while offline) - expanding a combo the device already has cached locally is
+  the same kind of client-side work. Only the *validation and the money* moved
+  to the server.
+- `ComboID` is still the only schema addition (`SaleItem.ComboID *uint`,
+  `CreateSaleItemRequest.ComboID *uint`); `rung_up_at` is the only new request
+  field, read for queued sales only.
+- Sales made before this change keep their stored `combo_discount` and totals:
+  receipts, returns (refund = the stored `line_total`), exchanges and reports
+  read stored values and are unchanged.
 
 ---
 
@@ -775,8 +823,9 @@ the client. `unit_price` is the product's price **at the selling branch** (see
 "Branch prices" below; a different client value is a 409 `price changed,
 refresh the catalog`); with no approval the unit sale price is the product's
 sale price at that branch; with one it is `DiscountedUnitPrice(original,
-approval %)`. A combo line keeps the client's bundle share as `combo_discount`
-(needs no approval, is not a manual discount). The line stores
+approval %)`. A combo line's `combo_discount` is its share of the bundle discount **computed
+by the server** from the combo's price (needs no approval, is not a manual
+discount; a `discount` the client sends is ignored - see Section 8). The line stores
 `catalog_discount_percent/_discount`, `manual_discount_percent/_discount/_reason`,
 `combo_discount`, `discount_approval_id` and `manual_approved_by`; `discount` is
 still their sum, so totals, returns and reports are unchanged. The line's tax
@@ -1081,7 +1130,11 @@ The shape below is the design it follows, reusing what was already in place.
   validated 0-100, line recomputed with the Kyat rounding rule), and so is its
   `tax_percent` (the tax rate in the till's cached catalog, 0-100; omitted = the
   product's current rate). The line's tax is worked out from that rate on the
-  line total, like online. If the price, the catalog % or the tax % no longer
+  line total, like online. **Combo lines are the exception:** they are priced by
+  the server from the combo and its components (never from the till's unit price
+  or discount), a fake combo or lines that don't match one fail that sale, and a
+  combo whose price changed is one `price_mismatch` conflict per combo (Section
+  8). If the price, the catalog % or the tax % no longer
   matches the product, the sale is still accepted and a `SyncConflict` with
   reason `price_mismatch` is recorded per stale line (one conflict per line,
   whichever of the three went stale; payload: product, the till's

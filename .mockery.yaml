@@ -89,6 +89,9 @@ packages:
       ProductLookup:
         config:
           filename: "mock_sales_product_lookup_test.go"
+      ComboLookup:
+        config:
+          filename: "mock_sales_combo_lookup_test.go"
       OrganizationLookup:
         config:
           filename: "mock_sales_organization_lookup_test.go"

@@ -337,6 +337,66 @@ func TestService_IngestQueuedSales_StaleTaxRate_IsRecordedInThePriceMismatchConf
 	require.True(t, got.Results[0].Success, "the sale is accepted, not rejected")
 }
 
+// A combo that changed price while the till was offline is reported once per
+// combo on the same price_mismatch conflict: what the till charged for the
+// bundle against what the server now charges. The sale is accepted.
+func TestService_IngestQueuedSales_ComboThatChangedPrice_IsRecordedInThePriceMismatchConflict(t *testing.T) {
+	repo := NewMockRepository(t)
+	staff := NewMockStaffLookup(t)
+	sw := NewMockSalesWriter(t)
+	svc := newIngestService(repo, staff, sw)
+
+	saleID := uuid.New()
+	req := queuedSale(saleID)
+	comboID, charged, now := uint(5), decimal.NewFromInt(9500), decimal.NewFromInt(9000)
+	mismatch := sales.PriceMismatch{ComboID: &comboID, ClientBundleTotal: &charged, CurrentBundleTotal: &now}
+
+	notStored(sw, saleID)
+	staffOfBranch(staff, 14, 5)
+	sw.EXPECT().CreateSale(mock.Anything, uint(7), uint(5), mock.Anything, req, true).
+		Return(&sales.Sale{ID: saleID, PriceMismatches: []sales.PriceMismatch{mismatch}}, nil, nil).Once()
+	repo.EXPECT().
+		CreateSyncConflict(mock.Anything, mock.MatchedBy(func(c *SyncConflict) bool {
+			return c.SaleID == saleID && c.Reason == SyncConflictReasonPriceMismatch &&
+				strings.Contains(string(c.Payload), `"combo_id":5`) &&
+				strings.Contains(string(c.Payload), `"client_bundle_total":"9500"`) &&
+				strings.Contains(string(c.Payload), `"current_bundle_total":"9000"`)
+		})).
+		Return(nil).Once()
+
+	got, err := svc.IngestQueuedSales(context.Background(), 7, 5, IngestQueuedSalesRequest{Sales: []sales.CreateSaleRequest{req}})
+
+	require.NoError(t, err)
+	require.True(t, got.Results[0].Success, "the sale is accepted, not rejected")
+}
+
+// A fake combo is refused for that sale only; the next queued sale still goes in.
+func TestService_IngestQueuedSales_FakeCombo_FailsThatSaleAndTheRestContinue(t *testing.T) {
+	repo := NewMockRepository(t)
+	staff := NewMockStaffLookup(t)
+	sw := NewMockSalesWriter(t)
+	svc := newIngestService(repo, staff, sw)
+
+	badID, goodID := uuid.New(), uuid.New()
+	bad, good := queuedSale(badID), queuedSale(goodID)
+
+	notStored(sw, badID)
+	notStored(sw, goodID)
+	staffOfBranch(staff, 14, 5)
+	staffOfBranch(staff, 14, 5)
+	sw.EXPECT().CreateSale(mock.Anything, uint(7), uint(5), mock.Anything, bad, true).
+		Return(nil, nil, common.BadRequestError("combo 99999 does not exist")).Once()
+	sw.EXPECT().CreateSale(mock.Anything, uint(7), uint(5), mock.Anything, good, true).
+		Return(&sales.Sale{ID: goodID}, nil, nil).Once()
+
+	got, err := svc.IngestQueuedSales(context.Background(), 7, 5, IngestQueuedSalesRequest{Sales: []sales.CreateSaleRequest{bad, good}})
+
+	require.NoError(t, err)
+	require.False(t, got.Results[0].Success)
+	require.Contains(t, got.Results[0].Error, "combo 99999 does not exist")
+	require.True(t, got.Results[1].Success)
+}
+
 func TestService_IngestQueuedSales_StaffFromAnotherBranch_FailsWithoutCreating(t *testing.T) {
 	repo := NewMockRepository(t)
 	staff := NewMockStaffLookup(t)

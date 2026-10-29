@@ -26,6 +26,17 @@ type ProductLookup interface {
 	catalog.BranchPriceReader
 }
 
+// ComboLookup is what sales needs from catalog to sell a combo: the combo
+// itself (org-scoped, so another org's combo is a 404 like a missing one) and
+// its components, so the server - not the till - decides whether a combo is
+// real, whether the lines match it and what the bundle costs. See
+// Service.priceCombos. catalog.Repository already satisfies this signature -
+// no adapter needed.
+type ComboLookup interface {
+	GetCombo(ctx context.Context, orgID uint, id uint) (*catalog.Combo, error)
+	ListComboItemsByComboIDs(ctx context.Context, comboIDs []uint) ([]catalog.ComboItem, error)
+}
+
 // InventoryWriter is what sales needs from inventory: decrementing a sold
 // product's stock at the selling branch and recording the ledger entry,
 // same reasoning as procurement.InventoryWriter. inventory.Repository

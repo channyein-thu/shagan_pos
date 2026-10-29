@@ -35,10 +35,12 @@ type CreateHeldSaleRequest struct {
 //   - with no DiscountApprovalID the line gets the product's catalog % (its
 //     sale_price); with one, the approval's % comes off the ORIGINAL price and
 //     replaces the catalog %.
-//   - Discount is IGNORED, except on a combo line (ComboID set), where it is the
-//     line's share of the bundle discount (stored as combo_discount, needs no
-//     approval and is not a manual discount). The client never gets to say how
-//     much was taken off a normal line.
+//   - Discount is IGNORED on every line, combo lines included: the client never
+//     gets to say how much was taken off. A combo line's share of the bundle
+//     discount is computed by the server from the combo's own price (stored as
+//     combo_discount; it needs no approval and is not a manual discount). A
+//     till that still sends one is not read - the field only stays so older
+//     tills don't break.
 //   - PriceOverride is rejected (400).
 //   - there is no tax field: the product's tax % is inside its price, and the
 //     server works out each line's tax from the line total. A `tax` an older
@@ -48,8 +50,12 @@ type CreateHeldSaleRequest struct {
 // coffees onto its own discounted line.
 //
 // ComboID is set when the line is one component of a Combo rung up as a group: the till expands the combo into
-// one line per real product, each carrying a share of the bundle discount, so
-// every line stays structurally identical to a standalone product sale.
+// one line per real product, so every line stays structurally identical to a
+// standalone product sale. The server then checks the combo is real (404
+// otherwise), not expired (409), and that the lines under one combo_id are
+// exactly its components with the same whole number of bundles (400
+// otherwise), and it works out each line's share of the bundle discount so
+// the lines add up to exactly combo price x bundles. See Service.priceCombos.
 //
 // CatalogDiscountPercent and TaxPercent are read ONLY for an offline-queued
 // sale (POST /sync/sales): that sale was priced from the till's cached catalog,
@@ -99,8 +105,13 @@ type CreateSalePaymentRequest struct {
 // CreateSale handler). That verified identity is also the seller a custom
 // discount approval must have been requested by.
 type CreateSaleRequest struct {
-	ID         uuid.UUID                  `json:"id" binding:"required"`
-	ShiftID    uint                       `json:"shift_id" binding:"required"`
+	ID      uuid.UUID `json:"id" binding:"required"`
+	ShiftID uint      `json:"shift_id" binding:"required"`
+	// RungUpAt is read ONLY for an offline-queued sale: when the till rang it
+	// up, so a combo is judged expired as of the sale, not as of the (later)
+	// sync. Omitted or in the future = the time the server received it. On a
+	// live sale it is ignored.
+	RungUpAt   *time.Time                 `json:"rung_up_at"`
 	StaffID    uint                       `json:"staff_id"`
 	DeviceID   uint                       `json:"device_id" binding:"required"`
 	CustomerID *uint                      `json:"customer_id"`
@@ -180,6 +191,11 @@ type SalesPage struct {
 // PriceMismatch is one line of an offline-queued sale whose till-cached price,
 // catalog % or tax % no longer matches the product. Raised as a sync conflict;
 // the sale is still accepted as it was rung up.
+//
+// A combo that has changed price since the till cached it is reported once per
+// combo, not per line: ProductID is 0 and ComboID, ClientBundleTotal (what the
+// till charged for the bundle(s)) and CurrentBundleTotal (what the server
+// computed from the combo's current price) say what differed.
 type PriceMismatch struct {
 	ProductID         uint            `json:"product_id"`
 	ClientUnitPrice   decimal.Decimal `json:"client_unit_price"`
@@ -188,6 +204,10 @@ type PriceMismatch struct {
 	CurrentUnitPrice  decimal.Decimal `json:"current_unit_price"`
 	CurrentPercent    decimal.Decimal `json:"current_percent"`
 	CurrentTaxPercent decimal.Decimal `json:"current_tax_percent"`
+
+	ComboID            *uint            `json:"combo_id,omitempty"`
+	ClientBundleTotal  *decimal.Decimal `json:"client_bundle_total,omitempty"`
+	CurrentBundleTotal *decimal.Decimal `json:"current_bundle_total,omitempty"`
 }
 
 // CreateDiscountApprovalRequest is the request body for

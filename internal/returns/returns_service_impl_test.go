@@ -1324,6 +1324,20 @@ func TestService_CreateReturn_PartialReturnOfATaxedLine_RefundsTheShareAndItsTax
 	require.True(t, d("166.67").Equal(got.TaxRefunded), "3,500 x 5 / 105 (got %s)", got.TaxRefunded)
 }
 
+// A combo line stores its bundle share as combo_discount, and sales made before
+// the server priced combos keep whatever share the till sent. A return reads
+// only the stored line_total, so the refund is what was paid whichever way the
+// share was worked out - the combo rules never reach back into old sales.
+func TestService_CreateReturn_ComboLine_RefundsFromTheStoredLineTotal(t *testing.T) {
+	combo := uint(5)
+	got := returnLine(t, sales.SaleItem{
+		Qty: 2, ComboID: &combo, UnitPrice: d("6000"), ComboDiscount: d("1000"), Discount: d("1000"), LineTotal: d("11000"),
+	}, 1)
+
+	require.True(t, d("5500").Equal(got.RefundTotal), "half of the 11,000 paid (got %s)", got.RefundTotal)
+	require.True(t, got.TaxRefunded.IsZero())
+}
+
 // A line sold at a discount refunds what was actually paid, so the tax given
 // back is the (smaller) tax inside that.
 func TestService_CreateReturn_DiscountedTaxedLine_RefundsTheTaxOfWhatWasPaid(t *testing.T) {

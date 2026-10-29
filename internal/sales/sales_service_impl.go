@@ -19,6 +19,7 @@ type Service struct {
 	repo      Repository
 	inventory InventoryWriter
 	products  ProductLookup
+	combos    ComboLookup
 	audit     AuditWriter
 	orgs      OrganizationLookup
 	returns   ReturnActivityReader
@@ -26,8 +27,8 @@ type Service struct {
 	db        common.Transactioner
 }
 
-func NewService(repo Repository, inv InventoryWriter, products ProductLookup, auditWriter AuditWriter, orgs OrganizationLookup, returns ReturnActivityReader, staff StaffDirectory, db common.Transactioner) *Service {
-	return &Service{repo: repo, inventory: inv, products: products, audit: auditWriter, orgs: orgs, returns: returns, staff: staff, db: db}
+func NewService(repo Repository, inv InventoryWriter, products ProductLookup, combos ComboLookup, auditWriter AuditWriter, orgs OrganizationLookup, returns ReturnActivityReader, staff StaffDirectory, db common.Transactioner) *Service {
+	return &Service{repo: repo, inventory: inv, products: products, combos: combos, audit: auditWriter, orgs: orgs, returns: returns, staff: staff, db: db}
 }
 
 var _ Interface = (*Service)(nil)
@@ -38,6 +39,14 @@ type pricedLine struct {
 	item     SaleItem
 	approval *DiscountApproval // the approval this line spends, if any
 	mismatch *PriceMismatch    // queued sales only: the till's cache was stale for this line
+
+	// Combo bookkeeping (see priceCombos). clientCharged is what a queued till
+	// charged for a combo line; comboMismatch and tillDelta are set on the
+	// FIRST line of a combo whose bundle the server priced differently from
+	// the till (tillDelta = till's bundle total - the server's).
+	clientCharged decimal.Decimal
+	comboMismatch *PriceMismatch
+	tillDelta     decimal.Decimal
 }
 
 // CreateSale prices every line from the PRODUCT (see CreateSaleItemRequest),
@@ -52,7 +61,9 @@ type pricedLine struct {
 //   - a custom % taken from the ORIGINAL price that REPLACES the catalog %,
 //     carried by a DiscountApproval the seller got when the discount was added
 //     (the approval is checked here, spent atomically, and audited), or
-//   - on a combo line, the client's share of the bundle discount.
+//   - on a combo line, its share of the bundle discount, computed by the server
+//     from the combo's own price (the combo must be real, unexpired and the
+//     lines must match it - see priceCombos; the client's amount is ignored).
 //
 // There is no permission or manager-token check for discounts here any more:
 // the approval record is the authorization, and payment never asks for a PIN.
@@ -83,7 +94,14 @@ func (s *Service) CreateSale(ctx context.Context, orgID uint, branchID uint, act
 	}
 
 	queued := allowNegativeStock
-	lines, err := s.priceLines(ctx, orgID, branchID, actor, in, queued)
+	// When the sale counts as rung up. A live sale is rung up now; a queued one
+	// was rung up earlier at the till, so a combo that expired while the till
+	// was offline is still honoured - but never a time in the future.
+	at := time.Now()
+	if queued && in.RungUpAt != nil && in.RungUpAt.Before(at) {
+		at = *in.RungUpAt
+	}
+	lines, err := s.priceLines(ctx, orgID, branchID, actor, in, queued, at)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -112,7 +130,18 @@ func (s *Service) CreateSale(ctx context.Context, orgID uint, branchID uint, act
 			ChangeGiven:    p.ChangeGiven,
 		})
 	}
-	if !paymentsTotal.Equal(total) {
+	// A queued till that charged a different bundle price than the combo has
+	// now (the combo changed while it was offline) collected what it showed:
+	// those payments are accepted as long as they match the TILL's own total,
+	// and the difference is raised as a conflict (see priceCombos). Anything
+	// else must add up to the server's total.
+	expectedPayments := total
+	if queued {
+		for _, line := range lines {
+			expectedPayments = expectedPayments.Add(line.tillDelta)
+		}
+	}
+	if !paymentsTotal.Equal(total) && !paymentsTotal.Equal(expectedPayments) {
 		return nil, nil, common.BadRequestError("payments must add up to the sale total")
 	}
 
@@ -142,6 +171,9 @@ func (s *Service) CreateSale(ctx context.Context, orgID uint, branchID uint, act
 		for _, line := range lines {
 			if line.mismatch != nil {
 				sale.PriceMismatches = append(sale.PriceMismatches, *line.mismatch)
+			}
+			if line.comboMismatch != nil {
+				sale.PriceMismatches = append(sale.PriceMismatches, *line.comboMismatch)
 			}
 		}
 	}

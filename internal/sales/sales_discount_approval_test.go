@@ -31,7 +31,7 @@ func newApprovalFixture(t *testing.T) *approvalFixture {
 	products := NewMockProductLookup(t)
 	staff := NewMockStaffDirectory(t)
 	audW := NewMockAuditWriter(t)
-	svc := NewService(repo, NewMockInventoryWriter(t), products, audW, nil, nil, staff, fakeTransactioner{})
+	svc := NewService(repo, NewMockInventoryWriter(t), products, nil, audW, nil, nil, staff, fakeTransactioner{})
 	return &approvalFixture{svc: svc, repo: repo, products: products, staff: staff, audW: audW}
 }
 

@@ -98,7 +98,10 @@ state for the one request they authorise.
 - **Server-derived totals.** `POST /sales` prices every line from its product
   and recomputes subtotal, discount, tax and total (`total = subtotal -
   discount`: tax is a % per product that is already inside the price, never
-  added) and rejects a sale whose payments don't add up exactly.
+  added) and rejects a sale whose payments don't add up exactly. A combo line is
+  checked against the real combo (exists, unexpired, lines match its components)
+  and its bundle discount is computed from the combo's price, never taken from
+  the till.
 - **Till:** works in **integer cents** (`shagan-retail/lib/pos/pricing.ts`) and
   converts only at the edges. An order discount is split across lines in
   proportion to their value, and the rounding remainder goes to the largest

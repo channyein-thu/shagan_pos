@@ -22,7 +22,10 @@ var hundred = decimal.NewFromInt(100)
 // priceLines prices every request line from its product - see
 // CreateSaleItemRequest for the rules - and validates the discount approvals
 // the lines carry. Nothing it returns has touched the database.
-func (s *Service) priceLines(ctx context.Context, orgID, branchID uint, actor SaleActor, in CreateSaleRequest, queued bool) ([]pricedLine, error) {
+//
+// at is when the sale counts as rung up (see CreateSale): the moment a combo's
+// expiry is judged.
+func (s *Service) priceLines(ctx context.Context, orgID, branchID uint, actor SaleActor, in CreateSaleRequest, queued bool, at time.Time) ([]pricedLine, error) {
 	products := make(map[uint]*catalog.Product, len(in.Items))
 	// what each product costs at THIS branch (its override, else the catalog)
 	pricings := make(map[uint]catalog.Pricing, len(in.Items))
@@ -76,6 +79,7 @@ func (s *Service) priceLines(ctx context.Context, orgID, branchID uint, actor Sa
 			Qty: item.Qty, UnitCost: product.CostPrice,
 		}
 		var mismatch *PriceMismatch
+		var clientCharged decimal.Decimal // queued combo line: what the till charged for it
 		unitSale := original
 		// The tax rate printed on the product. Only an offline-queued line may
 		// bring its own (the till's cached one).
@@ -85,8 +89,18 @@ func (s *Service) priceLines(ctx context.Context, orgID, branchID uint, actor Sa
 		case queued:
 			// Priced from the till's cached catalog: take its snapshot as
 			// rung up, but flag it if the product has since changed.
+			clientUnit := original
 			if item.UnitPrice.IsPositive() {
-				original = item.UnitPrice
+				clientUnit = item.UnitPrice
+			}
+			if isCombo {
+				// A combo line is NOT taken as rung up: its bundle is priced by
+				// the server from the combo (see priceCombos), so a till can't
+				// make a fake low unit price shrink the bundle. What the till
+				// charged is only kept to report the difference.
+				clientCharged = clientUnit.Mul(qty).Sub(item.Discount)
+			} else {
+				original = clientUnit
 			}
 			pct := decimal.Zero
 			if item.CatalogDiscountPercent != nil {
@@ -105,7 +119,9 @@ func (s *Service) priceLines(ctx context.Context, orgID, branchID uint, actor Sa
 			if taxPct.IsNegative() || taxPct.GreaterThan(hundred) {
 				return nil, common.BadRequestError("tax_percent must be between 0 and 100")
 			}
-			if !original.Equal(pricing.Price) || !pct.Equal(pricing.DiscountPercent) || !taxPct.Equal(product.TaxPercent) {
+			// A combo line's price and catalog % don't count here: the bundle is
+			// priced from the combo and its change is reported once per combo.
+			if (!isCombo && (!original.Equal(pricing.Price) || !pct.Equal(pricing.DiscountPercent))) || !taxPct.Equal(product.TaxPercent) {
 				mismatch = &PriceMismatch{
 					ProductID: item.ProductID, ClientUnitPrice: original, ClientPercent: pct, ClientTaxPercent: taxPct,
 					CurrentUnitPrice: pricing.Price, CurrentPercent: pricing.DiscountPercent, CurrentTaxPercent: product.TaxPercent,
@@ -126,20 +142,19 @@ func (s *Service) priceLines(ctx context.Context, orgID, branchID uint, actor Sa
 
 		line.UnitPrice = original
 		gross := original.Mul(qty)
-		if isCombo {
-			// The client's bundle share, validated only for sanity: it can't
-			// take more off the line than the line is worth.
-			if item.Discount.GreaterThan(gross) {
-				return nil, common.BadRequestError("combo discount can't exceed the line's price")
-			}
-			line.ComboDiscount = item.Discount
-		} else if item.DiscountApprovalID == nil {
+		// A combo line's share of the bundle discount is filled in by
+		// priceCombos once every line is priced - never from the client.
+		if !isCombo && item.DiscountApprovalID == nil {
 			line.CatalogDiscount = original.Sub(unitSale).Mul(qty)
 		}
-		line.Discount = line.CatalogDiscount.Add(line.ComboDiscount)
+		line.Discount = line.CatalogDiscount
 		line.LineTotal = gross.Sub(line.Discount)
 		line.TaxPercent = taxPct
-		lines[i] = pricedLine{item: line, mismatch: mismatch}
+		lines[i] = pricedLine{item: line, mismatch: mismatch, clientCharged: clientCharged}
+	}
+
+	if err := s.priceCombos(ctx, orgID, in, lines, queued, at); err != nil {
+		return nil, err
 	}
 
 	if len(approvalIDs) > 0 {

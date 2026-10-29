@@ -28,6 +28,7 @@ type saleFixture struct {
 	inv      *MockInventoryWriter
 	audW     *MockAuditWriter
 	products *MockProductLookup
+	combos   *MockComboLookup
 }
 
 func newSaleFixture(t *testing.T) *saleFixture {
@@ -36,7 +37,10 @@ func newSaleFixture(t *testing.T) *saleFixture {
 	inv := NewMockInventoryWriter(t)
 	audW := NewMockAuditWriter(t)
 	products := NewMockProductLookup(t)
-	return &saleFixture{svc: newTestService(repo, inv, products, audW), repo: repo, inv: inv, audW: audW, products: products}
+	combos := NewMockComboLookup(t)
+	svc := newTestService(repo, inv, products, audW)
+	svc.combos = combos
+	return &saleFixture{svc: svc, repo: repo, inv: inv, audW: audW, products: products, combos: combos}
 }
 
 // catalogProduct is a product the way the catalog stores it: sale price already
@@ -297,57 +301,7 @@ func TestService_CreateSale_UnknownProduct_PropagatesNotFound(t *testing.T) {
 	requireRestErrorStatus(t, err, http.StatusNotFound)
 }
 
-// ---- combo lines ----
-
-// The client's bundle share on a combo line is kept as combo_discount: it needs
-// no approval and is not a manual discount.
-func TestService_CreateSale_ComboLines_KeepTheClientsBundleShareAsComboDiscount(t *testing.T) {
-	fx := newSaleFixture(t)
-	fx.hasProducts(catalogProduct(1, "600", "0"), catalogProduct(2, "400", "0"))
-	got := fx.expectPersist()
-	combo := uint(5)
-	a := CreateSaleItemRequest{ProductID: 1, ComboID: &combo, NameSnapshot: "Rice", Qty: 1, Discount: d("40")}
-	b := CreateSaleItemRequest{ProductID: 2, ComboID: &combo, NameSnapshot: "Oil", Qty: 1, Discount: d("10")}
-
-	_, err := fx.create(oneSale([]CreateSaleItemRequest{a, b}, "950")) // 1000 - 50
-
-	require.NoError(t, err)
-	require.True(t, d("40").Equal(got.items[0].ComboDiscount))
-	require.True(t, d("40").Equal(got.items[0].Discount))
-	require.True(t, got.items[0].CatalogDiscount.IsZero())
-	require.True(t, got.items[0].ManualDiscount.IsZero())
-	require.True(t, got.sale.Tax.IsZero())
-	require.True(t, d("50").Equal(got.sale.Discount))
-	require.True(t, d("950").Equal(got.sale.Total))
-}
-
-// A combo is priced as a bundle: the product's own catalog % does not stack on
-// top of the bundle share.
-func TestService_CreateSale_ComboLine_DoesNotAlsoGetTheCatalogPercent(t *testing.T) {
-	fx := newSaleFixture(t)
-	fx.hasProducts(catalogProduct(1, "1000", "10"))
-	got := fx.expectPersist()
-	combo := uint(5)
-	item := CreateSaleItemRequest{ProductID: 1, ComboID: &combo, NameSnapshot: "Rice", Qty: 1, Discount: d("50")}
-
-	_, err := fx.create(oneSale([]CreateSaleItemRequest{item}, "950"))
-
-	require.NoError(t, err)
-	require.True(t, got.items[0].CatalogDiscount.IsZero())
-	require.True(t, d("50").Equal(got.items[0].Discount))
-}
-
-func TestService_CreateSale_ComboDiscountLargerThanTheLine_IsBadRequest(t *testing.T) {
-	fx := newSaleFixture(t)
-	fx.expectNothingWritten()
-	fx.hasProducts(catalogProduct(1, "100", "0"))
-	combo := uint(5)
-	item := CreateSaleItemRequest{ProductID: 1, ComboID: &combo, NameSnapshot: "Rice", Qty: 1, Discount: d("150")}
-
-	_, err := fx.create(oneSale([]CreateSaleItemRequest{item}, "0"))
-
-	requireRestErrorStatus(t, err, http.StatusBadRequest)
-}
+// ---- combo lines: see sales_combo_test.go ----
 
 func TestService_CreateSale_ApprovalOnAComboLine_IsBadRequest(t *testing.T) {
 	fx := newSaleFixture(t)
@@ -1015,24 +969,7 @@ func TestService_CreateSale_CustomDiscount_LowersTheTax(t *testing.T) {
 	require.True(t, d("5").Equal(got.items[0].TaxPercent))
 }
 
-// A combo line is taxed with its own product's rate on what is left after its
-// share of the bundle discount.
-func TestService_CreateSale_ComboLine_IsTaxedOnItsTotalAfterTheBundleShare(t *testing.T) {
-	fx := newSaleFixture(t)
-	fx.hasProducts(taxed(catalogProduct(1, "600", "0"), "5"), catalogProduct(2, "400", "0"))
-	got := fx.expectPersist()
-	combo := uint(5)
-	a := CreateSaleItemRequest{ProductID: 1, ComboID: &combo, NameSnapshot: "Rice", Qty: 1, Discount: d("40")}
-	b := CreateSaleItemRequest{ProductID: 2, ComboID: &combo, NameSnapshot: "Oil", Qty: 1, Discount: d("10")}
-
-	_, err := fx.create(oneSale([]CreateSaleItemRequest{a, b}, "950"))
-
-	require.NoError(t, err)
-	require.True(t, d("26.67").Equal(got.items[0].Tax), "(600 - 40) x 5 / 105 (got %s)", got.items[0].Tax)
-	require.True(t, got.items[1].Tax.IsZero(), "the oil is a 0%% product")
-	require.True(t, d("26.67").Equal(got.sale.Tax))
-	require.True(t, d("950").Equal(got.sale.Total))
-}
+// (A combo line is taxed after its bundle share: see sales_combo_test.go.)
 
 // Each line uses its own product's rate; the sale's tax is the sum of the
 // per-line (already rounded) taxes.

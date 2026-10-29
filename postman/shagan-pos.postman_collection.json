@@ -4734,7 +4734,187 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "sales"]
             },
-            "description": "Requires a branch-bound pos-device token (org_id and branch_id both come from it, never the body) AND X-Staff-Token (run VerifyStaffPIN first - it auto-saves into {{staffToken}}). id is a client-generated UUID and the idempotency key: re-sending a sale this same device already recorded (e.g. after a lost response) returns the original sale with 200 instead of 201, creates nothing and decrements no stock again, and needs no fresh manager approval; the same id from a different branch/device is 409. Subtotal/Discount/Tax/Total are NOT accepted at the sale level - the server prices every line from its product, sums Subtotal/Discount/Tax from the lines and derives Total = Subtotal - Discount (tax is a % per product that is already INSIDE the price and is never added), then rejects the request (400) if payments don't add up to that Total - so a till still paying price + tax gets a 400. TAX (Tax V1): there is no tax field on a line any more - a tax the client sends is ignored; each line gets round(line_total x p / (100 + p), 2) from its product's tax_percent, taken on the line total AFTER its catalog / custom / combo discount, and stores tax_percent on the line; the sale gets tax_inclusive true and tax = the sum (informational). combo_id is optional - set it to tag several line items as components of the same Combo rung up together (purely a grouping label for receipts/reporting; each component is still priced/taxed/discounted as its own normal line item). shift_id must be a currently-open shift belonging to this branch, else 404. Status/completed_at are always server-set to completed/now(). An item's discount must be zero or greater (400 otherwise). Needs accept_payments on the X-Staff-Token (403 without it). DISCOUNTS (Discount V1): every line is priced from the PRODUCT. unit_price is only checked - a different value is 409 'price changed, refresh the catalog'; leave it out freely. With no discount_approval_id the line gets the product's catalog % (sale_price). With one (from POST /sales/discount-approvals, obtained when the discount was ADDED) the approval's % comes off the original price and replaces the catalog %. A client discount is ignored except on a combo line (combo_id set), where it is the bundle share (combo_discount, needs no approval). price_override is 400. Approval errors are 409: already used, cancelled, expired, a different seller / product / shift, qty above max_qty, or the same approval on two lines. Payments must equal the derived total exactly. X-Manager-Approval-Token is NOT used for discounts any more, and payment never asks for a PIN."
+            "description": "Requires a branch-bound pos-device token (org_id and branch_id both come from it, never the body) AND X-Staff-Token (run VerifyStaffPIN first - it auto-saves into {{staffToken}}). id is a client-generated UUID and the idempotency key: re-sending a sale this same device already recorded (e.g. after a lost response) returns the original sale with 200 instead of 201, creates nothing and decrements no stock again, and needs no fresh manager approval; the same id from a different branch/device is 409. Subtotal/Discount/Tax/Total are NOT accepted at the sale level - the server prices every line from its product, sums Subtotal/Discount/Tax from the lines and derives Total = Subtotal - Discount (tax is a % per product that is already INSIDE the price and is never added), then rejects the request (400) if payments don't add up to that Total - so a till still paying price + tax gets a 400. TAX (Tax V1): there is no tax field on a line any more - a tax the client sends is ignored; each line gets round(line_total x p / (100 + p), 2) from its product's tax_percent, taken on the line total AFTER its catalog / custom / combo discount, and stores tax_percent on the line; the sale gets tax_inclusive true and tax = the sum (informational). combo_id is optional - set it to tag several line items as components of the same Combo rung up together. COMBOS (Combo V1): the server checks the combo and prices the bundle, it does not trust the till. Every distinct combo_id is looked up in the caller's org: unknown or another org's combo = 404 \"combo not found\"; an expired combo (now > expires_at) = 409 \"combo has expired\"; the lines carrying one combo_id must be EXACTLY the combo's components - one line per component product, none missing, none extra, none twice, each qty = the component's qty x k with the same whole k >= 1 (k bundles) - otherwise 400 (\"combo 5: line for product 3 is missing\", \"... is not part of the bundle\", \"... is listed more than once\", \"combo 5: quantities don't match the bundle\"). The bundle discount is computed by the server: max(0, sum(branch price x qty) - combo.price x k), shared across the lines in proportion to price x qty, the rounding remainder going to the largest line, so the lines add up to exactly combo.price x k (a combo never raises a price; the product's own catalog % does not stack). Each line stores combo_discount = its share; its tax is worked out on what is left. shift_id must be a currently-open shift belonging to this branch, else 404. Status/completed_at are always server-set to completed/now(). An item's discount must be zero or greater (400 otherwise). Needs accept_payments on the X-Staff-Token (403 without it). DISCOUNTS (Discount V1): every line is priced from the PRODUCT. unit_price is only checked - a different value is 409 'price changed, refresh the catalog'; leave it out freely. With no discount_approval_id the line gets the product's catalog % (sale_price). With one (from POST /sales/discount-approvals, obtained when the discount was ADDED) the approval's % comes off the original price and replaces the catalog %. A client discount is ignored on EVERY line, combo lines included (it only stays in the body so older tills keep working): a combo line's share (combo_discount, needs no approval) is always computed by the server. price_override is 400. Approval errors are 409: already used, cancelled, expired, a different seller / product / shift, qty above max_qty, or the same approval on two lines. Payments must equal the derived total exactly. X-Manager-Approval-Token is NOT used for discounts any more, and payment never asks for a PIN."
+          },
+          "response": []
+        },
+        {
+          "name": "CreateSale (combo, 2 bundles) - POST /sales",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "X-Staff-Token",
+                "value": "{{staffToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"22222222-2222-2222-2222-222222222201\",\n  \"shift_id\": 1,\n  \"device_id\": 1,\n  \"items\": [\n    {\n      \"product_id\": 1,\n      \"combo_id\": 1,\n      \"name_snapshot\": \"Item\",\n      \"qty\": 4\n    },\n    {\n      \"product_id\": 2,\n      \"combo_id\": 1,\n      \"name_snapshot\": \"Item\",\n      \"qty\": 2\n    }\n  ],\n  \"payments\": [\n    {\n      \"method\": \"cash\",\n      \"amount\": \"{{comboTwoBundlesTotal}}\",\n      \"amount_received\": \"{{comboTwoBundlesTotal}}\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/sales",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "sales"
+              ]
+            },
+            "description": "Combo V1 happy path. Combo 1 (replace the ids/qty with a real combo of your org - see ListCombos) sold as k = 2 bundles: every component line carries combo_id 1 and qty = the component's qty x 2. The server computes each line's combo_discount (a share of max(0, normal total - combo price x 2)) and the lines add up to exactly combo price x 2. Set {{comboTwoBundlesTotal}} to that amount (payments must equal it, else 400). Any discount you add to a line is ignored. 201."
+          },
+          "response": []
+        },
+        {
+          "name": "CreateSale (fake combo) - POST /sales -> 404",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "X-Staff-Token",
+                "value": "{{staffToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"22222222-2222-2222-2222-222222222202\",\n  \"shift_id\": 1,\n  \"device_id\": 1,\n  \"items\": [\n    {\n      \"product_id\": 1,\n      \"combo_id\": 99999,\n      \"name_snapshot\": \"Item\",\n      \"qty\": 1,\n      \"discount\": \"1000\"\n    }\n  ],\n  \"payments\": [\n    {\n      \"method\": \"cash\",\n      \"amount\": \"0\",\n      \"amount_received\": \"0\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/sales",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "sales"
+              ]
+            },
+            "description": "Combo V1 error case: the original exploit. combo_id 99999 does not exist (the same 404 an other org's combo gets) - before the fix this sale was accepted for free by sending discount = the price. Now 404 \"combo not found\" and nothing is saved."
+          },
+          "response": []
+        },
+        {
+          "name": "CreateSale (combo, wrong quantities) - POST /sales -> 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "X-Staff-Token",
+                "value": "{{staffToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"22222222-2222-2222-2222-222222222203\",\n  \"shift_id\": 1,\n  \"device_id\": 1,\n  \"items\": [\n    {\n      \"product_id\": 1,\n      \"combo_id\": 1,\n      \"name_snapshot\": \"Item\",\n      \"qty\": 1\n    },\n    {\n      \"product_id\": 2,\n      \"combo_id\": 1,\n      \"name_snapshot\": \"Item\",\n      \"qty\": 3\n    }\n  ],\n  \"payments\": [\n    {\n      \"method\": \"cash\",\n      \"amount\": \"1000\",\n      \"amount_received\": \"1000\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/sales",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "sales"
+              ]
+            },
+            "description": "Combo V1 error case: the components of combo 1 are not rung up as a whole number of bundles (here 1 of the first product and 3 of the second) -> 400 \"combo 1: quantities don't match the bundle\". Sending only some of the combo's products is also 400 (\"combo 1: line for product N is missing\"), and so is a product that isn't in the combo (\"... is not part of the bundle\") or one listed twice (\"... is listed more than once\")."
+          },
+          "response": []
+        },
+        {
+          "name": "CreateSale (expired combo) - POST /sales -> 409",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "X-Staff-Token",
+                "value": "{{staffToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"22222222-2222-2222-2222-222222222204\",\n  \"shift_id\": 1,\n  \"device_id\": 1,\n  \"items\": [\n    {\n      \"product_id\": 1,\n      \"combo_id\": 1,\n      \"name_snapshot\": \"Item\",\n      \"qty\": 1\n    },\n    {\n      \"product_id\": 2,\n      \"combo_id\": 1,\n      \"name_snapshot\": \"Item\",\n      \"qty\": 1\n    }\n  ],\n  \"payments\": [\n    {\n      \"method\": \"cash\",\n      \"amount\": \"1000\",\n      \"amount_received\": \"1000\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/sales",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "sales"
+              ]
+            },
+            "description": "Combo V1 error case: set the combo's expires_at in the past first (UpdateCombo - PATCH /combos/:id, expires_at) and ring up its components -> 409 \"combo has expired\"."
           },
           "response": []
         },
@@ -5991,7 +6171,48 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "sync", "sales"]
             },
-            "description": "Batch-uploads a device's offline-queued sales - each shaped exactly like a normal POST /sales body. branch_id comes from the caller's own pos-device token, never client input. Idempotent by each sale's own client-generated id - resubmitting an already-arrived sale is a safe no-op reported as success, not an error. Queued sales get NO manual-discount authority (an offline till cannot get a manager approval): any item discount fails that sale. Each sale's staff_id (client-supplied - a replayed sale carries no staff token) must be a staff member of the calling device's own branch or that sale fails. A sale id already stored by a different branch/device is reported as a failed item (already exists), not as a silent success. If it would take a product's stock negative, it's let through anyway (not rejected) and a SyncConflict is recorded instead - see GetSyncStatus/ListSyncConflicts. A sale that fails for another reason (e.g. its shift has since closed) is reported as a failed item in the response, not silently dropped. Catalog discounts work offline: send each line's cached unit_price and catalog_discount_percent (0-100) - the line is priced from them with the K 100 rounding rule. Also send tax_percent (0-100) - the tax rate in the till's cached catalog (omitted = the product's current rate); the line's tax is round(line_total x p / (100 + p), 2) from it, inside the price (never added), and no tax amount is ever read from the till. If the price, the catalog % or the tax % no longer matches the product the sale is still accepted and ONE sync conflict with reason price_mismatch is recorded per stale line (payload has client_/current_ unit_price, percent and tax_percent). A line carrying discount_approval_id fails that sale (custom discounts need approval and can't be queued offline) - there is no approval offline."
+            "description": "Batch-uploads a device's offline-queued sales - each shaped exactly like a normal POST /sales body. branch_id comes from the caller's own pos-device token, never client input. Idempotent by each sale's own client-generated id - resubmitting an already-arrived sale is a safe no-op reported as success, not an error. Queued sales get NO manual-discount authority (an offline till cannot get a manager approval): any item discount fails that sale. Each sale's staff_id (client-supplied - a replayed sale carries no staff token) must be a staff member of the calling device's own branch or that sale fails. A sale id already stored by a different branch/device is reported as a failed item (already exists), not as a silent success. If it would take a product's stock negative, it's let through anyway (not rejected) and a SyncConflict is recorded instead - see GetSyncStatus/ListSyncConflicts. A sale that fails for another reason (e.g. its shift has since closed) is reported as a failed item in the response, not silently dropped. Catalog discounts work offline: send each line's cached unit_price and catalog_discount_percent (0-100) - the line is priced from them with the K 100 rounding rule. Also send tax_percent (0-100) - the tax rate in the till's cached catalog (omitted = the product's current rate); the line's tax is round(line_total x p / (100 + p), 2) from it, inside the price (never added), and no tax amount is ever read from the till. If the price, the catalog % or the tax % no longer matches the product the sale is still accepted and ONE sync conflict with reason price_mismatch is recorded per stale line (payload has client_/current_ unit_price, percent and tax_percent). A line carrying discount_approval_id fails that sale (custom discounts need approval and can't be queued offline) - there is no approval offline. COMBOS (Combo V1): a queued combo line is checked like an online one - an unknown combo or lines that don't match the combo's components fail THAT sale only (400-class error in its result; the rest of the batch continues), and so does a combo that had already expired when the sale was rung up (judged at the optional rung_up_at, which only counts if it is in the past; otherwise at ingest time). The bundle is priced from the combo's CURRENT price and the server's prices - the till's unit_price and discount are not taken for combo lines. If that differs from what the till charged, the sale is still accepted and ONE price_mismatch conflict is recorded per combo (payload: combo_id, client_bundle_total, current_bundle_total); payments equal to the till's own total are accepted, anything matching neither total is a 400."
+          },
+          "response": []
+        },
+        {
+          "name": "IngestQueuedSales (combo, price changed) - POST /sync/sales",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sales\": [\n    {\n      \"id\": \"33333333-3333-3333-3333-333333333301\",\n      \"shift_id\": 1,\n      \"staff_id\": 14,\n      \"device_id\": 3,\n      \"rung_up_at\": \"2026-10-29T09:15:00+06:30\",\n      \"items\": [\n        {\n          \"product_id\": 1,\n          \"combo_id\": 1,\n          \"name_snapshot\": \"Rice 5kg\",\n          \"unit_price\": \"6000\",\n          \"qty\": 1,\n          \"discount\": \"300\"\n        },\n        {\n          \"product_id\": 2,\n          \"combo_id\": 1,\n          \"name_snapshot\": \"Cooking Oil 1L\",\n          \"unit_price\": \"4000\",\n          \"qty\": 1,\n          \"discount\": \"200\"\n        }\n      ],\n      \"payments\": [\n        {\n          \"method\": \"cash\",\n          \"amount\": \"9500\",\n          \"amount_received\": \"9500\",\n          \"change_given\": \"0\"\n        }\n      ]\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/sync/sales",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "sync",
+                "sales"
+              ]
+            },
+            "description": "Combo V1 offline example: a queued sale of combo 1 that the till charged K 9,500 for (its cached combo price) while the combo now costs K 9,000. The server prices the bundle itself from the combo's current price (the discount on the lines is not read) and books K 9,000, accepts the sale and records ONE price_mismatch conflict {\\\"combo_id\\\": 1, \\\"client_bundle_total\\\": \\\"9500\\\", \\\"current_bundle_total\\\": \\\"9000\\\"} (see ListSyncConflicts); the till's own payments (9,500) are accepted because they equal what it charged. rung_up_at (optional, only counts if in the past) is when the till rang the sale up - a combo that expired after that moment still honours it. A fake combo_id, or lines that don't match the combo, fail only this sale: success false and an error such as \\\"combo 99999 does not exist\\\" / \\\"combo 1: line for product 2 is missing\\\" in its result."
           },
           "response": []
         },
