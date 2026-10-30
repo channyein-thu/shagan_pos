@@ -246,7 +246,7 @@ func accessTokenFor(t *testing.T, accountType string) string {
 
 func staffTokenWith(t *testing.T, perms ...string) string {
 	t.Helper()
-	tok, err := authtoken.GenerateStaffToken(routeTestSecret, 7, 5, 3, perms, time.Minute)
+	tok, err := authtoken.GenerateStaffToken(routeTestSecret, 7, 1, 5, 3, perms, time.Minute)
 	require.NoError(t, err)
 	return tok
 }
@@ -401,9 +401,11 @@ func TestLegacyStaffTokensKeepWorkingAcrossTheDeploy(t *testing.T) {
 
 // legacyTokenForTest mints a staff token the way the API did before per-org
 // roles: no access_version claim, only the seven original permission codes.
+// It carries org_id so this exercises only the permission expansion - a real
+// token that old also lacks org_id and is refused (middleware.staffTokenMismatch).
 func legacyTokenForTest(perms ...string) (string, error) {
 	claims := authtoken.StaffClaims{
-		StaffID: 7, BranchID: 5, RoleID: 3, Permissions: perms,
+		StaffID: 7, OrgID: 1, BranchID: 5, RoleID: 3, Permissions: perms,
 		RegisteredClaims: jwt.RegisteredClaims{
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute)),

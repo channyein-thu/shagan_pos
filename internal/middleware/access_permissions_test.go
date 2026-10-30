@@ -17,10 +17,13 @@ import (
 
 // legacyStaffToken mints a staff token the way the API did before per-org
 // roles: no access_version claim, only the seven original permission codes.
+// It carries org_id so these tests exercise only the permission expansion -
+// a real token that old also lacks org_id and is refused outright (see
+// TestRequirePermission_TokenWithoutOrgClaim_Returns401).
 func legacyStaffToken(t *testing.T, perms ...string) string {
 	t.Helper()
 	claims := authtoken.StaffClaims{
-		StaffID: 7, BranchID: 5, RoleID: 3, Permissions: perms,
+		StaffID: 7, OrgID: 1, BranchID: 5, RoleID: 3, Permissions: perms,
 		RegisteredClaims: jwt.RegisteredClaims{
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute)),

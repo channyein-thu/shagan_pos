@@ -76,7 +76,13 @@ func ParseAccessToken(secret []byte, tokenString string) (*Claims, error) {
 // staff's next PIN verify, not immediately - same staleness tradeoff every
 // other TTL'd token in this codebase already accepts.
 type StaffClaims struct {
-	StaffID     uint     `json:"staff_id"`
+	StaffID uint `json:"staff_id"`
+	// OrgID and BranchID say where this staff member PINned in. Middleware
+	// compares them with the request's access token on every use (see
+	// middleware.staffTokenMismatch): all orgs share one JWT secret, so a
+	// valid signature alone can't tell one shop's or branch's token from
+	// another's. OrgID is 0 on a token minted before this claim existed.
+	OrgID       uint     `json:"org_id"`
 	BranchID    uint     `json:"branch_id"`
 	RoleID      uint     `json:"role_id"`
 	Permissions []string `json:"permissions"`
@@ -154,11 +160,12 @@ func contains(list []string, code string) bool {
 }
 
 // GenerateStaffToken signs a staff-PIN session JWT identifying staffID's
-// branch/role/permissions, valid for ttl.
-func GenerateStaffToken(secret []byte, staffID, branchID, roleID uint, permissions []string, ttl time.Duration) (string, error) {
+// org/branch/role/permissions, valid for ttl.
+func GenerateStaffToken(secret []byte, staffID, orgID, branchID, roleID uint, permissions []string, ttl time.Duration) (string, error) {
 	now := time.Now()
 	claims := StaffClaims{
 		StaffID:       staffID,
+		OrgID:         orgID,
 		BranchID:      branchID,
 		RoleID:        roleID,
 		Permissions:   permissions,

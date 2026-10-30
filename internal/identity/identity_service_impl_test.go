@@ -1288,6 +1288,8 @@ func TestService_VerifyStaffPIN_HappyPath_NoBranchRestriction(t *testing.T) {
 	claims, err := authtoken.ParseStaffToken(testJWTSecret, result.Token)
 	require.NoError(t, err)
 	require.Equal(t, staff.ID, claims.StaffID)
+	// the org the PIN was verified in, so middleware can refuse the token at another shop
+	require.Equal(t, uint(7), claims.OrgID)
 	require.Equal(t, staff.BranchID, claims.BranchID)
 	require.Equal(t, staff.RoleID, claims.RoleID)
 	require.ElementsMatch(t, []string{"access_pos_portal", "apply_manual_discount"}, claims.Permissions)
@@ -1447,6 +1449,8 @@ func TestService_VerifyManagerPIN_HappyPath_GrantsShortLivedToken(t *testing.T) 
 	claims, err := authtoken.ParseStaffToken(testJWTSecret, result.Token)
 	require.NoError(t, err)
 	require.Equal(t, staff.ID, claims.StaffID)
+	// the org the PIN was verified in, so middleware can refuse the token at another shop
+	require.Equal(t, uint(7), claims.OrgID)
 	require.Equal(t, staff.BranchID, claims.BranchID)
 	require.Equal(t, staff.RoleID, claims.RoleID)
 }

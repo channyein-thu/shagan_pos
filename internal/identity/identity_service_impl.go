@@ -290,7 +290,7 @@ func (s *Service) VerifyManagerPIN(ctx context.Context, orgID uint, branchID *ui
 		return nil, common.UnauthorizedError(invalidManagerPINMessage)
 	}
 
-	token, err := authtoken.GenerateStaffToken(s.jwtSecret, staff.ID, staff.BranchID, staff.RoleID, codes, s.managerPINTokenTTL)
+	token, err := authtoken.GenerateStaffToken(s.jwtSecret, staff.ID, orgID, staff.BranchID, staff.RoleID, codes, s.managerPINTokenTTL)
 	if err != nil {
 		return nil, common.SystemError("failed to issue manager token")
 	}
@@ -317,7 +317,7 @@ func (s *Service) VerifyStaffPIN(ctx context.Context, orgID uint, branchID *uint
 		return nil, err
 	}
 
-	token, err := authtoken.GenerateStaffToken(s.jwtSecret, staff.ID, staff.BranchID, staff.RoleID, permissionCodes(permissions), s.staffPINTokenTTL)
+	token, err := authtoken.GenerateStaffToken(s.jwtSecret, staff.ID, orgID, staff.BranchID, staff.RoleID, permissionCodes(permissions), s.staffPINTokenTTL)
 	if err != nil {
 		return nil, common.SystemError("failed to issue staff token")
 	}

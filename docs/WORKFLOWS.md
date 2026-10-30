@@ -164,6 +164,15 @@ Three distinct tokens exist, often needed together on one request:
    later grant/revoke only takes effect on the next PIN verify, not
    immediately). Validated by `middleware.RequireStaffToken` when a handler
    just needs to know *who*, not gate on one specific permission.
+   Also carries `OrgID` and `BranchID` (where the PIN was verified). **Every
+   use** checks them against the bearer token (`staffTokenMismatch`), not
+   only issuance: a token whose org differs is a 401 "staff token is for a
+   different organization", whose branch differs from a pos-device token's
+   is a 401 "staff token is for a different branch" (Owner / Service Center
+   tokens have no branch, so only the org is compared), and one minted
+   before `org_id` existed is a 401 "staff token is out of date, sign in
+   again with your PIN". All orgs share one JWT secret, so the signature
+   alone can't tell one shop's token from another's.
 
 3. **`X-Manager-Approval-Token`** (also issued by `VerifyManagerPIN`, same
    token shape as #2, but a separate header)
@@ -173,7 +182,8 @@ Three distinct tokens exist, often needed together on one request:
    request). Checked via `middleware.ManagerApproved(c, jwtSecret,
    permission)`. **Now wired in** (see below) — a cashier lacking a
    permission themselves can proceed if this header carries a valid
-   approval for it instead.
+   approval for it instead. The same org/branch check as #2 applies: an
+   approval issued at another branch or org counts as no approval.
 
 ### Which middleware/helper, when
 - `middleware.RequireStaffToken(jwtSecret)` — used on: `CreateDrawerEvent`,

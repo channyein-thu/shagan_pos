@@ -93,7 +93,35 @@ func parseStaffToken(c *gin.Context, jwtSecret []byte) (*authtoken.StaffClaims, 
 		c.Abort()
 		return nil, false
 	}
+	if reason := staffTokenMismatch(c, claims); reason != "" {
+		common.HandleError(c, common.UnauthorizedError(reason))
+		c.Abort()
+		return nil, false
+	}
 	return claims, true
+}
+
+// staffTokenMismatch says why claims can't be used with this request's access
+// token (set by Auth), or "" when they can. PIN verify checks the staff
+// member's org and branch only when it issues the token; without this, a
+// token copied from one till (12h staff, 2min approval) would work at another
+// branch, or with another shop's access token, since all orgs share one JWT
+// secret. An org-wide access token (owner/service_center) has no branch, so
+// only the org is compared. Every message names the staff token, which is
+// how the till tells "PIN in again" from "the device was logged out".
+func staffTokenMismatch(c *gin.Context, claims *authtoken.StaffClaims) string {
+	if claims.OrgID == 0 {
+		// Minted before tokens carried org_id: re-PIN once rather than
+		// trust a token whose org can't be checked.
+		return "staff token is out of date, sign in again with your PIN"
+	}
+	if orgID, _ := OrgIDFromContext(c); claims.OrgID != orgID {
+		return "staff token is for a different organization"
+	}
+	if branchID, ok := BranchIDFromContext(c); ok && claims.BranchID != branchID {
+		return "staff token is for a different branch"
+	}
+	return ""
 }
 
 func setStaffContext(c *gin.Context, claims *authtoken.StaffClaims) {
@@ -166,7 +194,9 @@ func ManagerApproved(c *gin.Context, jwtSecret []byte, permission string) bool {
 		return false
 	}
 	claims, err := authtoken.ParseStaffToken(jwtSecret, token)
-	if err != nil {
+	// An approval from another branch or org counts as no approval at all,
+	// like an expired one.
+	if err != nil || staffTokenMismatch(c, claims) != "" {
 		return false
 	}
 	return slices.Contains(claims.EffectivePermissions(), permission)

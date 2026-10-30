@@ -23,9 +23,16 @@ func accessToken(t *testing.T, accountType string, branchID *uint) string {
 	return tok
 }
 
+// staffToken is a staff token for the till accessToken describes: org 1,
+// branch 5.
 func staffToken(t *testing.T, perms ...string) string {
 	t.Helper()
-	tok, err := authtoken.GenerateStaffToken(secret, 7, 5, 3, perms, time.Minute)
+	return staffTokenAt(t, 1, 5, perms...)
+}
+
+func staffTokenAt(t *testing.T, orgID, branchID uint, perms ...string) string {
+	t.Helper()
+	tok, err := authtoken.GenerateStaffToken(secret, 7, orgID, branchID, 3, perms, time.Minute)
 	require.NoError(t, err)
 	return tok
 }

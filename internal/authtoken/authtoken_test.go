@@ -26,7 +26,7 @@ func TestAccessToken_CarriesAccountType(t *testing.T) {
 
 func TestStaffToken_NewTokensCarryTheCurrentAccessVersion(t *testing.T) {
 	secret := []byte("s")
-	tok, err := GenerateStaffToken(secret, 1, 2, 3, []string{"access_pos_portal"}, time.Minute)
+	tok, err := GenerateStaffToken(secret, 1, 4, 2, 3, []string{"access_pos_portal"}, time.Minute)
 	require.NoError(t, err)
 
 	claims, err := ParseStaffToken(secret, tok)
@@ -35,6 +35,18 @@ func TestStaffToken_NewTokensCarryTheCurrentAccessVersion(t *testing.T) {
 	assert.Equal(t, CurrentAccessVersion, claims.AccessVersion)
 	// a current token is trusted exactly as issued: no expansion
 	assert.Equal(t, []string{"access_pos_portal"}, claims.EffectivePermissions())
+}
+
+func TestStaffToken_CarriesOrgAndBranch(t *testing.T) {
+	secret := []byte("s")
+	tok, err := GenerateStaffToken(secret, 1, 4, 2, 3, nil, time.Minute)
+	require.NoError(t, err)
+
+	claims, err := ParseStaffToken(secret, tok)
+
+	require.NoError(t, err)
+	assert.Equal(t, uint(4), claims.OrgID)
+	assert.Equal(t, uint(2), claims.BranchID)
 }
 
 func legacyClaims(perms ...string) *StaffClaims {
